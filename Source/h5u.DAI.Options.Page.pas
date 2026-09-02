@@ -28,6 +28,7 @@ implementation
 
 uses
   System.Classes,
+  System.SysUtils,
   h5u.DAI.Options.Frame;
 
 var

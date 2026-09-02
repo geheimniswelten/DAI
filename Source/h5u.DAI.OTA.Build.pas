@@ -1,4 +1,4 @@
-﻿unit h5u.DAI.OTA.Build;
+unit h5u.DAI.OTA.Build;
 
 interface
 
@@ -297,7 +297,7 @@ begin
 
   LExecutable := ResolveTargetExecutable(LProject);
   if not TFile.Exists(LExecutable) then
-    raise EFileNotFoundException.CreateFmt('Die Projekt-Ausgabedatei wurde nicht gefunden: %s', [LExecutable]);
+    raise EFOpenError.CreateFmt('Die Projekt-Ausgabedatei wurde nicht gefunden: %s', [LExecutable]);
 
   LKey := LowerCase(TDAIOTA.NormalizeFileName(TDAIOTA.ProjectFileName(LProject)));
   TMonitor.Enter(GProcessLock);

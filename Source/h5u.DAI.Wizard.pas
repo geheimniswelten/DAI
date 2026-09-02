@@ -26,6 +26,7 @@ implementation
 
 uses
   System.SysUtils,
+  System.Types,
   Vcl.Graphics,
   h5u.DAI.Consts,
   h5u.DAI.IDE.Notifier,

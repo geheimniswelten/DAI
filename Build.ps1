@@ -4,7 +4,7 @@ param(
     [string]$Configuration = 'Release',
 
     [ValidateSet('Win32', 'Win64', 'Both')]
-    [string]$Platform = 'Both',
+    [string]$Platform = 'Win32',
 
     [string]$BdsRoot = $env:BDS
 )

@@ -26,8 +26,10 @@ type
 implementation
 
 uses
+  System.Classes,
   System.Math,
   System.SysUtils,
+  System.UITypes,
   Vcl.Controls,
   Vcl.Dialogs,
   Vcl.Forms;

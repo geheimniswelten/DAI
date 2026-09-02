@@ -52,8 +52,11 @@ type
 implementation
 
 uses
+  System.JSON,
   System.IOUtils,
+  System.StrUtils,
   System.SysUtils,
+  System.UITypes,
   Vcl.Dialogs,
   h5u.DAI.Codex.Registration,
   h5u.DAI.OTA.Helpers,
@@ -318,9 +321,9 @@ begin
   LStatus := TDAICodexRegistration.Status;
   try
     FCodexStatusLabel.Caption := 'Codex: ' + LStatus.GetValue<string>('codex_config') + ' – ' +
-      BoolToStr(LStatus.GetValue<Boolean>('codex_entry_registered'), 'registriert', 'nicht registriert');
+      IfThen(LStatus.GetValue<Boolean>('codex_entry_registered'), 'registriert', 'nicht registriert');
     FSkillStatusLabel.Caption := 'Skill: ' + LStatus.GetValue<string>('skill_file') + ' – ' +
-      BoolToStr(LStatus.GetValue<Boolean>('skill_registered'), 'registriert', 'nicht registriert');
+      IfThen(LStatus.GetValue<Boolean>('skill_registered'), 'registriert', 'nicht registriert');
   finally
     LStatus.Free;
   end;

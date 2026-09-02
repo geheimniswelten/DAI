@@ -73,7 +73,7 @@ $initialize = Invoke-DAIMcp -Payload @{
         capabilities    = @{}
         clientInfo      = @{
             name    = 'DAI-Test'
-            version = '1.1.0'
+            version = '1.1.1'
         }
     }
 }

@@ -83,10 +83,10 @@ Zusätzliche Verzeichnisse aus den Optionen sind ebenfalls ausschließlich lesba
 Der Vorschlag für das persönliche Projektverzeichnis wird anhand der Windows-UI-Sprache und vorhandener Verzeichnisse ermittelt:
 
 ```text
-Englisch:   %USERPROFILE%\Documents\Embarcadero\Studio\Projects
-Deutsch:    %USERPROFILE%\Documents\Embarcadero\Studio\Projekte
-Italienisch:%USERPROFILE%\Documents\Embarcadero\Studio\Progetti
-Japanisch:  %USERPROFILE%\Documents\Embarcadero\Studio\プロジェクト
+Englisch:   %USERPROFILE%\Documents\Embarcadero\Studio\37.0\Projects
+Deutsch:    %USERPROFILE%\Documents\Embarcadero\Studio\37.0\Projekte
+Italienisch:%USERPROFILE%\Documents\Embarcadero\Studio\37.0\Progetti
+Japanisch:  %USERPROFILE%\Documents\Embarcadero\Studio\37.0\プロジェクト
 ```
 
 ## Projektoperationen
@@ -177,7 +177,7 @@ Ein bereits vorhandener, nicht markierter `[mcp_servers.dai]`-Abschnitt wird nic
 PowerShell:
 
 ```powershell
-.\Build.ps1 -Configuration Release -Platform Both
+.\Build.ps1 -Configuration Release -Platform Win32
 ```
 
 Mit explizitem BDS-Verzeichnis:
@@ -185,7 +185,7 @@ Mit explizitem BDS-Verzeichnis:
 ```powershell
 .\Build.ps1 `
   -Configuration Release `
-  -Platform Both `
+  -Platform Win32 `
   -BdsRoot 'C:\Program Files (x86)\Embarcadero\Studio\37.0'
 ```
 
@@ -193,10 +193,9 @@ Erwartete Ausgaben:
 
 ```text
 Build\Win32\Release\Bpl\DAI.bpl
-Build\Win64\Release\Bpl\DAI.bpl
 ```
 
-Installieren Sie das Package, dessen Architektur zur laufenden IDE passt.
+Das mitgelieferte DPROJ ist entsprechend dem vom Benutzer korrigierten Projektstand zunächst für Win32 aktiviert. Für die 64-Bit-IDE kann Win64 im Projektmanager als Zielplattform ergänzt und anschließend mit `-Platform Win64` gebaut werden.
 
 ## Verbindungstest
 
@@ -213,8 +212,7 @@ Berechtigungsdialoge erscheinen.
 python .\Scripts\verify.py
 ```
 
-Geprüft werden unter anderem Dateinamen, Unit-Namen, DPK-/DPROJ-Referenzen, XML, erforderliche MCP-Werkzeuge, Altbezeichnungen und die maximale
-Zeilenlänge von 180 Zeichen.
+Geprüft werden unter anderem Dateinamen, Unit-Namen, DPK-/DPROJ-Referenzen, XML, erforderliche MCP-Werkzeuge, bekannte ungültige Delphi-Typen, fehlende DAI-Typdeklarationen, Altbezeichnungen und die maximale Zeilenlänge von 180 Zeichen.
 
 ## Hinweis zur Binärprüfung
 

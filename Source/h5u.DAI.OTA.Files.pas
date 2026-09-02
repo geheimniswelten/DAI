@@ -1,4 +1,4 @@
-﻿unit h5u.DAI.OTA.Files;
+unit h5u.DAI.OTA.Files;
 
 interface
 
@@ -116,7 +116,7 @@ begin
   end;
 
   if not TFile.Exists(AFileName) then
-    raise EFileNotFoundException.CreateFmt('Datei nicht gefunden: %s', [AFileName]);
+    raise EFOpenError.CreateFmt('Datei nicht gefunden: %s', [AFileName]);
   if TFile.GetSize(AFileName) > CDAIMaxTextFileBytes then
     raise EInvalidOperation.CreateFmt('Die Datei überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
   Result := TFile.ReadAllText(AFileName, TEncoding.UTF8);
