@@ -1,4 +1,4 @@
-unit h5u.DAI.Options.Frame;
+﻿unit h5u.DAI.Options.Frame;
 
 interface
 
@@ -53,6 +53,7 @@ uses
   System.SysUtils,
   System.UITypes,
   Vcl.Dialogs,
+  Vcl.Graphics,
   h5u.DAI.Codex.Registration,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,

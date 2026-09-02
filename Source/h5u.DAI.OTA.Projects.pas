@@ -1,4 +1,4 @@
-unit h5u.DAI.OTA.Projects;
+﻿unit h5u.DAI.OTA.Projects;
 
 interface
 
@@ -340,7 +340,7 @@ begin
   end;
 
   LActiveProject := TDAIOTA.ActiveProject;
-  if Assigned(LActiveProject) and not Assigned(TDAIOTA.MainProjectGroup) then
+  if Assigned(LActiveProject) and (TDAIOTA.MainProjectGroup = nil) then
     raise EInvalidOperation.Create(
       'Es ist ein einzelnes Projekt ohne Projektgruppe geöffnet. DAI öffnet kein weiteres Projekt, weil die IDE dabei das vorhandene Projekt schließen könnte. ' +
       'Erstellen oder öffnen Sie zuerst manuell eine Projektgruppe.'

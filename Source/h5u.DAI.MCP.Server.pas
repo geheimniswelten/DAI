@@ -1,4 +1,4 @@
-unit h5u.DAI.MCP.Server;
+﻿unit h5u.DAI.MCP.Server;
 
 interface
 
@@ -66,7 +66,7 @@ begin
     raise EInvalidOperation.CreateFmt('Die MCP-Anfrage überschreitet das Limit von %d MiB.', [CDAIMaxRequestBytes div 1024 div 1024]);
 
   ARequestInfo.PostStream.Position := 0;
-  LReader := TStreamReader.Create(ARequestInfo.PostStream, TEncoding.UTF8, True, 4096, True);
+  LReader := TStreamReader.Create(ARequestInfo.PostStream, TEncoding.UTF8, True, 4096);
   try
     Result := LReader.ReadToEnd;
   finally
