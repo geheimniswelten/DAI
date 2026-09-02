@@ -18,6 +18,7 @@ type
     FRegistryRoot: string;
     function GenerateToken: string;
     function ReadRootDirectory: string;
+    function StudioVersion: string;
     procedure SetCustomReadDirectories(const AValue: TStrings);
   public
     constructor Create;
@@ -97,14 +98,14 @@ function TDAISettings.CatalogRepositoryAllUsersDirectory: string;
 begin
   Result := ExpandPath(GetEnvironmentVariable('BDSCatalogRepositoryAllUsers'));
   if Result = '' then
-    Result := ExpandPath('%PUBLIC%\Documents\Embarcadero\Studio\37.0\CatalogRepository');
+    Result := ExpandPath('%PUBLIC%\Documents\Embarcadero\Studio\' + StudioVersion + '\CatalogRepository');
 end;
 
 function TDAISettings.CatalogRepositoryDirectory: string;
 begin
   Result := ExpandPath(GetEnvironmentVariable('BDSCatalogRepository'));
   if Result = '' then
-    Result := ExpandPath('%USERPROFILE%\Documents\Embarcadero\Studio\37.0\CatalogRepository');
+    Result := ExpandPath('%USERPROFILE%\Documents\Embarcadero\Studio\' + StudioVersion + '\CatalogRepository');
 end;
 
 function TDAISettings.DelphiSourceDirectory: string;
@@ -194,7 +195,7 @@ begin
     LPreferredName := CEnglish;
   end;
 
-  LDocumentsRoot := ExpandPath('%USERPROFILE%\Documents\Embarcadero\Studio');
+  LDocumentsRoot := ExpandPath('%USERPROFILE%\Documents\Embarcadero\Studio\' + StudioVersion);
   LCandidates := [
     TPath.Combine(LDocumentsRoot, LPreferredName),
     TPath.Combine(LDocumentsRoot, CEnglish),
@@ -240,7 +241,23 @@ end;
 
 function TDAISettings.SamplesDirectory: string;
 begin
-  Result := ExpandPath('%PUBLIC%\Documents\Embarcadero\Studio\37.0\Samples');
+  Result := ExpandPath('%PUBLIC%\Documents\Embarcadero\Studio\' + StudioVersion + '\Samples');
+end;
+
+
+function TDAISettings.StudioVersion: string;
+var
+  LBaseRegistryKey: string;
+begin
+  Result := '37.0';
+  if not Supports(BorlandIDEServices, IOTAServices) then
+    Exit;
+
+  LBaseRegistryKey := ExcludeTrailingPathDelimiter((BorlandIDEServices as IOTAServices).GetBaseRegistryKey);
+  if LastDelimiter('\/', LBaseRegistryKey) > 0 then
+    LBaseRegistryKey := Copy(LBaseRegistryKey, LastDelimiter('\/', LBaseRegistryKey) + 1, MaxInt);
+  if Trim(LBaseRegistryKey) <> '' then
+    Result := LBaseRegistryKey;
 end;
 
 procedure TDAISettings.Save;

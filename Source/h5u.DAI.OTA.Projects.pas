@@ -1,4 +1,4 @@
-﻿unit h5u.DAI.OTA.Projects;
+unit h5u.DAI.OTA.Projects;
 
 interface
 
@@ -42,6 +42,7 @@ uses
   System.UITypes,
   Vcl.Dialogs,
   ToolsAPI,
+  h5u.DAI.OTA.Creators,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
@@ -210,6 +211,7 @@ class function TDAIProjectService.CreateProject( const AName: string;
   const AKind: string
 ): TJSONObject;
 var
+  LActiveProject: IOTAProject;
   LCreatedModule: IOTAModule;
   LDirectory: string;
   LFileName: string;
@@ -226,11 +228,20 @@ begin
   LDirectory := TDAISettings.Instance.ExpandPath(ADirectory);
   if LDirectory = '' then
     raise EArgumentException.Create('Ein Projektverzeichnis ist erforderlich.');
+
+  LGroup := TDAIOTA.MainProjectGroup;
+  LActiveProject := TDAIOTA.ActiveProject;
+  if Assigned(LActiveProject) and not Assigned(LGroup) then
+    raise EInvalidOperation.Create(
+      'Es ist ein einzelnes Projekt ohne Projektgruppe geöffnet. DAI erstellt kein weiteres Projekt, weil die IDE dabei das vorhandene Projekt schließen könnte. ' +
+      'Erstellen oder öffnen Sie zuerst manuell eine Projektgruppe.'
+    );
+
   ForceDirectories(LDirectory);
   LFileName := TPath.Combine(LDirectory, LName + '.dpr');
 
   if TFile.Exists(LFileName) or TFile.Exists(ChangeFileExt(LFileName, '.dproj')) then
-    raise EFileExistsException.CreateFmt('Das Projekt existiert bereits: %s', [LFileName]);
+    raise EFCreateError.CreateFmt('Das Projekt existiert bereits: %s', [LFileName]);
 
   LOpenProjects := OpenProjectSummary;
   if LOpenProjects <> '' then
@@ -285,7 +296,7 @@ begin
 
   LFileName := ResolveUnitFileName(LProject, AFileName);
   if TFile.Exists(LFileName) then
-    raise EFileExistsException.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
+    raise EFCreateError.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
   if not TDAIOTA.IsPathWithin(LFileName, TPath.GetDirectoryName(TDAIOTA.ProjectFileName(LProject))) then
     raise EDAIAccessDenied.Create('Neue Units müssen innerhalb des Projektverzeichnisses liegen.');
 
@@ -313,7 +324,7 @@ var
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   if not TFile.Exists(LFileName) then
-    raise EFileNotFoundException.CreateFmt('Datei nicht gefunden: %s', [LFileName]);
+    raise EFOpenError.CreateFmt('Datei nicht gefunden: %s', [LFileName]);
 
   LOpened := False;
   TDAIOTA.RunOnMainThread(
@@ -332,13 +343,14 @@ end;
 class function TDAIProjectService.OpenProject(const AFileName: string): TJSONObject;
 var
   LActionServices: IOTAActionServices;
+  LActiveProject: IOTAProject;
   LFileName: string;
   LOpened: Boolean;
   LOpenProjects: string;
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   if not TFile.Exists(LFileName) then
-    raise EFileNotFoundException.CreateFmt('Projektdatei nicht gefunden: %s', [LFileName]);
+    raise EFOpenError.CreateFmt('Projektdatei nicht gefunden: %s', [LFileName]);
 
   if Assigned(TDAIOTA.ProjectByNameOrPath(LFileName)) then
   begin
@@ -348,6 +360,13 @@ begin
     Result.AddPair('already_open', TJSONBool.Create(True));
     Exit;
   end;
+
+  LActiveProject := TDAIOTA.ActiveProject;
+  if Assigned(LActiveProject) and not Assigned(TDAIOTA.MainProjectGroup) then
+    raise EInvalidOperation.Create(
+      'Es ist ein einzelnes Projekt ohne Projektgruppe geöffnet. DAI öffnet kein weiteres Projekt, weil die IDE dabei das vorhandene Projekt schließen könnte. ' +
+      'Erstellen oder öffnen Sie zuerst manuell eine Projektgruppe.'
+    );
 
   if ProjectOperationNeedsConfirmation(LFileName) then
   begin
@@ -477,7 +496,7 @@ begin
     LDFMFileName := ChangeFileExt(LFileName, '.dfm');
 
   if not TFile.Exists(LDFMFileName) and not TDAIOTA.IsFormLoadedForFile(LFileName) then
-    raise EFileNotFoundException.CreateFmt('DFM-Datei nicht gefunden: %s', [LDFMFileName]);
+    raise EFOpenError.CreateFmt('DFM-Datei nicht gefunden: %s', [LDFMFileName]);
 
   LOpened := False;
   TDAIOTA.RunOnMainThread(

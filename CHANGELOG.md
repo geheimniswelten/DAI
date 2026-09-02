@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1
+
+- vom Benutzer korrigierte `uses`-Listen und Win32-Projektdatei übernommen
+- fehlende Unit `h5u.DAI.OTA.Creators.pas` ergänzt und in DPK/DPROJ eingebunden
+- `TDAIModuleCreator`, `TDAIProjectCreator`, `TDAIProjectKind`, `pkConsole` und `pkVCL` vollständig implementiert
+- nicht vorhandene `EFileExistsException` und `EFileNotFoundException` entfernt
+- `EFCreateError` für Erstellkollisionen und `EFOpenError` für nicht auffindbare beziehungsweise nicht zu öffnende Dateien verwendet
+- sprachabhängigen Projektverzeichnisvorschlag um die ermittelte Studio-Version ergänzt
+- statischen Prüfer um ungültige Delphi-Typen, fehlende DAI-Typen und Creator-Referenzen erweitert
+- Versionsangaben auf 1.1.1 aktualisiert
+
 ## 1.1.0
 
 - Projekt und Package in `DAI` umbenannt

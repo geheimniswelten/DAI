@@ -1,6 +1,7 @@
-﻿package DAI;
+package DAI;
 
 {$R *.res}
+{$DESIGNONLY}
 {$IFDEF IMPLICITBUILDING This IFDEF should not be used by users}
 {$ALIGN 8}
 {$ASSERTIONS ON}
@@ -49,6 +50,7 @@ contains
   h5u.DAI.OTA.Build in 'Source\h5u.DAI.OTA.Build.pas',
   h5u.DAI.OTA.Files in 'Source\h5u.DAI.OTA.Files.pas',
   h5u.DAI.OTA.Helpers in 'Source\h5u.DAI.OTA.Helpers.pas',
+  h5u.DAI.OTA.Creators in 'Source\h5u.DAI.OTA.Creators.pas',
   h5u.DAI.OTA.Projects in 'Source\h5u.DAI.OTA.Projects.pas',
   h5u.DAI.Permissions.Dialog in 'Source\h5u.DAI.Permissions.Dialog.pas',
   h5u.DAI.Permissions.Manager in 'Source\h5u.DAI.Permissions.Manager.pas',
