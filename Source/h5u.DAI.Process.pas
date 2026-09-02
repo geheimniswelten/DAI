@@ -245,7 +245,7 @@ class function TDAIProcess.ResolveDCC32Executable: string;
 begin
   Result := TPath.Combine(IDEDirectory, 'bin\dcc32.exe');
   if not TFile.Exists(Result) then
-    raise EFOpenError.CreateFmt('DCC32.exe wurde nicht unterhalb von %%BDS%% gefunden: %s', [Result]);
+    raise EDAIExecutableNotFound.CreateFmt('DCC32.exe wurde nicht unterhalb von %%BDS%% gefunden: %s', [Result]);
 end;
 
 class function TDAIProcess.ResolveMSBuildExecutable(const ARequestedFileName: string): string;
@@ -260,7 +260,7 @@ begin
     if not SameText(TPath.GetFileName(Result), 'MSBuild.exe') then
       raise EArgumentException.Create('Als ausführbare Datei ist ausschließlich MSBuild.exe erlaubt.');
     if not TFile.Exists(Result) then
-      raise EFOpenError.CreateFmt('MSBuild.exe nicht gefunden: %s', [Result]);
+      raise EDAIExecutableNotFound.CreateFmt('MSBuild.exe nicht gefunden: %s', [Result]);
     if not IsUnderKnownCompilerRoot(Result) then
       raise EInvalidOperation.Create('Die angegebene MSBuild.exe liegt außerhalb der bekannten Compilerverzeichnisse.');
     Exit;
@@ -283,7 +283,7 @@ begin
       Exit(TPath.GetFullPath(LCandidate));
   end;
 
-  raise EFOpenError.Create('MSBuild.exe konnte nicht ermittelt werden. Der Pfad kann dem MCP-Werkzeug explizit übergeben werden.');
+  raise EDAIExecutableNotFound.Create('MSBuild.exe konnte nicht ermittelt werden. Der Pfad kann dem MCP-Werkzeug explizit übergeben werden.');
 end;
 
 class function TDAIProcess.StartDetached( const AExecutable: string;

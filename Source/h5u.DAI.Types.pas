@@ -6,7 +6,11 @@ uses
   System.SysUtils;
 
 type
-  EDAIAccessDenied = class(Exception);
+  EDAIError = class(Exception);
+  EDAIAccessDenied = class(EDAIError);
+  EDAIFileNotFound = class(EDAIError);
+  EDAIFileAlreadyExists = class(EDAIError);
+  EDAIExecutableNotFound = class(EDAIFileNotFound);
 
   TDAIPermissionCategory = (
     pcReadAccess,

@@ -297,7 +297,7 @@ begin
 
   LExecutable := ResolveTargetExecutable(LProject);
   if not TFile.Exists(LExecutable) then
-    raise EFOpenError.CreateFmt('Die Projekt-Ausgabedatei wurde nicht gefunden: %s', [LExecutable]);
+    raise EDAIFileNotFound.CreateFmt('Die Projekt-Ausgabedatei wurde nicht gefunden: %s', [LExecutable]);
 
   LKey := LowerCase(TDAIOTA.NormalizeFileName(TDAIOTA.ProjectFileName(LProject)));
   TMonitor.Enter(GProcessLock);

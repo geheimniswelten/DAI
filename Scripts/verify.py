@@ -142,11 +142,15 @@ def check_referenced_units(errors: list[str]) -> None:
 
 def check_known_invalid_symbols(errors: list[str]) -> None:
     invalid_symbols = ("EFileExistsException", "EFileNotFoundException")
+    unsuitable_file_exception_types = ("EFCreateError", "EFOpenError")
     for path in SOURCE.glob("*.pas"):
         content = path.read_text(encoding="utf-8-sig")
         for symbol in invalid_symbols:
             if re.search(rf"\b{re.escape(symbol)}\b", content):
                 fail(errors, f"{path.name}: nicht vorhandener Delphi-Typ {symbol}")
+        for symbol in unsuitable_file_exception_types:
+            if re.search(rf"\b{re.escape(symbol)}\b", content):
+                fail(errors, f"{path.name}: {symbol} nicht verwenden; die von EFileStreamError deklarierte Create-Signatur verdeckt Exception.Create(string)")
 
 
 def check_dai_type_definitions(errors: list[str]) -> None:
@@ -167,7 +171,7 @@ def direct_used_units(content: str) -> set[str]:
 
 def check_required_uses(errors: list[str]) -> None:
     requirements = {
-        "System.Classes": ("EFCreateError", "EFOpenError", "EInvalidOperation", "TThread", "TStreamReader"),
+        "System.Classes": ("EInvalidOperation", "TThread", "TStreamReader"),
         "System.SysUtils": ("EArgumentException", "EArgumentOutOfRangeException", "EConvertError", "EDirectoryNotFoundException"),
         "Vcl.Dialogs": ("TTaskDialog", "TTaskDialogButtonItem", "TaskMessageDlg", "InputQuery"),
         "ToolsAPI": ("BorlandIDEServices", "IOTAModule", "IOTAProject", "INTAServices", "SplashScreenServices"),

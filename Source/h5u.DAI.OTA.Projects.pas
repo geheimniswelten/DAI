@@ -178,7 +178,7 @@ begin
 
   LFileName := ResolveUnitFileName(LProject, AFileName);
   if TFile.Exists(LFileName) then
-    raise EFCreateError.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
+    raise EDAIFileAlreadyExists.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
   if not TDAIOTA.IsPathWithin(LFileName, TPath.GetDirectoryName(TDAIOTA.ProjectFileName(LProject))) then
     raise EDAIAccessDenied.Create('Neue Form-Units müssen innerhalb des Projektverzeichnisses liegen.');
 
@@ -241,7 +241,7 @@ begin
   LFileName := TPath.Combine(LDirectory, LName + '.dpr');
 
   if TFile.Exists(LFileName) or TFile.Exists(ChangeFileExt(LFileName, '.dproj')) then
-    raise EFCreateError.CreateFmt('Das Projekt existiert bereits: %s', [LFileName]);
+    raise EDAIFileAlreadyExists.CreateFmt('Das Projekt existiert bereits: %s', [LFileName]);
 
   LOpenProjects := OpenProjectSummary;
   if LOpenProjects <> '' then
@@ -296,7 +296,7 @@ begin
 
   LFileName := ResolveUnitFileName(LProject, AFileName);
   if TFile.Exists(LFileName) then
-    raise EFCreateError.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
+    raise EDAIFileAlreadyExists.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
   if not TDAIOTA.IsPathWithin(LFileName, TPath.GetDirectoryName(TDAIOTA.ProjectFileName(LProject))) then
     raise EDAIAccessDenied.Create('Neue Units müssen innerhalb des Projektverzeichnisses liegen.');
 
@@ -324,7 +324,7 @@ var
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   if not TFile.Exists(LFileName) then
-    raise EFOpenError.CreateFmt('Datei nicht gefunden: %s', [LFileName]);
+    raise EDAIFileNotFound.CreateFmt('Datei nicht gefunden: %s', [LFileName]);
 
   LOpened := False;
   TDAIOTA.RunOnMainThread(
@@ -350,7 +350,7 @@ var
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   if not TFile.Exists(LFileName) then
-    raise EFOpenError.CreateFmt('Projektdatei nicht gefunden: %s', [LFileName]);
+    raise EDAIFileNotFound.CreateFmt('Projektdatei nicht gefunden: %s', [LFileName]);
 
   if Assigned(TDAIOTA.ProjectByNameOrPath(LFileName)) then
   begin
@@ -496,7 +496,7 @@ begin
     LDFMFileName := ChangeFileExt(LFileName, '.dfm');
 
   if not TFile.Exists(LDFMFileName) and not TDAIOTA.IsFormLoadedForFile(LFileName) then
-    raise EFOpenError.CreateFmt('DFM-Datei nicht gefunden: %s', [LDFMFileName]);
+    raise EDAIFileNotFound.CreateFmt('DFM-Datei nicht gefunden: %s', [LDFMFileName]);
 
   LOpened := False;
   TDAIOTA.RunOnMainThread(
