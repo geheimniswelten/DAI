@@ -108,6 +108,9 @@ begin
   GOptionsPage := nil;
 end;
 
+initialization
+  GOptionsPage := nil;
+
 finalization
   UnregisterDAIOptionsPage;
 

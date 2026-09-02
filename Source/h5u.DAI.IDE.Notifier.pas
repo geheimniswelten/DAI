@@ -8,10 +8,7 @@ uses
 type
   TDAIIDENotifier = class(TNotifierObject, IOTAIDENotifier)
   public
-    procedure FileNotification( NotifyCode: TOTAFileNotification;
-      const FileName: string;
-      var Cancel: Boolean
-    );
+    procedure FileNotification(NotifyCode: TOTAFileNotification; const FileName: string; var Cancel: Boolean);
     procedure BeforeCompile(const Project: IOTAProject; var Cancel: Boolean);
     procedure AfterCompile(Succeeded: Boolean);
   end;
@@ -34,10 +31,7 @@ procedure TDAIIDENotifier.BeforeCompile(const Project: IOTAProject; var Cancel: 
 begin
 end;
 
-procedure TDAIIDENotifier.FileNotification( NotifyCode: TOTAFileNotification;
-  const FileName: string;
-  var Cancel: Boolean
-);
+procedure TDAIIDENotifier.FileNotification(NotifyCode: TOTAFileNotification; const FileName: string; var Cancel: Boolean);
 var
   LExtension: string;
   LProjectFileName: string;

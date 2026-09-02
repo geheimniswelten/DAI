@@ -15,11 +15,8 @@ type
 
   TDAIPermissionDialog = class sealed
   public
-    class function Ask( const ACategory: TDAIPermissionCategory;
-      const AOperation: string;
-      const AResource: string;
-      const AContext: TDAIRequestContext
-    ): TDAIPermissionPromptResult; static;
+    class function Ask(const ACategory: TDAIPermissionCategory; const AOperation: string; const AResource: string; const AContext: TDAIRequestContext):
+      TDAIPermissionPromptResult; static;
   end;
 
 implementation
@@ -36,12 +33,7 @@ const
   mrDAISession = 1104;
   mrDAIAlways = 1105;
 
-procedure AddCommandButton( const ADialog: TTaskDialog;
-  const ACaption: string;
-  const AHint: string;
-  const AModalResult: TModalResult;
-  const ADefault: Boolean = False
-);
+procedure AddCommandButton(const ADialog: TTaskDialog; const ACaption: string; const AHint: string; const AModalResult: TModalResult; const ADefault: Boolean = False);
 var
   LButton: TTaskDialogButtonItem;
 begin
@@ -52,11 +44,7 @@ begin
   LButton.Default := ADefault;
 end;
 
-function BuildDialogText( const ACategory: TDAIPermissionCategory;
-  const AOperation: string;
-  const AResource: string;
-  const AContext: TDAIRequestContext
-): string;
+function BuildDialogText(const ACategory: TDAIPermissionCategory; const AOperation: string; const AResource: string; const AContext: TDAIRequestContext): string;
 var
   LContextText: string;
 begin
@@ -74,11 +62,8 @@ begin
   Result := Result + LContextText;
 end;
 
-class function TDAIPermissionDialog.Ask( const ACategory: TDAIPermissionCategory;
-  const AOperation: string;
-  const AResource: string;
-  const AContext: TDAIRequestContext
-): TDAIPermissionPromptResult;
+class function TDAIPermissionDialog.Ask(const ACategory: TDAIPermissionCategory; const AOperation: string; const AResource: string; const AContext: TDAIRequestContext):
+  TDAIPermissionPromptResult;
 var
   LDialog: TTaskDialog;
 begin

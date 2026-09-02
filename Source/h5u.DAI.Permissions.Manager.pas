@@ -15,48 +15,23 @@ type
     FOneShotAllows: TDictionary<string, Integer>;
     FOneShotDenials: TDictionary<string, Integer>;
     FSessionAllows: TDictionary<string, Boolean>;
-    function AccessKey( const ACategory: TDAIPermissionCategory;
-      const AContext: TDAIRequestContext
-    ): string;
-    function WildcardAccessKey( const ACategory: TDAIPermissionCategory;
-      const AContext: TDAIRequestContext
-    ): string;
+    function AccessKey(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): string;
+    function WildcardAccessKey(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): string;
     function GlobalWildcardAccessKey(const ACategory: TDAIPermissionCategory): string;
-    procedure ClearRuntimeCategoryUnlocked( const ACategory: TDAIPermissionCategory;
-      const AProjectKey: string
-    );
-    function ConsumeCounter( const ADictionary: TDictionary<string, Integer>;
-      const AKey: string
-    ): Boolean;
-    function EffectiveLevelUnlocked( const ACategory: TDAIPermissionCategory;
-      const AContext: TDAIRequestContext
-    ): TDAIPermissionLevel;
-    procedure ApplyDecisionUnlocked( const ACategory: TDAIPermissionCategory;
-      const ALevel: TDAIPermissionLevel;
-      const AContext: TDAIRequestContext;
-      const AForCurrentRequest: Boolean
-    );
-    procedure ApplyToLowerLevelsUnlocked( const ASourceCategory: TDAIPermissionCategory;
-      const ALevel: TDAIPermissionLevel;
-      const AContext: TDAIRequestContext
-    );
+    procedure ClearRuntimeCategoryUnlocked(const ACategory: TDAIPermissionCategory; const AProjectKey: string);
+    function ConsumeCounter(const ADictionary: TDictionary<string, Integer>; const AKey: string): Boolean;
+    function EffectiveLevelUnlocked(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): TDAIPermissionLevel;
+    procedure ApplyDecisionUnlocked(const ACategory: TDAIPermissionCategory; const ALevel: TDAIPermissionLevel; const AContext: TDAIRequestContext;
+      const AForCurrentRequest: Boolean);
+    procedure ApplyToLowerLevelsUnlocked(const ASourceCategory: TDAIPermissionCategory; const ALevel: TDAIPermissionLevel; const AContext: TDAIRequestContext);
   public
     constructor Create;
     destructor Destroy; override;
     class destructor Finalize;
     class function Instance: TDAIPermissionManager; static;
-    function Authorize( const ACategory: TDAIPermissionCategory;
-      const AOperation: string;
-      const AResource: string;
-      const AContext: TDAIRequestContext
-    ): Boolean;
-    function GetEffectiveLevel( const ACategory: TDAIPermissionCategory;
-      const AContext: TDAIRequestContext
-    ): TDAIPermissionLevel;
-    procedure SetLevelFromOptions( const ACategory: TDAIPermissionCategory;
-      const ALevel: TDAIPermissionLevel;
-      const AContext: TDAIRequestContext
-    );
+    function Authorize(const ACategory: TDAIPermissionCategory; const AOperation: string; const AResource: string; const AContext: TDAIRequestContext): Boolean;
+    function GetEffectiveLevel(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): TDAIPermissionLevel;
+    procedure SetLevelFromOptions(const ACategory: TDAIPermissionCategory; const ALevel: TDAIPermissionLevel; const AContext: TDAIRequestContext);
     procedure ClearProjectSession(const AProjectFileName: string);
     procedure ClearAllSessions;
   end;
@@ -102,16 +77,12 @@ begin
   FInstance := nil;
 end;
 
-function TDAIPermissionManager.AccessKey( const ACategory: TDAIPermissionCategory;
-  const AContext: TDAIRequestContext
-): string;
+function TDAIPermissionManager.AccessKey(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): string;
 begin
   Result := NormalizeKeyPart(AContext.ProjectKey) + '|' + NormalizeKeyPart(AContext.SessionIdentity) + '|' + DAIPermissionCategoryKey(ACategory);
 end;
 
-function TDAIPermissionManager.WildcardAccessKey( const ACategory: TDAIPermissionCategory;
-  const AContext: TDAIRequestContext
-): string;
+function TDAIPermissionManager.WildcardAccessKey(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): string;
 begin
   Result := NormalizeKeyPart(AContext.ProjectKey) + '|*|' + DAIPermissionCategoryKey(ACategory);
 end;
@@ -121,9 +92,7 @@ begin
   Result := '<none>|*|' + DAIPermissionCategoryKey(ACategory);
 end;
 
-procedure TDAIPermissionManager.ClearRuntimeCategoryUnlocked( const ACategory: TDAIPermissionCategory;
-  const AProjectKey: string
-);
+procedure TDAIPermissionManager.ClearRuntimeCategoryUnlocked(const ACategory: TDAIPermissionCategory; const AProjectKey: string);
 var
   LKey: string;
   LPrefix: string;
@@ -158,11 +127,8 @@ begin
   end;
 end;
 
-procedure TDAIPermissionManager.ApplyDecisionUnlocked( const ACategory: TDAIPermissionCategory;
-  const ALevel: TDAIPermissionLevel;
-  const AContext: TDAIRequestContext;
-  const AForCurrentRequest: Boolean
-);
+procedure TDAIPermissionManager.ApplyDecisionUnlocked(const ACategory: TDAIPermissionCategory; const ALevel: TDAIPermissionLevel; const AContext: TDAIRequestContext;
+  const AForCurrentRequest: Boolean);
 var
   LCount: Integer;
   LKey: string;
@@ -202,10 +168,7 @@ begin
   end;
 end;
 
-procedure TDAIPermissionManager.ApplyToLowerLevelsUnlocked( const ASourceCategory: TDAIPermissionCategory;
-  const ALevel: TDAIPermissionLevel;
-  const AContext: TDAIRequestContext
-);
+procedure TDAIPermissionManager.ApplyToLowerLevelsUnlocked(const ASourceCategory: TDAIPermissionCategory; const ALevel: TDAIPermissionLevel; const AContext: TDAIRequestContext);
 var
   LCategory: TDAIPermissionCategory;
   LCurrentLevel: TDAIPermissionLevel;
@@ -221,11 +184,7 @@ begin
   end;
 end;
 
-function TDAIPermissionManager.Authorize( const ACategory: TDAIPermissionCategory;
-  const AOperation: string;
-  const AResource: string;
-  const AContext: TDAIRequestContext
-): Boolean;
+function TDAIPermissionManager.Authorize(const ACategory: TDAIPermissionCategory; const AOperation: string; const AResource: string; const AContext: TDAIRequestContext): Boolean;
 var
   LDecision: TDAIPermissionPromptResult;
   LGlobalWildcardKey: string;
@@ -338,9 +297,7 @@ begin
   end;
 end;
 
-function TDAIPermissionManager.ConsumeCounter( const ADictionary: TDictionary<string, Integer>;
-  const AKey: string
-): Boolean;
+function TDAIPermissionManager.ConsumeCounter(const ADictionary: TDictionary<string, Integer>; const AKey: string): Boolean;
 var
   LCount: Integer;
 begin
@@ -354,9 +311,7 @@ begin
     ADictionary.AddOrSetValue(AKey, LCount - 1);
 end;
 
-function TDAIPermissionManager.EffectiveLevelUnlocked( const ACategory: TDAIPermissionCategory;
-  const AContext: TDAIRequestContext
-): TDAIPermissionLevel;
+function TDAIPermissionManager.EffectiveLevelUnlocked(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): TDAIPermissionLevel;
 var
   LGlobalWildcardKey: string;
   LKey: string;
@@ -375,9 +330,7 @@ begin
   Result := TDAIPermissionStore.GetLevel(ACategory, AContext.ProjectKey);
 end;
 
-function TDAIPermissionManager.GetEffectiveLevel( const ACategory: TDAIPermissionCategory;
-  const AContext: TDAIRequestContext
-): TDAIPermissionLevel;
+function TDAIPermissionManager.GetEffectiveLevel(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): TDAIPermissionLevel;
 begin
   TMonitor.Enter(FLock);
   try
@@ -394,10 +347,7 @@ begin
   Result := FInstance;
 end;
 
-procedure TDAIPermissionManager.SetLevelFromOptions( const ACategory: TDAIPermissionCategory;
-  const ALevel: TDAIPermissionLevel;
-  const AContext: TDAIRequestContext
-);
+procedure TDAIPermissionManager.SetLevelFromOptions(const ACategory: TDAIPermissionCategory; const ALevel: TDAIPermissionLevel; const AContext: TDAIRequestContext);
 begin
   TMonitor.Enter(FLock);
   try

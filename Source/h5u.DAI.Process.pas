@@ -8,17 +8,9 @@ uses
 type
   TDAIProcess = class sealed
   public
-    class function Execute( const AExecutable: string;
-      const AArguments: TArray<string>;
-      const AWorkingDirectory: string;
-      const ATimeoutMs: Cardinal
-    ): TDAIProcessResult; static;
-    class function StartDetached( const AExecutable: string;
-      const AArguments: TArray<string>;
-      const AWorkingDirectory: string;
-      out AProcessHandle: THandle;
-      out AProcessId: Cardinal
-    ): Boolean; static;
+    class function Execute(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TDAIProcessResult; static;
+    class function StartDetached(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; out AProcessHandle: THandle;
+      out AProcessId: Cardinal): Boolean; static;
     class function ResolveMSBuildExecutable(const ARequestedFileName: string): string; static;
     class function ResolveDCC32Executable: string; static;
   end;
@@ -123,11 +115,7 @@ begin
     Result := Result + sLineBreak + '[DAI: Ausgabe wurde gekürzt.]';
 end;
 
-class function TDAIProcess.Execute( const AExecutable: string;
-  const AArguments: TArray<string>;
-  const AWorkingDirectory: string;
-  const ATimeoutMs: Cardinal
-): TDAIProcessResult;
+class function TDAIProcess.Execute(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TDAIProcessResult;
 var
   LCommandLine: string;
   LExitCode: Cardinal;
@@ -286,12 +274,8 @@ begin
   raise EDAIExecutableNotFound.Create('MSBuild.exe konnte nicht ermittelt werden. Der Pfad kann dem MCP-Werkzeug explizit übergeben werden.');
 end;
 
-class function TDAIProcess.StartDetached( const AExecutable: string;
-  const AArguments: TArray<string>;
-  const AWorkingDirectory: string;
-  out AProcessHandle: THandle;
-  out AProcessId: Cardinal
-): Boolean;
+class function TDAIProcess.StartDetached(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; out AProcessHandle: THandle;
+  out AProcessId: Cardinal): Boolean;
 var
   LCommandLine: string;
   LProcessInformation: TProcessInformation;

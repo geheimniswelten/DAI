@@ -8,13 +8,8 @@ uses
 type
   TDAIPermissionStore = class sealed
   public
-    class function GetLevel( const ACategory: TDAIPermissionCategory;
-      const AProjectFileName: string
-    ): TDAIPermissionLevel; static;
-    class procedure SetLevel( const ACategory: TDAIPermissionCategory;
-      const AProjectFileName: string;
-      const ALevel: TDAIPermissionLevel
-    ); static;
+    class function GetLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string): TDAIPermissionLevel; static;
+    class procedure SetLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; const ALevel: TDAIPermissionLevel); static;
     class function ProjectSettingsFileName(const AProjectFileName: string): string; static;
   end;
 
@@ -47,9 +42,7 @@ begin
   end;
 end;
 
-function ReadProjectLevel( const ACategory: TDAIPermissionCategory;
-  const AProjectFileName: string
-): TDAIPermissionLevel;
+function ReadProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string): TDAIPermissionLevel;
 var
   LFileName: string;
   LJsonValue: TJSONValue;
@@ -114,10 +107,7 @@ begin
   end;
 end;
 
-procedure WriteProjectLevel( const ACategory: TDAIPermissionCategory;
-  const AProjectFileName: string;
-  const ALevel: TDAIPermissionLevel
-);
+procedure WriteProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; const ALevel: TDAIPermissionLevel);
 var
   LFileName: string;
   LJsonValue: TJSONValue;
@@ -154,9 +144,7 @@ begin
   end;
 end;
 
-class function TDAIPermissionStore.GetLevel( const ACategory: TDAIPermissionCategory;
-  const AProjectFileName: string
-): TDAIPermissionLevel;
+class function TDAIPermissionStore.GetLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string): TDAIPermissionLevel;
 begin
   if Trim(AProjectFileName) <> '' then
   begin
@@ -174,10 +162,7 @@ begin
   Result := ChangeFileExt(TPath.GetFullPath(AProjectFileName), '.dai.permissions.json');
 end;
 
-class procedure TDAIPermissionStore.SetLevel( const ACategory: TDAIPermissionCategory;
-  const AProjectFileName: string;
-  const ALevel: TDAIPermissionLevel
-);
+class procedure TDAIPermissionStore.SetLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; const ALevel: TDAIPermissionLevel);
 var
   LPersistedLevel: TDAIPermissionLevel;
 begin

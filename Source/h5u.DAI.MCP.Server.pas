@@ -11,10 +11,7 @@ type
   TDAIMCPServer = class sealed
   private
     FHTTPServer: TIdHTTPServer;
-    procedure HandleCommand( AContext: TIdContext;
-      ARequestInfo: TIdHTTPRequestInfo;
-      AResponseInfo: TIdHTTPResponseInfo
-    );
+    procedure HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
   public
     constructor Create;
     destructor Destroy; override;
@@ -126,10 +123,7 @@ begin
     Start;
 end;
 
-procedure TDAIMCPServer.HandleCommand( AContext: TIdContext;
-  ARequestInfo: TIdHTTPRequestInfo;
-  AResponseInfo: TIdHTTPResponseInfo
-);
+procedure TDAIMCPServer.HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
 var
   LHTTPStatus: Integer;
   LHealth: TJSONObject;

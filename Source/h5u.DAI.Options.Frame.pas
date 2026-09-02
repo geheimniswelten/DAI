@@ -28,19 +28,14 @@ type
     FUnregisterButton: TButton;
     FScrollBox: TScrollBox;
     procedure BuildControls;
-    procedure AddPermissionRow( const AParent: TWinControl;
-      const ACategory: TDAIPermissionCategory;
-      var ATop: Integer
-    );
+    procedure AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
     procedure PopulatePermissionCombo(const AComboBox: TComboBox);
     procedure ScopeChanged(Sender: TObject);
     procedure RegisterClicked(Sender: TObject);
     procedure UnregisterClicked(Sender: TObject);
     function SelectedPermissionScope: TDAIPermissionScope;
     function PermissionLevelFromCombo(const AComboBox: TComboBox): TDAIPermissionLevel;
-    procedure SetPermissionComboLevel( const AComboBox: TComboBox;
-      const ALevel: TDAIPermissionLevel
-    );
+    procedure SetPermissionComboLevel(const AComboBox: TComboBox; const ALevel: TDAIPermissionLevel);
     function PermissionContext: TDAIRequestContext;
   public
     constructor Create(AOwner: TComponent); override;
@@ -82,10 +77,7 @@ begin
   BuildControls;
 end;
 
-procedure TDAIOptionsFrame.AddPermissionRow( const AParent: TWinControl;
-  const ACategory: TDAIPermissionCategory;
-  var ATop: Integer
-);
+procedure TDAIOptionsFrame.AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
 var
   LComboBox: TComboBox;
 begin
@@ -349,9 +341,7 @@ begin
     Result := psGlobal;
 end;
 
-procedure TDAIOptionsFrame.SetPermissionComboLevel( const AComboBox: TComboBox;
-  const ALevel: TDAIPermissionLevel
-);
+procedure TDAIOptionsFrame.SetPermissionComboLevel(const AComboBox: TComboBox; const ALevel: TDAIPermissionLevel);
 begin
   case ALevel of
     plNever:

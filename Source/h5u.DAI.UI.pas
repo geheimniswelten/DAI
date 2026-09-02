@@ -8,18 +8,9 @@ uses
 type
   TDAIUIService = class sealed
   public
-    class function ShowMessage( const ATitle: string;
-      const AText: string;
-      const AKind: string
-    ): TJSONObject; static;
-    class function AskInput( const ATitle: string;
-      const APrompt: string;
-      const ADefaultValue: string
-    ): TJSONObject; static;
-    class function ShowBalloon( const ATitle: string;
-      const AText: string;
-      const ATimeoutMs: Integer
-    ): TJSONObject; static;
+    class function ShowMessage(const ATitle: string; const AText: string; const AKind: string): TJSONObject; static;
+    class function AskInput(const ATitle: string; const APrompt: string; const ADefaultValue: string): TJSONObject; static;
+    class function ShowBalloon(const ATitle: string; const AText: string; const ATimeoutMs: Integer): TJSONObject; static;
     class procedure Shutdown; static;
   end;
 
@@ -37,10 +28,7 @@ uses
 var
   GBalloonHint: TBalloonHint;
 
-class function TDAIUIService.AskInput( const ATitle: string;
-  const APrompt: string;
-  const ADefaultValue: string
-): TJSONObject;
+class function TDAIUIService.AskInput(const ATitle: string; const APrompt: string; const ADefaultValue: string): TJSONObject;
 var
   LAccepted: Boolean;
   LValue: string;
@@ -57,10 +45,7 @@ begin
   FreeAndNil(GBalloonHint);
 end;
 
-class function TDAIUIService.ShowBalloon( const ATitle: string;
-  const AText: string;
-  const ATimeoutMs: Integer
-): TJSONObject;
+class function TDAIUIService.ShowBalloon(const ATitle: string; const AText: string; const ATimeoutMs: Integer): TJSONObject;
 var
   LControl: TWinControl;
 begin
@@ -81,10 +66,7 @@ begin
   Result.AddPair('timeout_ms', TJSONNumber.Create(GBalloonHint.HideAfter));
 end;
 
-class function TDAIUIService.ShowMessage( const ATitle: string;
-  const AText: string;
-  const AKind: string
-): TJSONObject;
+class function TDAIUIService.ShowMessage(const ATitle: string; const AText: string; const AKind: string): TJSONObject;
 var
   LDialogType: TMsgDlgType;
   LModalResult: Integer;
@@ -103,6 +85,9 @@ begin
   Result.AddPair('shown', TJSONBool.Create(True));
   Result.AddPair('modal_result', TJSONNumber.Create(LModalResult));
 end;
+
+initialization
+  GBalloonHint := nil;
 
 finalization
   TDAIUIService.Shutdown;

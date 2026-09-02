@@ -11,21 +11,11 @@ type
     class function OpenFiles: TJSONArray; static;
     class function Projects: TJSONArray; static;
     class function ProjectFiles(const AProjectNameOrPath: string): TJSONArray; static;
-    class function DirectoryFiles( const ADirectory: string;
-      const ASearchPattern: string;
-      const ARecursive: Boolean;
-      const AMaximumCount: Integer
-    ): TJSONArray; static;
+    class function DirectoryFiles(const ADirectory: string; const ASearchPattern: string; const ARecursive: Boolean; const AMaximumCount: Integer): TJSONArray; static;
     class function ReferenceRoots: TJSONArray; static;
-    class function ReadFile( const AFileName: string;
-      const AMaximumCharacters: Integer
-    ): TJSONObject; static;
-    class function WriteFile( const AFileName: string;
-      const AContent: string;
-      const AExpectedSha256: string;
-      const ASave: Boolean;
-      out AUsedEditorBuffer: Boolean
-    ): TJSONObject; static;
+    class function ReadFile(const AFileName: string; const AMaximumCharacters: Integer): TJSONObject; static;
+    class function WriteFile(const AFileName: string; const AContent: string; const AExpectedSha256: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean):
+      TJSONObject; static;
   end;
 
 implementation
@@ -122,11 +112,7 @@ begin
   Result := TFile.ReadAllText(AFileName, TEncoding.UTF8);
 end;
 
-class function TDAIFileService.DirectoryFiles( const ADirectory: string;
-  const ASearchPattern: string;
-  const ARecursive: Boolean;
-  const AMaximumCount: Integer
-): TJSONArray;
+class function TDAIFileService.DirectoryFiles(const ADirectory: string; const ASearchPattern: string; const ARecursive: Boolean; const AMaximumCount: Integer): TJSONArray;
 var
   LCount: Integer;
   LDirectory: string;
@@ -318,12 +304,8 @@ begin
     );
 end;
 
-class function TDAIFileService.WriteFile( const AFileName: string;
-  const AContent: string;
-  const AExpectedSha256: string;
-  const ASave: Boolean;
-  out AUsedEditorBuffer: Boolean
-): TJSONObject;
+class function TDAIFileService.WriteFile(const AFileName: string; const AContent: string; const AExpectedSha256: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean):
+  TJSONObject;
 var
   LActionServices: IOTAActionServices;
   LCurrentContent: string;

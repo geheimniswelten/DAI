@@ -8,26 +8,12 @@ uses
 type
   TDAIBuildService = class sealed
   public
-    class function CompileProject( const AProjectNameOrPath: string;
-      const AFullBuild: Boolean;
-      const AClearMessages: Boolean
-    ): TJSONObject; static;
-    class function CompileProjectGroup( const AFullBuild: Boolean;
-      const AClearMessages: Boolean
-    ): TJSONObject; static;
-    class function RunProject( const AProjectNameOrPath: string;
-      const AWithDebugger: Boolean
-    ): TJSONObject; static;
+    class function CompileProject(const AProjectNameOrPath: string; const AFullBuild: Boolean; const AClearMessages: Boolean): TJSONObject; static;
+    class function CompileProjectGroup(const AFullBuild: Boolean; const AClearMessages: Boolean): TJSONObject; static;
+    class function RunProject(const AProjectNameOrPath: string; const AWithDebugger: Boolean): TJSONObject; static;
     class function StopProject(const AProjectNameOrPath: string; const AWithDebugger: Boolean): TJSONObject; static;
-    class function ExecuteMSBuild( const AExecutable: string;
-      const AArguments: TArray<string>;
-      const AWorkingDirectory: string;
-      const ATimeoutMs: Cardinal
-    ): TJSONObject; static;
-    class function ExecuteDCC32( const AArguments: TArray<string>;
-      const AWorkingDirectory: string;
-      const ATimeoutMs: Cardinal
-    ): TJSONObject; static;
+    class function ExecuteMSBuild(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TJSONObject; static;
+    class function ExecuteDCC32(const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TJSONObject; static;
     class procedure ClearProjectProcess(const AProjectFileName: string); static;
     class procedure Shutdown; static;
   end;
@@ -119,10 +105,7 @@ begin
     LGroup.ActiveProject := AProject;
 end;
 
-function CompileOneProject( const AProject: IOTAProject;
-  const AFullBuild: Boolean;
-  const AClearMessages: Boolean
-): Boolean;
+function CompileOneProject(const AProject: IOTAProject; const AFullBuild: Boolean; const AClearMessages: Boolean): Boolean;
 var
   LMode: TOTACompileMode;
 begin
@@ -156,10 +139,7 @@ begin
   end;
 end;
 
-class function TDAIBuildService.CompileProject( const AProjectNameOrPath: string;
-  const AFullBuild: Boolean;
-  const AClearMessages: Boolean
-): TJSONObject;
+class function TDAIBuildService.CompileProject(const AProjectNameOrPath: string; const AFullBuild: Boolean; const AClearMessages: Boolean): TJSONObject;
 var
   LProject: IOTAProject;
   LSucceeded: Boolean;
@@ -182,9 +162,7 @@ begin
   Result.AddPair('succeeded', TJSONBool.Create(LSucceeded));
 end;
 
-class function TDAIBuildService.CompileProjectGroup( const AFullBuild: Boolean;
-  const AClearMessages: Boolean
-): TJSONObject;
+class function TDAIBuildService.CompileProjectGroup(const AFullBuild: Boolean; const AClearMessages: Boolean): TJSONObject;
 var
   LAllSucceeded: Boolean;
   LClearMessages: Boolean;
@@ -227,10 +205,7 @@ begin
   end;
 end;
 
-class function TDAIBuildService.ExecuteDCC32( const AArguments: TArray<string>;
-  const AWorkingDirectory: string;
-  const ATimeoutMs: Cardinal
-): TJSONObject;
+class function TDAIBuildService.ExecuteDCC32(const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TJSONObject;
 var
   LExecutable: string;
   LResult: TDAIProcessResult;
@@ -240,11 +215,8 @@ begin
   Result := ProcessResultToJson(LResult, LExecutable);
 end;
 
-class function TDAIBuildService.ExecuteMSBuild( const AExecutable: string;
-  const AArguments: TArray<string>;
-  const AWorkingDirectory: string;
-  const ATimeoutMs: Cardinal
-): TJSONObject;
+class function TDAIBuildService.ExecuteMSBuild(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal):
+  TJSONObject;
 var
   LResolvedExecutable: string;
   LResult: TDAIProcessResult;
@@ -254,9 +226,7 @@ begin
   Result := ProcessResultToJson(LResult, LResolvedExecutable);
 end;
 
-class function TDAIBuildService.RunProject( const AProjectNameOrPath: string;
-  const AWithDebugger: Boolean
-): TJSONObject;
+class function TDAIBuildService.RunProject(const AProjectNameOrPath: string; const AWithDebugger: Boolean): TJSONObject;
 var
   LAction: TBasicAction;
   LExecutable: string;

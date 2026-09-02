@@ -8,28 +8,16 @@ uses
 type
   TDAIProjectService = class sealed
   public
-    class function CreateProject( const AName: string;
-      const ADirectory: string;
-      const AKind: string
-    ): TJSONObject; static;
+    class function CreateProject(const AName: string; const ADirectory: string; const AKind: string): TJSONObject; static;
     class function OpenProject(const AFileName: string): TJSONObject; static;
     class function SaveProject(const AProjectNameOrPath: string): TJSONObject; static;
     class function RemoveProject(const AProjectNameOrPath: string): TJSONObject; static;
-    class function CreateUnit( const AProjectNameOrPath: string;
-      const AFileName: string;
-      const ASource: string
-    ): TJSONObject; static;
-    class function CreateFormUnit( const AProjectNameOrPath: string;
-      const AFileName: string;
-      const AFormName: string;
-      const AAncestorName: string
-    ): TJSONObject; static;
+    class function CreateUnit(const AProjectNameOrPath: string; const AFileName: string; const ASource: string): TJSONObject; static;
+    class function CreateFormUnit(const AProjectNameOrPath: string; const AFileName: string; const AFormName: string; const AAncestorName: string): TJSONObject; static;
     class function OpenFile(const AFileName: string): TJSONObject; static;
     class function ActivateFile(const AFileName: string): TJSONObject; static;
     class function CloseFile(const AFileName: string): TJSONObject; static;
-    class function RemoveFileFromProject( const AProjectNameOrPath: string;
-      const AFileName: string
-    ): TJSONObject; static;
+    class function RemoveFileFromProject(const AProjectNameOrPath: string; const AFileName: string): TJSONObject; static;
     class function ShowFormAsText(const AFileName: string): TJSONObject; static;
   end;
 
@@ -160,11 +148,7 @@ begin
   Result.AddPair('closed', TJSONBool.Create(LClosed));
 end;
 
-class function TDAIProjectService.CreateFormUnit( const AProjectNameOrPath: string;
-  const AFileName: string;
-  const AFormName: string;
-  const AAncestorName: string
-): TJSONObject;
+class function TDAIProjectService.CreateFormUnit(const AProjectNameOrPath: string; const AFileName: string; const AFormName: string; const AAncestorName: string): TJSONObject;
 var
   LCreatedModule: IOTAModule;
   LFileName: string;
@@ -206,10 +190,7 @@ begin
   Result.AddPair('ancestor', LAncestorName);
 end;
 
-class function TDAIProjectService.CreateProject( const AName: string;
-  const ADirectory: string;
-  const AKind: string
-): TJSONObject;
+class function TDAIProjectService.CreateProject(const AName: string; const ADirectory: string; const AKind: string): TJSONObject;
 var
   LActiveProject: IOTAProject;
   LCreatedModule: IOTAModule;
@@ -280,10 +261,7 @@ begin
   Result.AddPair('created', TJSONBool.Create(Assigned(LCreatedModule)));
 end;
 
-class function TDAIProjectService.CreateUnit( const AProjectNameOrPath: string;
-  const AFileName: string;
-  const ASource: string
-): TJSONObject;
+class function TDAIProjectService.CreateUnit(const AProjectNameOrPath: string; const AFileName: string; const ASource: string): TJSONObject;
 var
   LCreatedModule: IOTAModule;
   LFileName: string;
@@ -395,9 +373,7 @@ begin
   Result.AddPair('already_open', TJSONBool.Create(False));
 end;
 
-class function TDAIProjectService.RemoveFileFromProject( const AProjectNameOrPath: string;
-  const AFileName: string
-): TJSONObject;
+class function TDAIProjectService.RemoveFileFromProject(const AProjectNameOrPath: string; const AFileName: string): TJSONObject;
 var
   LFileName: string;
   LProject: IOTAProject;

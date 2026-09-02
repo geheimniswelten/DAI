@@ -10,10 +10,7 @@ type
   TDAIMCPTools = class sealed
   public
     class function ListTools: TJSONArray; static;
-    class function CallTool( const AName: string;
-      const AArguments: TJSONObject;
-      const AContext: TDAIRequestContext
-    ): TJSONObject; static;
+    class function CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject; static;
   end;
 
 implementation
@@ -47,12 +44,7 @@ begin
   Result := TJSONObject(LValue);
 end;
 
-procedure AddTool( const ATools: TJSONArray;
-  const AName: string;
-  const ADescription: string;
-  const ASchema: string;
-  const AReadOnly: Boolean
-);
+procedure AddTool(const ATools: TJSONArray; const AName: string; const ADescription: string; const ASchema: string; const AReadOnly: Boolean);
 var
   LAnnotations: TJSONObject;
   LTool: TJSONObject;
@@ -125,11 +117,7 @@ begin
     Result[LIndex] := LArray.Items[LIndex].Value;
 end;
 
-procedure RequirePermission( const ACategory: TDAIPermissionCategory;
-  const AOperation: string;
-  const AResource: string;
-  const AContext: TDAIRequestContext
-);
+procedure RequirePermission(const ACategory: TDAIPermissionCategory; const AOperation: string; const AResource: string; const AContext: TDAIRequestContext);
 begin
   if not TDAIPermissionManager.Instance.Authorize(ACategory, AOperation, AResource, AContext) then
     raise EAbort.Create('Die Operation wurde durch die DAI-Berechtigungsrichtlinie verweigert.');
@@ -158,10 +146,7 @@ begin
   Result.AddPair('permissions', LPermissions);
 end;
 
-class function TDAIMCPTools.CallTool( const AName: string;
-  const AArguments: TJSONObject;
-  const AContext: TDAIRequestContext
-): TJSONObject;
+class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
 var
   LBuildFirst: Boolean;
   LCompileResult: TJSONObject;
@@ -555,7 +540,8 @@ begin
     '"maximum_count":{"type":"integer","minimum":1,"maximum":50000}},"required":["directory"],"additionalProperties":false}',
     True
   );
-  AddTool(Result, 'reference_roots_list', 'Listet schreibgeschützte Delphi-, Demo-, GetIt- und zusätzliche Referenzpfade.', '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'reference_roots_list', 'Listet schreibgeschützte Delphi-, Demo-, GetIt- und zusätzliche Referenzpfade.',
+    '{"type":"object","additionalProperties":false}', True);
   AddTool(
     Result,
     'reference_files_list',

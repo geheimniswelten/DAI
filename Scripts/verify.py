@@ -59,6 +59,94 @@ def check_line_lengths(errors: list[str]) -> None:
                 fail(errors, f"{path.relative_to(ROOT)}:{number}: {len(line)} Zeichen")
 
 
+ROUTINE_HEADER_START = re.compile(
+    r"^(\s*)(?:(?:class)\s+)?(?:function|procedure|constructor|destructor)\s+([A-Za-z_][A-Za-z0-9_.]*)\b",
+    re.IGNORECASE,
+)
+
+
+def find_routine_header_end(lines: list[str], start: int) -> int | None:
+    parenthesis_depth = 0
+    in_string = False
+    for line_index in range(start, len(lines)):
+        line = lines[line_index]
+        character_index = 0
+        while character_index < len(line):
+            character = line[character_index]
+            if character == "'":
+                if in_string and character_index + 1 < len(line) and line[character_index + 1] == "'":
+                    character_index += 2
+                    continue
+                in_string = not in_string
+            elif not in_string:
+                if character == "(":
+                    parenthesis_depth += 1
+                elif character == ")":
+                    parenthesis_depth -= 1
+                elif character == ";" and parenthesis_depth == 0:
+                    return line_index
+            character_index += 1
+    return None
+
+
+def normalized_declaration(lines: list[str]) -> str:
+    indent_match = re.match(r"^(\s*)", lines[0])
+    indent = indent_match.group(1) if indent_match else ""
+    declaration = " ".join(line.strip() for line in lines)
+    declaration = re.sub(r"\s+", " ", declaration).strip()
+    declaration = re.sub(r"\(\s+", "(", declaration)
+    declaration = re.sub(r"\s+\)", ")", declaration)
+    declaration = re.sub(r"\s+;", ";", declaration)
+    declaration = re.sub(r"\s+,", ",", declaration)
+    declaration = re.sub(r"\s+:", ":", declaration)
+    return indent + declaration
+
+
+def check_declaration_layout(errors: list[str]) -> None:
+    for path in sorted(SOURCE.glob("*.pas")):
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+        line_index = 0
+        while line_index < len(lines):
+            routine_match = ROUTINE_HEADER_START.match(lines[line_index])
+            if routine_match and routine_match.group(2).lower() not in {"begin", "var"}:
+                end_index = find_routine_header_end(lines, line_index)
+                if end_index is not None:
+                    declaration_lines = lines[line_index:end_index + 1]
+                    if end_index > line_index and len(normalized_declaration(declaration_lines)) <= MAX_LINE_LENGTH:
+                        fail(
+                            errors,
+                            f"{path.name}:{line_index + 1}: Methodensignatur wird vor {MAX_LINE_LENGTH} Zeichen unnötig umgebrochen",
+                        )
+                    line_index = end_index + 1
+                    continue
+
+            if re.match(r"^\s*property\b", lines[line_index], re.IGNORECASE):
+                end_index = line_index
+                while end_index < len(lines) and ";" not in lines[end_index]:
+                    end_index += 1
+                if end_index < len(lines) and end_index > line_index:
+                    declaration_lines = lines[line_index:end_index + 1]
+                    if len(normalized_declaration(declaration_lines)) <= MAX_LINE_LENGTH:
+                        fail(
+                            errors,
+                            f"{path.name}:{line_index + 1}: Property-Deklaration wird vor {MAX_LINE_LENGTH} Zeichen unnötig umgebrochen",
+                        )
+                line_index = end_index + 1
+                continue
+
+            line_index += 1
+
+
+def check_initialization_finalization(errors: list[str]) -> None:
+    for path in sorted(SOURCE.glob("*.pas")):
+        content = path.read_text(encoding="utf-8-sig")
+        stripped, _ = strip_pascal_strings_and_comments(content)
+        initialization_match = re.search(r"(?im)^\s*initialization\b", stripped)
+        finalization_match = re.search(r"(?im)^\s*finalization\b", stripped)
+        if finalization_match and (not initialization_match or initialization_match.start() > finalization_match.start()):
+            fail(errors, f"{path.name}: finalization erfordert einen vorherigen initialization-Abschnitt")
+
+
 def check_unit_names(errors: list[str]) -> None:
     for path in sorted(SOURCE.glob("*.pas")):
         if not path.name.startswith("h5u."):
@@ -335,6 +423,8 @@ def write_manifest() -> None:
 def main() -> int:
     errors: list[str] = []
     check_line_lengths(errors)
+    check_declaration_layout(errors)
+    check_initialization_finalization(errors)
     check_unit_names(errors)
     check_package_references(errors)
     check_dproj(errors)

@@ -51,6 +51,8 @@ begin
   TDAIUIService.Shutdown;
 end;
 
+initialization
+
 finalization
   TDAIRuntime.Stop;
 

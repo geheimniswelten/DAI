@@ -1,51 +1,29 @@
-# DAI 1.1.2 – Prüfbericht
+# DAI 1.1.3 – Prüfbericht
 
-Prüfdatum: 2. September 2026
+## Änderungen
 
-## Ergebnis
+- Sämtliche Pascal-Units wurden mit einer maximalen Zeilenlänge von 180 Zeichen geprüft.
+- Methodensignaturen und Property-Deklarationen bleiben in einer Zeile, solange die vollständige Zeile einschließlich Einrückung höchstens 180 Zeichen enthält.
+- Längere Funktionssignaturen werden möglichst spät umgebrochen. Wenn möglich, bleibt die vollständige Parameterliste in der ersten Zeile und der Rückgabetyp folgt in der nächsten Zeile.
+- In `h5u.DAI.UI.pas` wurde vor dem `finalization`-Abschnitt ein `initialization`-Abschnitt ergänzt.
+- Dieselbe fehlerhafte Abschnittsfolge wurde zusätzlich in `h5u.DAI.Options.Page.pas` und `h5u.DAI.Runtime.pas` korrigiert.
+- `Scripts/verify.py` erkennt nun `finalization` ohne vorheriges `initialization` sowie unnötig früh umgebrochene Methoden- und Property-Deklarationen.
 
-Der Quellstand besteht die verfügbaren statischen Prüfungen.
+## Statische Prüfungen
 
-```text
-DAI-Prüfung erfolgreich: 24 Pascal-Units, 34 MCP-Werkzeuge.
-```
+- 24 Pascal-Units vorhanden
+- 34 MCP-Werkzeuge deklariert
+- maximale Zeilenlänge in Pascal-Dateien und `DAI.dpk`: 180 Zeichen
+- tatsächlich längste Pascal-Zeile: 179 Zeichen
+- keine Methodensignatur wird umgebrochen, wenn sie vollständig in höchstens 180 Zeichen passt
+- keine mehrzeilige Property-Deklaration, die in höchstens 180 Zeichen passen würde
+- jeder `finalization`-Abschnitt besitzt einen vorherigen `initialization`-Abschnitt
+- DPK- und DPROJ-Referenzen vollständig
+- DPROJ-XML syntaktisch gültig
+- bekannte ungültige beziehungsweise ungeeignete Dateiausnahmen nicht vorhanden
+- Klammern, Zeichenketten und Kommentare statisch geprüft
+- `Scripts/verify.py` mit `py_compile` geprüft
 
-## Korrektur der Dateiausnahmen
+## Abgrenzung
 
-`EFOpenError` und `EFCreateError` stammen von `EFileStreamError`. Diese Klasse deklariert ausschließlich folgenden Konstruktor neu:
-
-```pascal
-constructor Create(ResStringRec: PResStringRec; const FileName: string);
-```
-
-Da bei dieser Deklaration `overload` fehlt, wird insbesondere `Exception.Create(const Msg: string)` für Aufrufe über `EFOpenError` und `EFCreateError` verdeckt. Der Aufruf `EFOpenError.Create('…')` führt deshalb zum Fehler E2010.
-
-DAI verwendet nun eigene Ausnahmen ohne eigene Konstruktordeklaration:
-
-```pascal
-EDAIError = class(Exception);
-EDAIFileNotFound = class(EDAIError);
-EDAIFileAlreadyExists = class(EDAIError);
-EDAIExecutableNotFound = class(EDAIFileNotFound);
-```
-
-Damit sind sowohl `Create(string)` als auch `CreateFmt(string, array of const)` unverändert von `Exception` verfügbar.
-
-## Geänderte Stellen
-
-- Auflösung von `MSBuild.exe` und `dcc32.exe`: `EDAIExecutableNotFound`
-- fehlende Projekt-, Unit-, DFM- und Ausgabedateien: `EDAIFileNotFound`
-- bereits vorhandene Projekt- oder Unit-Dateien: `EDAIFileAlreadyExists`
-- Statischer Prüfer verbietet `EFileNotFoundException`, `EFileExistsException`, `EFOpenError` und `EFCreateError` im DAI-Quellcode.
-
-## Weitere enthaltene Korrekturen
-
-- `h5u.DAI.OTA.Creators.pas` ist vorhanden und in DPK/DPROJ eingetragen.
-- `TDAIModuleCreator`, `TDAIProjectCreator`, `TDAIProjectKind`, `pkConsole` und `pkVCL` sind deklariert.
-- Maximale Zeilenlänge: 180 Zeichen in Pascal-Dateien und DPK.
-- Alle 34 vorgesehenen MCP-Werkzeuge sind statisch registriert.
-- DPROJ-XML, DPK-/DPROJ-Unitreferenzen und SHA-256-Manifest werden geprüft.
-
-## Einschränkung
-
-In der Ausführungsumgebung ist keine Delphi-13-Toolchain mit `dcc32.exe`, `designide.dcp` und der Delphi-13-Version von `ToolsAPI.pas` installiert. Deshalb konnte kein echter Delphi-Binärbuild durchgeführt werden. Der endgültige Nachweis erfolgt durch den lokalen Build in Delphi 13.
+Ein echter Delphi-13-Build konnte in dieser Umgebung nicht ausgeführt werden, weil keine Delphi-13-Toolchain mit `dcc32.exe`, `designide.dcp` und der installierten `ToolsAPI.pas` verfügbar ist. Die statischen Prüfungen ersetzen deshalb nicht den abschließenden lokalen Build in RAD Studio 13.

@@ -14,8 +14,8 @@ type
   TDAIModuleCreator = class sealed
   public
     class function CreateUnit(const AProject: IOTAProject; const AFileName: string; const ASource: string): IOTACreator; static;
-    class function CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string;
-      const AMainForm: Boolean): IOTACreator; static;
+    class function CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string; const AMainForm: Boolean):
+      IOTACreator; static;
   end;
 
   TDAIProjectCreator = class(TInterfacedObject, IOTACreator, IOTAProjectCreator, IOTAProjectCreator50, IOTAProjectCreator80, IOTAProjectCreator160,
@@ -96,8 +96,7 @@ type
     function BuildFormResource(const AFormIdent: string): string;
   public
     constructor CreateUnit(const AProject: IOTAProject; const AFileName: string; const ASource: string);
-    constructor CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string;
-      const AMainForm: Boolean);
+    constructor CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string; const AMainForm: Boolean);
 
     function GetCreatorType: string;
     function GetExisting: Boolean;
@@ -163,8 +162,8 @@ end;
 
 { TDAIModuleCreator }
 
-class function TDAIModuleCreator.CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string;
-  const AMainForm: Boolean): IOTACreator;
+class function TDAIModuleCreator.CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string; const AMainForm: Boolean):
+  IOTACreator;
 begin
   Result := TDAIModuleCreatorImpl.CreateForm(AProject, AFileName, AFormName, AAncestorName, AMainForm);
 end;
@@ -176,8 +175,7 @@ end;
 
 { TDAIModuleCreatorImpl }
 
-constructor TDAIModuleCreatorImpl.CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string;
-  const AMainForm: Boolean);
+constructor TDAIModuleCreatorImpl.CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string; const AMainForm: Boolean);
 begin
   inherited Create;
   FAncestorName := NormalizeIdentifier(AAncestorName, 'TForm');

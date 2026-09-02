@@ -8,10 +8,7 @@ uses
 type
   TDAIMCPProtocol = class sealed
   public
-    class function HandleMessage( const AMessage: TJSONObject;
-      const ATransportSessionId: string;
-      out AHTTPStatus: Integer
-    ): TJSONObject; static;
+    class function HandleMessage(const AMessage: TJSONObject; const ATransportSessionId: string; out AHTTPStatus: Integer): TJSONObject; static;
   end;
 
 implementation
@@ -38,11 +35,7 @@ begin
   Result.AddPair('result', AResult);
 end;
 
-function JsonRpcError( const AId: TJSONValue;
-  const ACode: Integer;
-  const AMessage: string;
-  const AData: string = ''
-): TJSONObject;
+function JsonRpcError(const AId: TJSONValue; const ACode: Integer; const AMessage: string; const AData: string = ''): TJSONObject;
 var
   LError: TJSONObject;
 begin
@@ -121,10 +114,7 @@ begin
     Result := SameText(LMeta.GetValue<string>('io.modelcontextprotocol/protocolVersion', ''), '2026-07-28');
 end;
 
-function ExtractRequestContext( const AParams: TJSONObject;
-  const AArguments: TJSONObject;
-  const ATransportSessionId: string
-): TDAIRequestContext;
+function ExtractRequestContext(const AParams: TJSONObject; const AArguments: TJSONObject; const ATransportSessionId: string): TDAIRequestContext;
 var
   LMeta: TJSONObject;
 begin
@@ -204,10 +194,7 @@ begin
   Result.AddPair('instructions', 'DAI unterstützt die moderne MCP-Erkennung sowie den klassischen initialize-Ablauf.');
 end;
 
-class function TDAIMCPProtocol.HandleMessage( const AMessage: TJSONObject;
-  const ATransportSessionId: string;
-  out AHTTPStatus: Integer
-): TJSONObject;
+class function TDAIMCPProtocol.HandleMessage(const AMessage: TJSONObject; const ATransportSessionId: string; out AHTTPStatus: Integer): TJSONObject;
 var
   LArguments: TJSONObject;
   LContext: TDAIRequestContext;
