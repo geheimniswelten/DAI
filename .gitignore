@@ -1,0 +1,11 @@
+Build/
+__history/
+*.dcu
+*.dcp
+*.bpl
+*.map
+*.rsm
+*.tds
+*.local
+*.identcache
+*.stat

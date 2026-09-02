@@ -1,0 +1,58 @@
+package CodexMCPIDE;
+
+{$R *.res}
+{$ALIGN 8}
+{$ASSERTIONS ON}
+{$BOOLEVAL OFF}
+{$DEBUGINFO ON}
+{$EXTENDEDSYNTAX ON}
+{$IMPORTEDDATA ON}
+{$IOCHECKS ON}
+{$LOCALSYMBOLS ON}
+{$LONGSTRINGS ON}
+{$OPENSTRINGS ON}
+{$OPTIMIZATION ON}
+{$OVERFLOWCHECKS OFF}
+{$RANGECHECKS OFF}
+{$REFERENCEINFO ON}
+{$SAFEDIVIDE OFF}
+{$STACKFRAMES OFF}
+{$TYPEDADDRESS OFF}
+{$VARSTRINGCHECKS ON}
+{$WRITEABLECONST OFF}
+{$MINENUMSIZE 1}
+{$IMAGEBASE $400000}
+{$DESCRIPTION 'Codex MCP server integration for the Delphi 13 IDE'}
+{$DESIGNONLY}
+{$IMPLICITBUILD OFF}
+
+requires
+  rtl,
+  vcl,
+  designide,
+  IndySystem,
+  IndyCore,
+  IndyProtocols;
+
+contains
+  CodexMCP.Constants in 'Source\CodexMCP.Constants.pas',
+  CodexMCP.Settings in 'Source\CodexMCP.Settings.pas',
+  CodexMCP.Logger in 'Source\CodexMCP.Logger.pas',
+  CodexMCP.Json in 'Source\CodexMCP.Json.pas',
+  CodexMCP.TextFiles in 'Source\CodexMCP.TextFiles.pas',
+  CodexMCP.CodexRegistration in 'Source\CodexMCP.CodexRegistration.pas',
+  CodexMCP.Threading in 'Source\CodexMCP.Threading.pas',
+  CodexMCP.OTA.Common in 'Source\CodexMCP.OTA.Common.pas',
+  CodexMCP.OTA.Creators in 'Source\CodexMCP.OTA.Creators.pas',
+  CodexMCP.OTA.Runtime in 'Source\CodexMCP.OTA.Runtime.pas',
+  CodexMCP.OTA.UserInteraction in 'Source\CodexMCP.OTA.UserInteraction.pas',
+  CodexMCP.OTA.Dispatcher in 'Source\CodexMCP.OTA.Dispatcher.pas',
+  CodexMCP.Protocol in 'Source\CodexMCP.Protocol.pas',
+  CodexMCP.Server in 'Source\CodexMCP.Server.pas',
+  CodexMCP.Host in 'Source\CodexMCP.Host.pas',
+  CodexMCP.Options.Frame in 'Source\CodexMCP.Options.Frame.pas',
+  CodexMCP.Options.Page in 'Source\CodexMCP.Options.Page.pas',
+  CodexMCP.Wizard in 'Source\CodexMCP.Wizard.pas',
+  CodexMCP.Register in 'Source\CodexMCP.Register.pas';
+
+end.
