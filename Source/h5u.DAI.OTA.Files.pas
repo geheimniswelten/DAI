@@ -352,9 +352,9 @@ begin
   if Assigned(LSourceEditor) then
   begin
     if LHasCurrentContent then
-      LWrittenContent := TDAITextEncoding.ApplyLineEnding(AContent, LCurrentFormat.LineEndingKind)
+      LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, LCurrentFormat.LineEndingKind)
     else
-      LWrittenContent := AContent;
+      LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, lekNone);
     if TEncoding.UTF8.GetByteCount(LWrittenContent) > CDAIMaxTextFileBytes then
       raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
 

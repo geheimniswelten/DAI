@@ -78,6 +78,21 @@ def check_pascal_encodings(errors: list[str]) -> None:
             fail(errors, f"{path.relative_to(ROOT)}: ungültiges UTF-8 mit BOM: {exc}")
 
 
+def check_source_whitespace_and_line_endings(errors: list[str]) -> None:
+    for path in sorted([*SOURCE.glob("*.pas"), ROOT / "DAI.dpk"]):
+        data = path.read_bytes()
+        body = data[3:] if data.startswith(b"\xef\xbb\xbf") else data
+        for number, line in enumerate(read_project_text(path).splitlines(), start=1):
+            if "\t" in line:
+                fail(errors, f"{path.relative_to(ROOT)}:{number}: Tabulatoren sind in Pascal-Sourcen nicht erlaubt; zwei Leerzeichen verwenden")
+
+        crlf_count = body.count(b"\r\n")
+        lf_count = body.count(b"\n") - crlf_count
+        cr_count = body.count(b"\r") - crlf_count
+        if cr_count > 0 or (crlf_count > 0 and lf_count > 0):
+            fail(errors, f"{path.relative_to(ROOT)}: gemischte oder alleinstehende CR-Zeilenenden sind nicht erlaubt")
+
+
 def check_line_lengths(errors: list[str]) -> None:
     for path in sorted([*SOURCE.glob("*.pas"), ROOT / "DAI.dpk"]):
         for number, line in enumerate(read_project_text(path).splitlines(), start=1):
@@ -338,6 +353,8 @@ def check_encoding_policy(errors: list[str]) -> None:
         "tekUTF8BOM",
         "CanEncodeWithSystemANSI",
         "NormalizeLineEndings",
+        "PrepareText",
+        "ResolveLineEndingKind",
         "IsDelphiTextFile",
         "UsesUTF8BOMByDefault",
     ):
@@ -353,6 +370,13 @@ def check_encoding_policy(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.Text.Encoding.pas: UTF-8 mit BOM muss der Standard für neue PAS-Dateien sein")
     elif "'.dfm'" in default_match.group(1).lower():
         fail(errors, "h5u.DAI.Text.Encoding.pas: Die PAS-Standardcodierung darf nicht auf DFM-Dateien angewendet werden")
+
+    if not re.search(r"StringReplace\s*\(\s*Result\s*,\s*#9\s*,\s*'  '\s*,", encoding_content, flags=re.IGNORECASE):
+        fail(errors, "h5u.DAI.Text.Encoding.pas: Pascal-Tabulatoren müssen beim Schreiben durch zwei Leerzeichen ersetzt werden")
+    if not re.search(r"lekCR\s*,\s*lekMixed\s*:\s*Result\s*:=\s*lekCRLF", encoding_content, flags=re.IGNORECASE | re.DOTALL):
+        fail(errors, "h5u.DAI.Text.Encoding.pas: gemischte Zeilenenden benötigen einen eindeutigen CRLF-Fallback")
+    if "TDAITextEncoding.PrepareText(LFileName, AContent" not in files_content:
+        fail(errors, "h5u.DAI.OTA.Files.pas: Editor-Schreibzugriffe müssen Zeilenenden und Source-Tabs normalisieren")
 
 
 def check_duplicate_implementations(errors: list[str]) -> None:
@@ -484,6 +508,7 @@ def write_manifest() -> None:
 def main() -> int:
     errors: list[str] = []
     check_pascal_encodings(errors)
+    check_source_whitespace_and_line_endings(errors)
     check_line_lengths(errors)
     check_declaration_layout(errors)
     check_initialization_finalization(errors)

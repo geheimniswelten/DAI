@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 1.1.6
+
+- vorhandenes einheitliches CRLF beziehungsweise LF wird beim Schreiben beibehalten; eine pauschale Konvertierung des Projektbestands findet nicht statt
+- gemischte Zeilenenden und alleinstehendes CR werden auf das vorhandene Format normalisiert; ohne eindeutige Vorgabe dient CRLF als Windows-/Delphi-Fallback
+- tatsächliche Tabulatorzeichen werden in Pascal-Sourcen (`.pas`, `.dpr`, `.dpk`, `.inc`) beim Schreiben durch zwei Leerzeichen ersetzt
+- die statische Prüfung weist gemischte Zeilenenden, alleinstehendes CR und Tabulatoren in den ausgelieferten Pascal-Sourcen zurück
+
 ## 1.1.5
 
 - PAS-Dateien des DAI-Pakets werden als UTF-8 mit BOM ausgeliefert; bestehende Zeilenenden werden dabei nicht verändert

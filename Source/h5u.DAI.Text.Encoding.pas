@@ -46,6 +46,7 @@ type
     class function IsValidUTF8(const ABytes: TBytes): Boolean; static;
     class function NormalizeLineEndings(const AText: string; const ALineEndingKind: TDAILineEndingKind): string; static;
     class function PreferredUnicodeEncoding(const AFileName: string): TDAITextEncodingKind; static;
+    class function ResolveLineEndingKind(const AText: string; const APreferredLineEndingKind: TDAILineEndingKind): TDAILineEndingKind; static;
     class function UsesUTF8BOMByDefault(const AFileName: string): Boolean; static;
     class function WithPreamble(const ATextBytes: TBytes; const APreamble: TBytes): TBytes; static;
     class procedure InspectFile(const AFileName: string; out AFormat: TDAITextFileFormat); static;
@@ -54,6 +55,7 @@ type
     class function DetectLineEnding(const AText: string): TDAILineEndingKind; static;
     class function EncodingName(const AEncodingKind: TDAITextEncodingKind): string; static;
     class function LineEndingName(const ALineEndingKind: TDAILineEndingKind): string; static;
+    class function PrepareText(const AFileName, AText: string; const APreferredLineEndingKind: TDAILineEndingKind): string; static;
     class function PrepareWrite(const AFileName: string; const AText: string; out AWrittenText: string; out AFormat: TDAITextFileFormat): TBytes; static;
     class function ReadFile(const AFileName: string; out AFormat: TDAITextFileFormat): string; static;
   end;
@@ -65,7 +67,7 @@ uses
 
 class function TDAITextEncoding.ApplyLineEnding(const AText: string; const ALineEndingKind: TDAILineEndingKind): string;
 begin
-  Result := NormalizeLineEndings(AText, ALineEndingKind);
+  Result := NormalizeLineEndings(AText, ResolveLineEndingKind(AText, ALineEndingKind));
 end;
 
 class function TDAITextEncoding.ByteIsContinuation(const AValue: Byte): Boolean;
@@ -338,16 +340,14 @@ end;
 
 class function TDAITextEncoding.NormalizeLineEndings(const AText: string; const ALineEndingKind: TDAILineEndingKind): string;
 begin
-  if ALineEndingKind in [lekNone, lekMixed] then
+  if ALineEndingKind = lekNone then
     Exit(AText);
 
   Result := StringReplace(AText, #13#10, #10, [rfReplaceAll]);
   Result := StringReplace(Result, #13, #10, [rfReplaceAll]);
   case ALineEndingKind of
-    lekCRLF:
+    lekCRLF, lekCR, lekMixed:
       Result := StringReplace(Result, #10, #13#10, [rfReplaceAll]);
-    lekCR:
-      Result := StringReplace(Result, #10, #13, [rfReplaceAll]);
   end;
 end;
 
@@ -359,23 +359,33 @@ begin
     Result := tekUTF8;
 end;
 
+class function TDAITextEncoding.PrepareText(const AFileName, AText: string; const APreferredLineEndingKind: TDAILineEndingKind): string;
+begin
+  Result := ApplyLineEnding(AText, APreferredLineEndingKind);
+  if IsPascalSourceFile(AFileName) then
+    Result := StringReplace(Result, #9, '  ', [rfReplaceAll]);
+end;
+
 class function TDAITextEncoding.PrepareWrite(const AFileName: string; const AText: string; out AWrittenText: string; out AFormat: TDAITextFileFormat): TBytes;
 var
   LExistingFormat: TDAITextFileFormat;
 begin
-  AWrittenText := AText;
   if TFile.Exists(AFileName) then
   begin
     InspectFile(AFileName, LExistingFormat);
-    AWrittenText := NormalizeLineEndings(AText, LExistingFormat.LineEndingKind);
+    AWrittenText := PrepareText(AFileName, AText, LExistingFormat.LineEndingKind);
     AFormat.EncodingKind := LExistingFormat.EncodingKind;
     if (AFormat.EncodingKind = tekANSI) and not CanEncodeWithSystemANSI(AWrittenText) then
       AFormat.EncodingKind := PreferredUnicodeEncoding(AFileName);
   end
-  else if UsesUTF8BOMByDefault(AFileName) then
-    AFormat.EncodingKind := tekUTF8BOM
   else
-    AFormat.EncodingKind := tekUTF8;
+  begin
+    AWrittenText := PrepareText(AFileName, AText, lekNone);
+    if UsesUTF8BOMByDefault(AFileName) then
+      AFormat.EncodingKind := tekUTF8BOM
+    else
+      AFormat.EncodingKind := tekUTF8;
+  end;
 
   AFormat.LineEndingKind := DetectLineEnding(AWrittenText);
   Result := EncodeBytes(AWrittenText, AFormat.EncodingKind);
@@ -389,6 +399,24 @@ begin
   AFormat.EncodingKind := DetectEncoding(AFileName, LBytes);
   Result := DecodeBytes(LBytes, AFormat.EncodingKind);
   AFormat.LineEndingKind := DetectLineEnding(Result);
+end;
+
+class function TDAITextEncoding.ResolveLineEndingKind(const AText: string; const APreferredLineEndingKind: TDAILineEndingKind): TDAILineEndingKind;
+begin
+  case APreferredLineEndingKind of
+    lekCRLF, lekLF:
+      Result := APreferredLineEndingKind;
+    lekCR, lekMixed:
+      Result := lekCRLF;
+    lekNone:
+      begin
+        Result := DetectLineEnding(AText);
+        if Result in [lekCR, lekMixed] then
+          Result := lekCRLF;
+      end;
+  else
+    Result := lekCRLF;
+  end;
 end;
 
 class function TDAITextEncoding.UsesUTF8BOMByDefault(const AFileName: string): Boolean;
