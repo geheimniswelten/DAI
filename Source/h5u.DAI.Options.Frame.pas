@@ -14,6 +14,7 @@ type
   TDAIOptionsFrame = class(TFrame)
   private
     FServerEnabledCheckBox: TCheckBox;
+    FServerStatusLabel: TLabel;
     FLoggingCheckBox: TCheckBox;
     FPortEdit: TEdit;
     FTokenEdit: TEdit;
@@ -28,6 +29,7 @@ type
     FUnregisterButton: TButton;
     FScrollBox: TScrollBox;
     procedure BuildControls;
+    procedure RefreshServerStatus;
     procedure AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
     procedure PopulatePermissionCombo(const AComboBox: TComboBox);
     procedure ScopeChanged(Sender: TObject);
@@ -57,6 +59,7 @@ uses
   Vcl.Dialogs,
   Vcl.Graphics,
   h5u.DAI.Codex.Registration,
+  h5u.DAI.Consts,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
@@ -137,6 +140,13 @@ begin
   FTokenEdit.Top := LTop;
   FTokenEdit.Width := 500;
   Inc(LTop, 32);
+
+  FServerStatusLabel := NewLabel(FScrollBox, '', 24, LTop);
+  FServerStatusLabel.AutoSize := False;
+  FServerStatusLabel.WordWrap := True;
+  FServerStatusLabel.Width := 760;
+  FServerStatusLabel.Height := 72;
+  Inc(LTop, 76);
 
   FLoggingCheckBox := TCheckBox.Create(FScrollBox);
   FLoggingCheckBox.Parent := FScrollBox;
@@ -243,6 +253,7 @@ begin
   FDirectoriesMemo.Lines.Assign(TDAISettings.Instance.CustomReadDirectories);
   FDirectoriesMemo.TextHint := TDAISettings.Instance.LocalizedProjectsDirectoryHint;
   FDirectoryHintLabel.Caption := 'Vorschlag für diese IDE-Sprache: ' + TDAISettings.Instance.LocalizedProjectsDirectoryHint;
+  RefreshServerStatus;
 
   if (FScopeComboBox.ItemIndex = 1) and (TDAIOTA.ActiveProjectFileName = '') then
     FScopeComboBox.ItemIndex := 0;
@@ -306,6 +317,24 @@ begin
     AComboBox.Items.Add('Immer erlauben');
   finally
     AComboBox.Items.EndUpdate;
+  end;
+end;
+
+procedure TDAIOptionsFrame.RefreshServerStatus;
+var
+  LError: string;
+begin
+  if not TDAISettings.Instance.Enabled then
+    FServerStatusLabel.Caption := 'Status: deaktiviert.'
+  else if TDAIRuntime.ServerActive then
+    FServerStatusLabel.Caption := Format('Status: aktiv auf http://%s:%d%s', [CDAIDefaultBindAddress, TDAISettings.Instance.Port, CDAIMcpPath])
+  else
+  begin
+    LError := Trim(TDAIRuntime.LastServerError);
+    if LError = '' then
+      FServerStatusLabel.Caption := 'Status: aktiviert, aber nicht gestartet.'
+    else
+      FServerStatusLabel.Caption := 'Status: nicht aktiv. ' + LError;
   end;
 end;
 
@@ -387,7 +416,9 @@ begin
       LContext
     );
 
-  TDAIRuntime.ApplySettings;
+  if not TDAIRuntime.ApplySettings then
+    TaskMessageDlg('DAI', TDAIRuntime.LastServerError, mtWarning, [mbOK], 0);
+  RefreshServerStatus;
 end;
 
 procedure TDAIOptionsFrame.UnregisterClicked(Sender: TObject);

@@ -1,121 +1,144 @@
-# DAI 1.1.7 – Prüfbericht
+# DAI 1.1.8 – Prüfbericht
 
 ## Fehlerbild
 
-DAI 1.1.6 wurde nach Rückmeldung des Benutzers mit Delphi 13 ohne Fehler, Warnungen oder Hinweise kompiliert und erfolgreich in der IDE installiert. Der Settings-Tab war im IDE-Optionsbaum sichtbar. Beim Öffnen des Tabs brach die Instanziierung jedoch mit folgender Ausnahme ab:
+Das Package wurde von Delphi 13 erfolgreich kompiliert. Beim Installieren beziehungsweise Laden brach jedoch die Package-Registrierung mit folgender Exception ab:
 
 ```text
-Ressource TDAIOptionsFrame nicht gefunden.
+EIdCouldNotBindSocket: Socket konnte nicht gebunden werden.
 ```
 
-Der Stacktrace führte von `Vcl.Forms.TCustomFrame.Create` unmittelbar in `TDAIOptionsFrame.Create`. Der Fehler entstand damit im Aufruf von `inherited Create(AOwner)`, noch bevor `BuildControls` ausgeführt wurde.
+Der Fehler entsteht während `RegisterPackageWizard(TDAIWizard.Create)`. Der Konstruktor des Wizards startet bisher unmittelbar die DAI-Laufzeit. Ist DAI aktiviert, führt der Aufrufpfad zu:
 
-## Ursache
+```text
+TDAIWizard.Create
+  TDAIRuntime.Start
+    TDAIRuntime.ApplySettings
+      TDAIMCPServer.ApplySettings
+        TDAIMCPServer.Start
+          FHTTPServer.Active := True
+```
 
-`TDAIOptionsFrame` ist ein `TFrame`-Nachkomme. Der normale Frame-Konstruktor erwartet für die konkrete Klasse eine eingebundene DFM-Klassenressource. In DAI 1.1.6 fehlten sowohl die Resource-Direktive als auch die dazugehörige DFM-Datei.
+War der konfigurierte Listener `127.0.0.1:7331` bereits belegt, ließ `FHTTPServer.Active := True` die Indy-Exception bis zur IDE durchlaufen. Damit scheiterte nicht nur der optionale MCP-Server, sondern die vollständige Package-Registrierung.
 
-Die Tatsache, dass sämtliche sichtbaren Controls programmatisch in `BuildControls` erzeugt werden, beseitigt diese Anforderung des Frame-Konstruktors nicht.
+## Typische Ursache
+
+Der Port kann insbesondere durch eine andere Delphi-Instanz mit geladenem DAI-Package, eine noch laufende ältere DAI-Instanz oder einen anderen lokalen Prozess belegt sein. DAI darf in diesem Fall nicht stillschweigend auf einen anderen Port wechseln: Die Codex-Konfiguration enthält den fest registrierten Port und könnte sonst unbemerkt mit der falschen IDE-Instanz verbunden werden.
 
 ## Korrektur
 
-### Frame-Unit
+### `h5u.DAI.MCP.Server.pas`
 
-In `Source/h5u.DAI.Options.Frame.pas` steht unmittelbar nach `implementation` jetzt:
+- `Start`, `Stop` und `ApplySettings` liefern jetzt `Boolean`.
+- `EIdCouldNotBindSocket` wird ausdrücklich über `IdException` behandelt.
+- Ein fehlgeschlagener Start setzt `LastError`, bereinigt einen teilweise aktivierten Listener und gibt `False` zurück.
+- Auch sonstige Start- und Stop-Exceptions werden in einen nichtfatalen Serverstatus übersetzt.
+- Ein automatischer Portwechsel findet nicht statt.
+
+Das zentrale Verhalten lautet sinngemäß:
 
 ```pascal
-{$R *.dfm}
-```
-
-Der bestehende Konstruktor bleibt unverändert:
-
-```pascal
-constructor TDAIOptionsFrame.Create(AOwner: TComponent);
-begin
-  inherited Create(AOwner);
-  Align := alClient;
-  AutoScroll := False;
-  BuildControls;
+try
+  FHTTPServer.Active := True;
+  Result := True;
+except
+  on E: EIdCouldNotBindSocket do
+  begin
+    ResetAfterFailedStart;
+    FLastError := Format(...);
+    TDAILog.Error(FLastError);
+    Result := False;
+  end;
 end;
 ```
 
-### Minimale DFM-Ressource
+### `h5u.DAI.Runtime.pas`
 
-Neu hinzugekommen ist `Source/h5u.DAI.Options.Frame.dfm`:
+- `ApplySettings` ist jetzt eine Funktion und fängt sämtliche Fehler der optionalen Serverkomponente ab.
+- `LastServerError` stellt den letzten Start- oder Stopfehler für die IDE-Oberfläche bereit.
+- `Start` lässt Fehler beim Laden beziehungsweise Anwenden der Servereinstellungen nicht bis zur Package-Registrierung durchlaufen.
 
-```text
-object DAIOptionsFrame: TDAIOptionsFrame
-  Left = 0
-  Top = 0
-  Width = 800
-  Height = 600
-  TabOrder = 0
-end
-```
+### `h5u.DAI.Wizard.pas`
 
-Die DFM enthält bewusst ausschließlich die Root-Komponente. Alle sichtbaren Controls werden weiterhin in `TDAIOptionsFrame.BuildControls` erzeugt.
+Der Aufruf von `TDAIRuntime.Start` ist zusätzlich durch einen eigenen `try/except`-Block geschützt. Damit bleibt die OpenToolsAPI-Erweiterung selbst dann geladen, wenn die optionale MCP-Laufzeit unerwartet fehlschlägt.
 
-### DPROJ-Metadaten
+### `h5u.DAI.Log.pas`
 
-Der Eintrag der Frame-Unit lautet jetzt:
+Fehler von `IOTAMessageServices.AddTitleMessage` dürfen nicht ihrerseits die Package-Registrierung abbrechen. Das Logging fällt daher auf `OutputDebugString` zurück.
 
-```xml
-<DCCReference Include="Source\h5u.DAI.Options.Frame.pas">
-    <Form>DAIOptionsFrame</Form>
-    <FormType>dfm</FormType>
-    <DesignClass>TFrame</DesignClass>
-</DCCReference>
-```
+### `h5u.DAI.Options.Frame.pas`
 
-## Dateiformate
-
-- Alle 25 PAS-Dateien bleiben UTF-8 mit BOM.
-- Die vorhandenen Zeilenenden der PAS-Dateien bleiben unverändert.
-- Keine PAS-Datei enthält gemischte Zeilenenden oder Tabulatorzeichen.
-- Die neue DFM ist reines ASCII/ANSI ohne BOM und verwendet einheitliches CRLF.
-- Die UTF-8+BOM-Vorgabe gilt weiterhin nur für `.pas`, nicht für `.dfm`.
-
-## Erweiterte statische Prüfung
-
-`Scripts/verify.py` prüft jetzt für jeden direkten `TFrame`-Nachkommen:
-
-- eine gleichnamige DFM-Datei,
-- `{$R *.dfm}` in der Unit,
-- eine zur Frame-Klasse passende Root-Komponente,
-- einheitliche Zeilenenden in der DFM,
-- einen nicht selbstschließenden DPROJ-Eintrag,
-- `Form`-Metadaten,
-- `FormType=dfm`,
-- und `DesignClass=TFrame`.
-
-Vier Negativtests wurden ausgeführt:
+Die Optionsseite zeigt jetzt einen eigenen Serverstatus:
 
 ```text
-fehlendes {$R *.dfm}:       erkannt
-fehlende DFM-Datei:         erkannt
-falsche DFM-Root-Klasse:    erkannt
-falsches Form-Metadatum:    erkannt
+Status: deaktiviert.
+Status: aktiv auf http://127.0.0.1:<Port>/mcp
+Status: nicht aktiv. <konkrete Fehlermeldung>
 ```
 
-## Gesamtergebnis
+Beim Übernehmen der Optionen wird ein fehlgeschlagener Neustart zusätzlich als Warnung angezeigt. Nach Auswahl eines freien Ports kann der Server unmittelbar erneut gestartet werden.
+
+## Manuelle Sofortdiagnose
+
+Der Prozess, der Port 7331 belegt, kann unter PowerShell ermittelt werden:
+
+```powershell
+$listener = Get-NetTCPConnection -LocalPort 7331 -State Listen
+$listener | Select-Object LocalAddress, LocalPort, OwningProcess
+$listener | ForEach-Object { Get-Process -Id $_.OwningProcess }
+```
+
+Um die bisherige Package-Version trotz belegtem Port installieren zu können, kann der automatische Serverstart vorübergehend deaktiviert werden:
+
+```cmd
+reg add "HKCU\Software\Embarcadero\BDS\37.0\DAI" /v Enabled /t REG_DWORD /d 0 /f
+```
+
+## Statische und negative Prüfungen
+
+`Scripts/verify.py` prüft zusätzlich:
+
+- die ausdrückliche Behandlung von `EIdCouldNotBindSocket`,
+- die Listener-Bereinigung nach fehlgeschlagenem Start,
+- die nichtwerfende Laufzeitbehandlung,
+- die zusätzliche Absicherung in `TDAIWizard`,
+- den Logging-Fallback auf `OutputDebugString`,
+- und die Anzeige von `LastServerError` in der Optionsseite.
+
+Ausgeführte Negativtests:
 
 ```text
-Pascal-Units:                          25
-MCP-Werkzeuge:                         34
-Neue DFM-Ressourcen:                    1
-Maximal erlaubte Pascal-Zeilenlänge:  180
-Tatsächlich längste Pascal-Zeile:     179
-PAS-Dateien mit UTF-8-BOM:             25 von 25
-PAS-Dateien mit CRLF:                   3
-PAS-Dateien mit LF:                    22
-Gemischte Pascal-Zeilenenden:           0
-Tabulatoren in Pascal-Sourcen:          0
-DFM-Zeilenenden:                       einheitliches CRLF
-DPK-/DPROJ-Referenzen:                 vollständig
-DPROJ-XML:                             gültig
-Statische Prüfung:                     bestanden
-Negative Frame-Ressourcentests:        bestanden
+EIdCouldNotBindSocket-Behandlung entfernt: erkannt
+Runtime-ApplySettings nicht mehr als geschützte Boolean-Funktion: erkannt
+Fehleranzeige in der Optionsseite entfernt: erkannt
+```
+
+## Dateiformate und Formatierung
+
+- Alle 25 PAS-Dateien sind UTF-8 mit BOM.
+- Vorhandenes einheitliches CRLF beziehungsweise LF bleibt je Datei erhalten.
+- Keine Pascal-Datei enthält vermischte Zeilenenden.
+- Keine Pascal-Source enthält Tabulatorzeichen.
+- Die maximale Pascal-Zeilenlänge beträgt 180 Zeichen.
+- Methodensignaturen und Property-Deklarationen bleiben bis zur Grenze von 180 Zeichen in einer Zeile.
+- Die DFM-Datei bleibt von der PAS-Encoding-Regel ausgenommen.
+
+## Prüfergebnis
+
+```text
+Pascal-Units:                         25
+MCP-Werkzeuge:                        34
+PAS-Dateien mit UTF-8-BOM:            25 von 25
+Gemischte Pascal-Zeilenenden:          0
+Tabulatoren in Pascal-Sourcen:         0
+Maximal erlaubte Pascal-Zeilenlänge: 180
+Tatsächlich längste Pascal-Zeile:    179
+DPK-/DPROJ-Referenzen:               vollständig
+DPROJ-XML:                           gültig
+Statische Prüfung:                   bestanden
+Negative Portkonflikttests:          bestanden
 ```
 
 ## Abgrenzung
 
-DAI 1.1.6 wurde laut Benutzer in Delphi 13 erfolgreich kompiliert und installiert. DAI 1.1.7 konnte in dieser Umgebung mangels Delphi-13-Toolchain nicht erneut mit `dcc32.exe` gebaut werden. Die Codeänderung beschränkt sich auf die fehlende Frame-Ressource, ihre Projektmetadaten, Versionsangaben und die zugehörige statische Prüfung.
+Die vorherige Version erreichte nach Benutzerangabe erfolgreich die Delphi-13-Package-Installation; der Fehler entstand erst in der Registrierungsprozedur beim Aktivieren des Indy-Listeners. DAI 1.1.8 konnte in dieser Umgebung mangels Delphi-13-Toolchain nicht erneut mit `dcc32.exe` gebaut werden. Die geänderten Signaturen und verwendeten Indy-Typen müssen daher abschließend einmal in der vorhandenen Delphi-13-Installation kompiliert werden.

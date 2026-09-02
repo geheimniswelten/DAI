@@ -446,6 +446,31 @@ def check_encoding_policy(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.OTA.Files.pas: Editor-Schreibzugriffe müssen Zeilenenden und Source-Tabs normalisieren")
 
 
+def check_nonfatal_server_binding(errors: list[str]) -> None:
+    server = read_project_text(SOURCE / "h5u.DAI.MCP.Server.pas")
+    runtime = read_project_text(SOURCE / "h5u.DAI.Runtime.pas")
+    wizard = read_project_text(SOURCE / "h5u.DAI.Wizard.pas")
+    log = read_project_text(SOURCE / "h5u.DAI.Log.pas")
+    options = read_project_text(SOURCE / "h5u.DAI.Options.Frame.pas")
+
+    if "EIdCouldNotBindSocket" not in server or "IdException" not in server:
+        fail(errors, "MCP-Server muss EIdCouldNotBindSocket ausdrücklich behandeln")
+    if not re.search(r"(?is)on\s+E\s*:\s*EIdCouldNotBindSocket\s+do.*?Result\s*:=\s*False", server):
+        fail(errors, "MCP-Bindefehler muss ohne erneutes Auslösen der Ausnahme als Startfehler zurückgegeben werden")
+    if "ResetAfterFailedStart" not in server or "Der Port ist wahrscheinlich bereits" not in server:
+        fail(errors, "MCP-Bindefehler benötigt Listener-Bereinigung und eine verständliche Portkonflikt-Meldung")
+    if not re.search(r"(?is)class\s+function\s+TDAIRuntime\.ApplySettings\s*:\s*Boolean.*?except.*?Result\s*:=\s*False", runtime):
+        fail(errors, "TDAIRuntime.ApplySettings muss Serverstartfehler abfangen")
+    if "LastServerError" not in runtime:
+        fail(errors, "TDAIRuntime muss den letzten Serverfehler für die Optionsseite bereitstellen")
+    if not re.search(r"(?is)try\s+TDAIRuntime\.Start\s*;\s*except", wizard):
+        fail(errors, "TDAIWizard muss den optionalen Laufzeitstart gegen Package-Registrierungsfehler absichern")
+    if "OutputDebugString" not in log or not re.search(r"(?is)class\s+procedure\s+TDAILog\.AddMessage.*?except", log):
+        fail(errors, "DAI-Logging muss bei Fehlern von IOTAMessageServices auf OutputDebugString zurückfallen")
+    if "RefreshServerStatus" not in options or "TDAIRuntime.LastServerError" not in options:
+        fail(errors, "DAI-Optionsseite muss den inaktiven Server und den letzten Startfehler anzeigen")
+
+
 def check_duplicate_implementations(errors: list[str]) -> None:
     pattern = re.compile(
         r"(?ims)^\s*((?:class\s+)?(?:function|procedure|constructor|destructor)\s+"
@@ -591,6 +616,7 @@ def main() -> int:
     check_required_uses(errors)
     check_creator_definitions(errors)
     check_encoding_policy(errors)
+    check_nonfatal_server_binding(errors)
     check_duplicate_implementations(errors)
     check_lexical_balance(errors)
 

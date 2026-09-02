@@ -1,5 +1,13 @@
 # Änderungsprotokoll
 
+## 1.1.8
+
+- ein belegter MCP-Port löst während der Package-Registrierung keine ungefangene `EIdCouldNotBindSocket` mehr aus
+- fehlgeschlagene Bind- und Startvorgänge lassen das Package geladen und werden als Serverstatus sowie im IDE-Meldungsfenster ausgegeben
+- automatischer Portwechsel bleibt bewusst ausgeschlossen, damit die Codex-Konfiguration nicht unbemerkt auf eine andere IDE zeigt
+- DAI-Optionsseite zeigt den aktuellen Serverstatus und meldet Startfehler beim Übernehmen der Einstellungen
+- Logging ist gegen Fehler von `IOTAMessageServices` abgesichert und fällt auf `OutputDebugString` zurück
+
 ## 1.1.7
 
 - minimale DFM-Ressource für `TDAIOptionsFrame` ergänzt; `TCustomFrame.Create` kann den Options-Frame damit über `INTAAddInOptions` laden

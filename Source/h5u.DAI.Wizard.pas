@@ -30,6 +30,7 @@ uses
   Vcl.Graphics,
   h5u.DAI.Consts,
   h5u.DAI.IDE.Notifier,
+  h5u.DAI.Log,
   h5u.DAI.Options.Page,
   h5u.DAI.Runtime;
 
@@ -50,7 +51,12 @@ begin
     FIDENotifierIndex := LOTAServices.AddNotifier(FIDENotifier);
   end;
 
-  TDAIRuntime.Start;
+  try
+    TDAIRuntime.Start;
+  except
+    on E: Exception do
+      TDAILog.Error('Der optionale MCP-Server konnte während der Package-Registrierung nicht gestartet werden: ' + E.ClassName + ': ' + E.Message);
+  end;
 end;
 
 destructor TDAIWizard.Destroy;

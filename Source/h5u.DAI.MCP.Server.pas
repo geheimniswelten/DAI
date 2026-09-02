@@ -11,14 +11,17 @@ type
   TDAIMCPServer = class sealed
   private
     FHTTPServer: TIdHTTPServer;
+    FLastError: string;
     procedure HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure ResetAfterFailedStart;
   public
     constructor Create;
     destructor Destroy; override;
-    procedure Start;
-    procedure Stop;
-    procedure ApplySettings;
+    function Start: Boolean;
+    function Stop: Boolean;
+    function ApplySettings: Boolean;
     function Active: Boolean;
+    property LastError: string read FLastError;
   end;
 
 implementation
@@ -27,6 +30,7 @@ uses
   System.Classes,
   System.JSON,
   System.SysUtils,
+  IdException,
   IdSocketHandle,
   h5u.DAI.Consts,
   h5u.DAI.Log,
@@ -98,6 +102,7 @@ end;
 constructor TDAIMCPServer.Create;
 begin
   inherited Create;
+  FLastError := '';
   FHTTPServer := TIdHTTPServer.Create(nil);
   FHTTPServer.ServerSoftware := CDAIDisplayName + '/' + CDAIVersion;
   FHTTPServer.OnCommandGet := HandleCommand;
@@ -116,11 +121,16 @@ begin
   Result := Assigned(FHTTPServer) and FHTTPServer.Active;
 end;
 
-procedure TDAIMCPServer.ApplySettings;
+function TDAIMCPServer.ApplySettings: Boolean;
 begin
-  Stop;
-  if TDAISettings.Instance.Enabled then
-    Start;
+  if not Stop then
+    Exit(False);
+
+  FLastError := '';
+  if not TDAISettings.Instance.Enabled then
+    Exit(True);
+
+  Result := Start;
 end;
 
 procedure TDAIMCPServer.HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
@@ -231,27 +241,81 @@ begin
   end;
 end;
 
-procedure TDAIMCPServer.Start;
-var
-  LBinding: TIdSocketHandle;
+procedure TDAIMCPServer.ResetAfterFailedStart;
 begin
-  if Active then
-    Exit;
+  try
+    if Assigned(FHTTPServer) then
+      FHTTPServer.Active := False;
+  except
+  end;
 
-  FHTTPServer.Bindings.Clear;
-  LBinding := FHTTPServer.Bindings.Add;
-  LBinding.IP := CDAIDefaultBindAddress;
-  LBinding.Port := TDAISettings.Instance.Port;
-  FHTTPServer.Active := True;
-  TDAILog.Access(Format('MCP-Server gestartet: http://%s:%d%s', [CDAIDefaultBindAddress, TDAISettings.Instance.Port, CDAIMcpPath]));
+  try
+    if Assigned(FHTTPServer) then
+      FHTTPServer.Bindings.Clear;
+  except
+  end;
 end;
 
-procedure TDAIMCPServer.Stop;
+function TDAIMCPServer.Start: Boolean;
+var
+  LBinding: TIdSocketHandle;
+  LPort: Integer;
+begin
+  if Active then
+  begin
+    FLastError := '';
+    Exit(True);
+  end;
+
+  FLastError := '';
+  LPort := TDAISettings.Instance.Port;
+  try
+    FHTTPServer.Bindings.Clear;
+    LBinding := FHTTPServer.Bindings.Add;
+    LBinding.IP := CDAIDefaultBindAddress;
+    LBinding.Port := LPort;
+    FHTTPServer.Active := True;
+    TDAILog.Access(Format('MCP-Server gestartet: http://%s:%d%s', [CDAIDefaultBindAddress, LPort, CDAIMcpPath]));
+    Result := True;
+  except
+    on E: EIdCouldNotBindSocket do
+    begin
+      ResetAfterFailedStart;
+      FLastError := Format(
+        'Der MCP-Server konnte nicht an %s:%d gebunden werden. Der Port ist wahrscheinlich bereits durch eine andere Delphi-/DAI-Instanz oder einen anderen Prozess belegt. ' +
+        'Das DAI-Package bleibt geladen; wählen Sie in den DAI-Einstellungen einen freien Port. Indy: %s',
+        [CDAIDefaultBindAddress, LPort, E.Message]
+      );
+      TDAILog.Error(FLastError);
+      Result := False;
+    end;
+    on E: Exception do
+    begin
+      ResetAfterFailedStart;
+      FLastError := Format('Der MCP-Server konnte auf %s:%d nicht gestartet werden: %s: %s', [CDAIDefaultBindAddress, LPort, E.ClassName, E.Message]);
+      TDAILog.Error(FLastError);
+      Result := False;
+    end;
+  end;
+end;
+
+function TDAIMCPServer.Stop: Boolean;
 begin
   if not Assigned(FHTTPServer) or not FHTTPServer.Active then
-    Exit;
-  FHTTPServer.Active := False;
-  TDAILog.Access('MCP-Server gestoppt.');
+    Exit(True);
+
+  try
+    FHTTPServer.Active := False;
+    TDAILog.Access('MCP-Server gestoppt.');
+    Result := True;
+  except
+    on E: Exception do
+    begin
+      FLastError := Format('Der MCP-Server konnte nicht sauber gestoppt werden: %s: %s', [E.ClassName, E.Message]);
+      TDAILog.Error(FLastError);
+      Result := False;
+    end;
+  end;
 end;
 
 end.

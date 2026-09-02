@@ -33,19 +33,35 @@ class procedure TDAILog.AddMessage(const AText: string);
 var
   LMessages: IOTAMessageServices;
 begin
-  if GetCurrentThreadId = MainThreadID then
-  begin
-    if Supports(BorlandIDEServices, IOTAMessageServices, LMessages) then
-      LMessages.AddTitleMessage(AText);
-    Exit;
-  end;
-
-  TThread.Queue(nil,
-    procedure var LMessages: IOTAMessageServices;
+  try
+    if GetCurrentThreadId = MainThreadID then
     begin
       if Supports(BorlandIDEServices, IOTAMessageServices, LMessages) then
-        LMessages.AddTitleMessage(AText);
-    end);
+        LMessages.AddTitleMessage(AText)
+      else
+        OutputDebugString(PChar(AText));
+      Exit;
+    end;
+
+    TThread.Queue(
+      nil,
+      procedure
+      var
+        LQueuedMessages: IOTAMessageServices;
+      begin
+        try
+          if Supports(BorlandIDEServices, IOTAMessageServices, LQueuedMessages) then
+            LQueuedMessages.AddTitleMessage(AText)
+          else
+            OutputDebugString(PChar(AText));
+        except
+          OutputDebugString(PChar(AText));
+        end;
+      end
+    );
+  except
+    OutputDebugString(PChar(AText));
+  end;
 end;
 
 class procedure TDAILog.Error(const AText: string);
