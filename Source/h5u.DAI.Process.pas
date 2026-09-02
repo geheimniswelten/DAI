@@ -1,4 +1,4 @@
-unit h5u.DAI.Process;
+﻿unit h5u.DAI.Process;
 
 interface
 
@@ -237,7 +237,7 @@ begin
   finally
     CloseHandle(LOutputHandle);
     Result.Output := ReadCapturedOutput(LOutputFileName);
-    DeleteFile(LOutputFileName);
+    DeleteFile(PChar(LOutputFileName));
   end;
 end;
 

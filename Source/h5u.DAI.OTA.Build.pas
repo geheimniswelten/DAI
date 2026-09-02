@@ -1,4 +1,4 @@
-unit h5u.DAI.OTA.Build;
+﻿unit h5u.DAI.OTA.Build;
 
 interface
 
@@ -36,12 +36,14 @@ implementation
 
 uses
   System.Actions,
+  System.Classes,
   System.Generics.Collections,
   System.IOUtils,
+  System.StrUtils,
   System.SysUtils,
+  Winapi.Windows,
   Vcl.ActnList,
   ToolsAPI,
-  Winapi.Windows,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Process,
   h5u.DAI.Types;

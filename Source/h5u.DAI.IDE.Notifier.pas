@@ -20,6 +20,7 @@ implementation
 
 uses
   System.IOUtils,
+  System.StrUtils,
   System.SysUtils,
   h5u.DAI.OTA.Build,
   h5u.DAI.OTA.Helpers,
@@ -52,7 +53,7 @@ begin
     Exit;
   end;
 
-  if LExtension in ['.dproj', '.dpr', '.dpk', '.cbproj'] then
+  if MatchStr(LExtension, ['.dproj', '.dpr', '.dpk', '.cbproj']) then
   begin
     TDAIPermissionManager.Instance.ClearProjectSession(FileName);
     TDAIBuildService.ClearProjectProcess(FileName);

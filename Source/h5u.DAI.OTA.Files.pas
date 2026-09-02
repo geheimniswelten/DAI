@@ -1,4 +1,4 @@
-unit h5u.DAI.OTA.Files;
+﻿unit h5u.DAI.OTA.Files;
 
 interface
 
@@ -221,7 +221,10 @@ begin
       raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
 
     TDAIOTA.RunOnMainThread(
-      procedure var LAdditionalFiles: TStringList;
+      procedure
+      var
+        LAdditionalFiles: TStringList;
+        LFileName: string;
         LIndex: Integer;
         LModuleInfo: IOTAModuleInfo;
       begin

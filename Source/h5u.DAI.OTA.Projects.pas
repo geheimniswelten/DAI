@@ -1,4 +1,4 @@
-unit h5u.DAI.OTA.Projects;
+﻿unit h5u.DAI.OTA.Projects;
 
 interface
 
@@ -36,11 +36,12 @@ type
 implementation
 
 uses
+  System.Classes,
   System.IOUtils,
   System.SysUtils,
+  System.UITypes,
   Vcl.Dialogs,
   ToolsAPI,
-  h5u.DAI.OTA.Creators,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
@@ -176,7 +177,7 @@ begin
 
   LFileName := ResolveUnitFileName(LProject, AFileName);
   if TFile.Exists(LFileName) then
-    raise EFileExistsException.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
+    raise EFCreateError.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
   if not TDAIOTA.IsPathWithin(LFileName, TPath.GetDirectoryName(TDAIOTA.ProjectFileName(LProject))) then
     raise EDAIAccessDenied.Create('Neue Form-Units müssen innerhalb des Projektverzeichnisses liegen.');
 

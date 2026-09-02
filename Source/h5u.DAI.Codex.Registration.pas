@@ -1,4 +1,4 @@
-unit h5u.DAI.Codex.Registration;
+﻿unit h5u.DAI.Codex.Registration;
 
 interface
 
@@ -18,6 +18,7 @@ type
 implementation
 
 uses
+  System.Classes,
   System.IOUtils,
   System.SysUtils,
   h5u.DAI.Consts,

@@ -1,8 +1,9 @@
-unit h5u.DAI.Permissions.Dialog;
+﻿unit h5u.DAI.Permissions.Dialog;
 
 interface
 
 uses
+  System.JSON,
   h5u.DAI.Types;
 
 type
@@ -25,8 +26,9 @@ implementation
 
 uses
   System.SysUtils,
-  Vcl.Dialogs;
-
+  System.UITypes,
+  Vcl.Dialogs,
+  Vcl.Forms;
 const
   mrDAINever = 1101;
   mrDAIDeny = 1102;

@@ -2,6 +2,9 @@ unit h5u.DAI.Log;
 
 interface
 
+uses
+  System.JSON;
+
 type
   TDAILog = class sealed
   private
@@ -15,6 +18,7 @@ implementation
 
 uses
   System.Classes,
+  System.SysUtils,
   Winapi.Windows,
   ToolsAPI,
   h5u.DAI.Settings;

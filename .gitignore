@@ -12,3 +12,7 @@ __recovery/
 *.local
 *.identcache
 *.stat
+/*.dsk
+/*.dsv
+/*.res
+/*.~dsk
