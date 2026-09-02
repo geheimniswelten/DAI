@@ -1,26 +1,26 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
-    [string] $Configuration = 'Release',
+    [string]$Configuration = 'Release',
 
     [ValidateSet('Win32', 'Win64', 'Both')]
-    [string] $Platform = 'Both',
+    [string]$Platform = 'Both',
 
-    [string] $BdsRoot = $env:BDS
+    [string]$BdsRoot = $env:BDS
 )
 
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 
-if ([string]::IsNullOrWhiteSpace($BdsRoot)) {
-    $candidate = Join-Path ${env:ProgramFiles(x86)} 'Embarcadero\Studio\37.0'
-    if (Test-Path -LiteralPath $candidate) {
-        $BdsRoot = $candidate
-    }
+$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectFile = Join-Path $projectRoot 'DAI.dproj'
+
+if (-not (Test-Path -LiteralPath $projectFile)) {
+    throw "DAI.dproj wurde nicht gefunden: $projectFile"
 }
 
 if ([string]::IsNullOrWhiteSpace($BdsRoot)) {
-    throw 'Delphi 13 wurde nicht gefunden. Übergeben Sie -BdsRoot oder setzen Sie BDS.'
+    $BdsRoot = 'C:\Program Files (x86)\Embarcadero\Studio\37.0'
 }
 
 $rsvars = Join-Path $BdsRoot 'bin\rsvars.bat'
@@ -28,25 +28,28 @@ if (-not (Test-Path -LiteralPath $rsvars)) {
     throw "rsvars.bat wurde nicht gefunden: $rsvars"
 }
 
-$project = Join-Path $PSScriptRoot 'CodexMCPIDE.dproj'
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
-$commandProcessor = $env:ComSpec
-if ([string]::IsNullOrWhiteSpace($commandProcessor)) {
-    $commandProcessor = Join-Path $env:SystemRoot 'System32\cmd.exe'
-}
-if (-not (Test-Path -LiteralPath $commandProcessor)) {
-    throw "cmd.exe wurde nicht gefunden: $commandProcessor"
-}
 
-foreach ($targetPlatform in $platforms) {
-    Write-Host "Building CodexMCPIDE ($Configuration|$targetPlatform)..."
-    $command = 'call "{0}" && msbuild "{1}" /t:Build /p:Config={2} /p:Platform={3} /m /nologo' -f `
-        $rsvars, $project, $Configuration, $targetPlatform
+foreach ($currentPlatform in $platforms) {
+    Write-Host "Baue DAI: Configuration=$Configuration Platform=$currentPlatform"
 
-    & $commandProcessor /d /s /c $command
+    $command = @(
+        'call'
+        "`"$rsvars`""
+        '&&'
+        'msbuild'
+        "`"$projectFile`""
+        '/t:Build'
+        "/p:Config=$Configuration"
+        "/p:Platform=$currentPlatform"
+        '/nologo'
+        '/verbosity:minimal'
+    ) -join ' '
+
+    & $env:ComSpec /d /s /c $command
     if ($LASTEXITCODE -ne 0) {
-        throw "Build fehlgeschlagen ($Configuration|$targetPlatform), ExitCode $LASTEXITCODE."
+        throw "Der DAI-Build für $currentPlatform ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
     }
 }
 
-Write-Host 'Build erfolgreich.'
+Write-Host 'DAI wurde erfolgreich gebaut.'

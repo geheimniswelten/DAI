@@ -1,101 +1,75 @@
-# Codex MCP for Delphi IDE
+# DAI – Delphi AI
 
-`CodexMCPIDE` ist ein Design-Time-Package für **Delphi 13 / RAD Studio 13 (BDS 37.0)**. Es stellt die aktuell laufende Delphi-IDE über einen lokal gebundenen MCP-Server für Codex bereit.
+DAI ist ein Design-Time-Package für Delphi 13 / RAD Studio 13 (`BDS 37.0`). Es stellt der lokal laufenden Codex-Instanz einen MCP-Server zur Verfügung und
+vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
 
-## Funktionsumfang
+## Benennung
 
-- Streamable-HTTP-MCP-Endpunkt unter `http://127.0.0.1:<Port>/mcp`
-- Bearer-Authentifizierung mit automatisch erzeugtem Token
-- Ein-/Ausschalten, Port, Token, Logging und Zusatzpfade in den IDE-Optionen
-- Eintrag im Delphi-Splashscreen über `SplashScreenServices.AddPluginBitmap`
-- Registrierung in `%USERPROFILE%\.codex\config.toml`
-- Registrierung eines Agent-Skills in `%USERPROFILE%\.agents\skills\delphi-ide\SKILL.md`
-- Zugriff auf geöffnete Dateien, Projekte, Projektdateien und Projektverzeichnisse
-- Editorpuffer-bewusstes Lesen und Schreiben: ungespeicherter IDE-Inhalt hat Vorrang vor der Festplatte
-- Projekt-, Unit-, Form-, Build-, Run-, Stop- und Benutzerinteraktionsfunktionen
-- optionales Zugriffslogging über `IOTAMessageServices.AddTitleMessage`
+- Package und Projekt: `DAI`
+- Anzeigename: `Delphi AI`
+- Alle Pascal-Units und Unit-Dateien beginnen mit dem kleingeschriebenen Namespace-Präfix `h5u.`
+- Unterfunktionen sind in Dateinamen und Unit-Namen mit Punkten getrennt, zum Beispiel `h5u.DAI.Permissions.Manager.pas`
+- Pascal-Quellzeilen sind auf höchstens 180 Zeichen begrenzt
 
-## Voraussetzungen
+## MCP-Server
 
-- Windows
-- Delphi 13 / RAD Studio 13, Installationsversion `37.0`
-- installierte Delphi-Design-Time-Pakete `designide`, `IndySystem`, `IndyCore` und `IndyProtocols`
-- für die 64-Bit-IDE das als Win64 gebaute Package, für die 32-Bit-IDE das als Win32 gebaute Package
-
-## Bauen
-
-In einer PowerShell im Projektverzeichnis:
-
-```powershell
-.\Build.ps1 -Configuration Release -Platform Both
-```
-
-Optional kann die Delphi-Installation explizit angegeben werden:
-
-```powershell
-.\Build.ps1 -Configuration Release -Platform Both `
-  -BdsRoot 'C:\Program Files (x86)\Embarcadero\Studio\37.0'
-```
-
-Ausgaben:
+Der Server lauscht ausschließlich auf `127.0.0.1`, standardmäßig unter:
 
 ```text
-Build\Win32\Release\Bpl\CodexMCPIDE.bpl
-Build\Win64\Release\Bpl\CodexMCPIDE.bpl
+http://127.0.0.1:7331/mcp
 ```
 
-Alternativ `CodexMCPIDE.dproj` in Delphi 13 öffnen, die zur IDE passende Plattform auswählen, bauen und das Design-Time-Package installieren.
+Der Zugriff ist mit einem Bearer-Token geschützt. Aktivierung, Port, Token, Logging, zusätzliche Referenzverzeichnisse und Berechtigungen werden unter
+`Tools → Options → Third Party → DAI` verwaltet.
 
-## Installation in der IDE
+DAI unterstützt den klassischen MCP-Initialisierungsablauf und die moderne `server/discover`-Methode. Bei Codex-Anfragen wird `_meta.threadId` ausgewertet.
+Dadurch können Session-Freigaben nach Projekt und Codex-Chat getrennt werden. Fehlt die Chat-ID, verwendet DAI ersatzweise die MCP-Transport-Session.
+Fehlen beide Identitäten, wird „Für diese Session“ aus Sicherheitsgründen wie eine einmalige Freigabe behandelt.
 
-1. Das Package für die Architektur der laufenden IDE bauen.
-2. `CodexMCPIDE.bpl` über die Package-Verwaltung der IDE hinzufügen oder das geöffnete Package-Projekt installieren.
-3. Die Optionen unter `Tools > Options > Third Party > Codex MCP für Delphi IDE` öffnen.
-4. Den Server aktivieren, Port und Token prüfen und die Optionen mit **OK** übernehmen.
-5. **Codex registrieren** und **Skill registrieren** ausführen.
+## Berechtigungen
 
-Beim Laden des Packages wird ein Splashscreen-Eintrag angezeigt. Der Server startet nur, wenn er in den Optionen aktiviert ist.
+Vor geschützten Operationen erscheint in der Delphi-IDE ein `TTaskDialog` mit fünf Command-Link-Schaltflächen:
 
-## Codex-Registrierung
+1. **Nie erlauben** – dauerhaft für das aktuelle Projekt beziehungsweise global sperren
+2. **Verweigern** – nur die aktuelle Anfrage ablehnen
+3. **Nur diesmal** – nur die aktuelle Anfrage zulassen
+4. **Für diese Session** – bis zum Schließen des Projekts oder der IDE für den erkannten KI-Chat zulassen
+5. **Immer erlauben** – dauerhaft für das aktuelle Projekt beziehungsweise global zulassen
 
-Die Schaltfläche **Codex registrieren** schreibt einen gekennzeichneten, verwalteten Block nach:
+Die Verification-Checkbox übernimmt die Entscheidung für alle anderen Funktionsgruppen, deren aktuelle Erlaubnisstufe niedriger ist.
+
+Die Funktionsgruppen werden getrennt behandelt:
+
+- Lesezugriffe
+- Bearbeiten innerhalb der IDE
+- Dateien außerhalb der IDE bearbeiten
+- Kompilieren
+- Ausführen
+
+Dauerhafte Projektentscheidungen werden neben der Projektdatei in `<Projektname>.dai.permissions.json` gespeichert. Auf der Optionsseite kann zwischen dem
+globalen Standard und den Berechtigungen des aktuell geöffneten Projekts gewechselt werden. „Verweigern“, „Nur einmal“ und „Session“ sind
+Laufzeitentscheidungen; „Nie“, „Nachfragen“ und „Immer“ werden persistent gespeichert.
+
+## Projekt- und Chat-Sessions
+
+Eine Session-Freigabe besitzt den Schlüssel:
 
 ```text
-%USERPROFILE%\.codex\config.toml
+<Projektdatei> + <Codex threadId oder MCP-Session-ID> + <Funktionsgruppe>
 ```
 
-Beispiel:
+Beim Schließen eines Projekts werden dessen Laufzeitfreigaben verworfen. Beim Schließen einer Projektgruppe oder der IDE werden alle Laufzeitfreigaben
+verworfen. Ein anderer Codex-Chat erhält daher keine Freigabe aus einem vorherigen Chat, sofern Codex die `threadId` mitsendet.
 
-```toml
-# BEGIN CodexMCPIDE (managed by the Delphi IDE package)
-[mcp_servers.delphi_ide]
-url = "http://127.0.0.1:7331/mcp"
-http_headers = { Authorization = "Bearer <Token>" }
-enabled = true
-# END CodexMCPIDE
-```
+## Datei- und Editorzugriffe
 
-Ein bereits vorhandener, nicht vom Package verwalteter Abschnitt `[mcp_servers.delphi_ide]` wird nicht überschrieben. Die Deregistrierung entfernt ausschließlich den gekennzeichneten Block.
+Für geöffnete Dateien ist immer der aktuelle `IOTASourceEditor` maßgeblich. Das gilt auch dann, wenn das MCP-Werkzeug die Datei über ihren
+Festplattenpfad adressiert. Schreibvorgänge verwenden einen Undo-fähigen `IOTAEditWriter`.
 
-Der Skill wird unter folgendem Pfad angelegt:
+Geschlossene Dateien werden nur geschrieben, wenn sie innerhalb eines geöffneten Projektverzeichnisses liegen. Geladene Formulare werden nicht verdeckt
+auf dem Datenträger überschrieben. Für DFM-Änderungen muss zuerst `form_show_as_text` verwendet werden.
 
-```text
-%USERPROFILE%\.agents\skills\delphi-ide\SKILL.md
-```
-
-Die Optionen zeigen für beide Ziele jeweils `FileExists` und den erkannten Registrierungsstatus an.
-
-## Schreib- und Sicherheitsregeln
-
-Der HTTP-Server bindet ausschließlich an `127.0.0.1`. Requests benötigen den konfigurierten Bearer-Token. Ein vorhandener `Origin`-Header wird nur für Loopback-Ursprünge akzeptiert.
-
-Schreibzugriff ist nur für den aktuellen IDE-Arbeitsbereich möglich:
-
-- geöffnete Editor-Dateien
-- Dateien, die Mitglied eines geöffneten Projekts sind
-- Dateien innerhalb eines geöffneten Projektverzeichnisses
-
-Die folgenden Wurzeln sind stets schreibgeschützt und haben Vorrang vor einer möglichen Workspace-Zuordnung:
+Schreibgeschützt bleiben:
 
 ```text
 %BDS%\source
@@ -104,96 +78,145 @@ Die folgenden Wurzeln sind stets schreibgeschützt und haben Vorrang vor einer m
 %PUBLIC%\Documents\Embarcadero\Studio\37.0\Samples
 ```
 
-Zusätzliche schreibgeschützte Verzeichnisse können zeilenweise in den Optionen hinterlegt werden. Umgebungsvariablen wie `%USERPROFILE%` werden expandiert.
+Zusätzliche Verzeichnisse aus den Optionen sind ebenfalls ausschließlich lesbar.
 
-Weitere Schutzmaßnahmen:
+Der Vorschlag für das persönliche Projektverzeichnis wird anhand der Windows-UI-Sprache und vorhandener Verzeichnisse ermittelt:
 
-- maximal 32 MiB pro MCP-Request
-- maximal 16 MiB pro gelesener oder geschriebener Textdatei
-- `expected_sha256` ermöglicht optimistische Konkurrenzkontrolle bei Schreibzugriffen
-- ein geladener `IOTASourceEditor` ist die maßgebliche Quelle, auch wenn ein Festplattenpfad angefragt wurde
-- Änderungen im Editor erfolgen über einen undo-fähigen `IOTAEditWriter`
-- bei aktivem visuellen Form-Designer wird eine DFM nicht stillschweigend aus einer möglicherweise veralteten Festplattendatei gelesen oder überschrieben
-- beim Speichern eines Projekts werden verknüpfte Module aus schreibgeschützten Referenzpfaden übersprungen
+```text
+Englisch:   %USERPROFILE%\Documents\Embarcadero\Studio\Projects
+Deutsch:    %USERPROFILE%\Documents\Embarcadero\Studio\Projekte
+Italienisch:%USERPROFILE%\Documents\Embarcadero\Studio\Progetti
+Japanisch:  %USERPROFILE%\Documents\Embarcadero\Studio\プロジェクト
+```
 
-## MCP-Tools
+## Projektoperationen
 
-### Status und Lesen
+DAI kann Projekte erstellen, öffnen, speichern und aus einer Projektgruppe entfernen. Units und Form-Units können erstellt, geöffnet, aktiviert,
+geschlossen und aus einem Projekt entfernt werden.
+
+Vor einer Operation, die eine bestehende Projektbelegung beeinflussen könnte, zeigt DAI unabhängig von der allgemeinen Berechtigung eine zusätzliche
+Sicherheitsabfrage. Bereits geöffnete Projekte oder Projektgruppen werden niemals stillschweigend geschlossen. Wird ein Wechsel von der IDE selbst
+verlangt, bleibt auch deren eigener Bestätigungsdialog aktiv.
+
+## Kompilieren und Ausführen
+
+Verfügbare Werkzeuge:
+
+- `project_compile`
+- `project_group_compile`
+- `project_run`
+- `project_stop`
+- `msbuild_execute`
+- `dcc32_execute`
+
+`msbuild_execute` startet ausschließlich eine bekannte oder explizit angegebene `MSBuild.exe`. Ein expliziter Pfad muss unter `%BDS%`, `%WINDIR%`,
+`%ProgramFiles%` oder `%ProgramFiles(x86)%` liegen. `dcc32_execute` verwendet ausschließlich `%BDS%\bin\dcc32.exe`.
+
+Beide Compiler werden direkt mit `CreateProcess` gestartet. Es gibt keine Shell-Interpretation der Argumente. Standardausgabe und Standardfehler werden
+begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
+
+## MCP-Werkzeuge
+
+### Lesen
 
 - `ide_status`
-- `ide_list_open_files`
-- `ide_list_projects`
-- `ide_list_project_files`
-- `ide_list_directory_files`
-- `ide_read_file`
-- `ide_list_readonly_roots`
-- `ide_list_readonly_files`
-- `ide_read_readonly_file`
+- `open_files_list`
+- `projects_list`
+- `project_files_list`
+- `project_directory_files_list`
+- `directory_files_list`
+- `reference_roots_list`
+- `reference_files_list`
+- `file_read`
+- `reference_file_read`
+- `codex_registration_status`
 
-### Dateien und Projekte
+### Bearbeiten und IDE-Steuerung
 
-- `ide_write_file`
-- `ide_create_project`
-- `ide_open_project`
-- `ide_save_project`
-- `ide_remove_project`
-- `ide_create_unit`
-- `ide_create_form_unit`
-- `ide_open_file`
-- `ide_activate_file`
-- `ide_close_file`
-- `ide_remove_file_from_project`
-- `ide_show_form_as_text`
+- `file_write`
+- `project_create`
+- `project_open`
+- `project_save`
+- `project_remove`
+- `unit_create`
+- `form_unit_create`
+- `file_open`
+- `file_activate`
+- `file_close`
+- `project_file_remove`
+- `form_show_as_text`
+- `ui_message_box`
+- `ui_input_box`
+- `ui_balloon_hint`
+- `codex_register`
+- `codex_unregister`
 
-### Build und Ausführung
+### Build und Laufzeit
 
-- `ide_compile_project`
-- `ide_compile_project_group`
-- `ide_run_project`
-- `ide_stop_project`
+- `project_compile`
+- `project_group_compile`
+- `project_run`
+- `project_stop`
+- `msbuild_execute`
+- `dcc32_execute`
 
-### Nutzerinteraktion
+## Codex-Registrierung
 
-- `ide_message_box`
-- `ide_input_box`
-- `ide_balloon_hint`
+Die Optionsseite zeigt den Status folgender Dateien über `FileExists` und die DAI-Verwaltungsmarker an:
 
-Die Tool-Schemas und Annotationen werden dynamisch über `tools/list` geliefert.
+```text
+%USERPROFILE%\.codex\config.toml
+%USERPROFILE%\.agents\skills\delphi-ide\SKILL.md
+```
 
-## Verhalten wichtiger Operationen
+„Registrieren“ ergänzt ausschließlich einen markierten DAI-Block und den verwalteten Skill. „Deregistrieren“ entfernt nur diese verwalteten Inhalte.
+Ein bereits vorhandener, nicht markierter `[mcp_servers.dai]`-Abschnitt wird nicht überschrieben.
 
-### Lesen und Schreiben
+## Build
 
-`ide_read_file` liefert neben dem vollständigen Text unter anderem die Herkunft (`editor_buffer` oder `disk`), den Zugriffsmodus und einen SHA-256-Hash. `ide_write_file` ersetzt den gesamten Inhalt. Bei geöffneten Dateien wird der Editorpuffer geändert; mit `save=true` wird anschließend über die IDE gespeichert.
+PowerShell:
 
-### DFM-Textmodus
+```powershell
+.\Build.ps1 -Configuration Release -Platform Both
+```
 
-`ide_show_form_as_text` aktiviert die DFM und führt den passenden IDE-Befehl beziehungsweise `Alt+F12` aus. Erst nach erfolgreicher Bereitstellung eines `IOTASourceEditor` gilt die Umschaltung als erfolgreich.
+Mit explizitem BDS-Verzeichnis:
 
-### Projektstart
+```powershell
+.\Build.ps1 `
+  -Configuration Release `
+  -Platform Both `
+  -BdsRoot 'C:\Program Files (x86)\Embarcadero\Studio\37.0'
+```
 
-Mit `debugger=true` wird das ausgewählte Projekt zum aktiven Projekt gemacht und über den IDE-Startbefehl ausgeführt. Mit `debugger=false` wird das lokale Windows-Ziel direkt über `CreateProcess` gestartet. Der direkte Start setzt daher eine vorhandene lokale ausführbare Zieldatei voraus.
+Erwartete Ausgaben:
 
-## Verbindung testen
+```text
+Build\Win32\Release\Bpl\DAI.bpl
+Build\Win64\Release\Bpl\DAI.bpl
+```
 
-Bei laufender IDE und aktiviertem Server:
+Installieren Sie das Package, dessen Architektur zur laufenden IDE passt.
+
+## Verbindungstest
 
 ```powershell
 .\Test-MCP.ps1 -Port 7331 -Token '<Bearer-Token>'
 ```
 
-Ohne `-Token` verwendet das Skript zuerst `DELPHI_IDE_MCP_TOKEN` und versucht danach, den vom Package verwalteten Token aus `%USERPROFILE%\.codex\config.toml` zu lesen.
-
-Das Skript führt `initialize`, `notifications/initialized`, `tools/list` und `ide_status` aus.
+Das Skript führt `initialize`, `notifications/initialized`, `tools/list` und `tools/call → ide_status` aus. Dabei können in der Delphi-IDE
+Berechtigungsdialoge erscheinen.
 
 ## Statische Prüfung
 
 ```powershell
-python .\StaticCheck.py
+python .\Scripts\verify.py
 ```
 
-Die Prüfung kontrolliert unter anderem Unit-/Dateinamen, DPK-/DPROJ-Referenzen, DPROJ-XML, MCP-Tool-Parität, Methodendeklarationen und einfache lexikalische Fehler.
+Geprüft werden unter anderem Dateinamen, Unit-Namen, DPK-/DPROJ-Referenzen, XML, erforderliche MCP-Werkzeuge, Altbezeichnungen und die maximale
+Zeilenlänge von 180 Zeichen.
 
-## Technischer Hinweis
+## Hinweis zur Binärprüfung
 
-Dieses Archiv enthält den vollständigen Quellcode, jedoch keine vorcompilierte BPL. Die tatsächliche Binärkompatibilität muss mit der installierten Delphi-13-Toolchain und der konkret verwendeten 32- beziehungsweise 64-Bit-IDE geprüft werden.
+Das Archiv enthält Quellcode und Buildskripte, aber keine vorgefertigte BPL. Die abschließende Binärprüfung muss mit der konkret installierten Delphi-13-
+Toolchain erfolgen.

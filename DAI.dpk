@@ -1,0 +1,41 @@
+package DAI;
+
+{$DESIGNONLY}
+{$IMPLICITBUILD ON}
+
+requires
+  rtl,
+  vcl,
+  vclie,
+  designide,
+  IndySystem,
+  IndyCore,
+  IndyProtocols;
+
+contains
+  h5u.DAI.Consts in 'Source\h5u.DAI.Consts.pas',
+  h5u.DAI.Types in 'Source\h5u.DAI.Types.pas',
+  h5u.DAI.Settings in 'Source\h5u.DAI.Settings.pas',
+  h5u.DAI.Log in 'Source\h5u.DAI.Log.pas',
+  h5u.DAI.Permissions.Store in 'Source\h5u.DAI.Permissions.Store.pas',
+  h5u.DAI.Permissions.Dialog in 'Source\h5u.DAI.Permissions.Dialog.pas',
+  h5u.DAI.Permissions.Manager in 'Source\h5u.DAI.Permissions.Manager.pas',
+  h5u.DAI.OTA.Helpers in 'Source\h5u.DAI.OTA.Helpers.pas',
+  h5u.DAI.OTA.Files in 'Source\h5u.DAI.OTA.Files.pas',
+  h5u.DAI.OTA.Creators in 'Source\h5u.DAI.OTA.Creators.pas',
+  h5u.DAI.OTA.Projects in 'Source\h5u.DAI.OTA.Projects.pas',
+  h5u.DAI.Process in 'Source\h5u.DAI.Process.pas',
+  h5u.DAI.OTA.Build in 'Source\h5u.DAI.OTA.Build.pas',
+  h5u.DAI.UI in 'Source\h5u.DAI.UI.pas',
+  h5u.DAI.Codex.Registration in 'Source\h5u.DAI.Codex.Registration.pas',
+  h5u.DAI.MCP.Tools in 'Source\h5u.DAI.MCP.Tools.pas',
+  h5u.DAI.MCP.Protocol in 'Source\h5u.DAI.MCP.Protocol.pas',
+  h5u.DAI.MCP.Server in 'Source\h5u.DAI.MCP.Server.pas',
+  h5u.DAI.Runtime in 'Source\h5u.DAI.Runtime.pas',
+  h5u.DAI.IDE.Notifier in 'Source\h5u.DAI.IDE.Notifier.pas',
+  h5u.DAI.Options.Frame in 'Source\h5u.DAI.Options.Frame.pas',
+  h5u.DAI.Options.Page in 'Source\h5u.DAI.Options.Page.pas',
+  h5u.DAI.Wizard in 'Source\h5u.DAI.Wizard.pas',
+  h5u.DAI.Register in 'Source\h5u.DAI.Register.pas';
+
+end.

@@ -1,0 +1,185 @@
+# DAI – Abschlussprüfung
+
+- Zeitpunkt (UTC): `2026-09-02T00:26:49.664400+00:00`
+- Ergebnis: **FAIL**
+- Prüfungen: `96/100` bestanden
+- Hinweis: Dies ist eine statische Prüfung. Eine echte Delphi-13-Kompilierung ist in dieser Umgebung nicht verfügbar.
+
+## Einzelprüfungen
+
+- [x] root file DAI.dpk
+- [x] root file DAI.dproj
+- [x] root file README.md
+- [x] root file Build.ps1
+- [x] root file Test-MCP.ps1
+- [x] unit file h5u.DAI.Consts.pas
+- [x] unit file h5u.DAI.Types.pas
+- [x] unit file h5u.DAI.Settings.pas
+- [x] unit file h5u.DAI.Log.pas
+- [x] unit file h5u.DAI.Permissions.Store.pas
+- [x] unit file h5u.DAI.Permissions.Dialog.pas
+- [x] unit file h5u.DAI.Permissions.Manager.pas
+- [x] unit file h5u.DAI.OTA.Helpers.pas
+- [x] unit file h5u.DAI.OTA.Files.pas
+- [ ] unit file h5u.DAI.OTA.Creators.pas
+- [x] unit file h5u.DAI.OTA.Projects.pas
+- [x] unit file h5u.DAI.Process.pas
+- [x] unit file h5u.DAI.OTA.Build.pas
+- [x] unit file h5u.DAI.UI.pas
+- [x] unit file h5u.DAI.Codex.Registration.pas
+- [x] unit file h5u.DAI.MCP.Tools.pas
+- [x] unit file h5u.DAI.MCP.Protocol.pas
+- [x] unit file h5u.DAI.MCP.Server.pas
+- [x] unit file h5u.DAI.Runtime.pas
+- [x] unit file h5u.DAI.IDE.Notifier.pas
+- [x] unit file h5u.DAI.Options.Frame.pas
+- [x] unit file h5u.DAI.Options.Page.pas
+- [x] unit file h5u.DAI.Wizard.pas
+- [x] unit file h5u.DAI.Register.pas
+- [x] all Pascal source files use lowercase h5u. prefix
+- [x] unit declarations match dot-separated filenames
+- [x] Pascal/DPK lines do not exceed 180 characters
+- [x] legacy package name removed
+- [x] project display name DAI / Delphi AI present
+- [x] MCP tool ide_status
+- [x] MCP tool open_files_list
+- [x] MCP tool projects_list
+- [x] MCP tool project_files_list
+- [x] MCP tool project_directory_files_list
+- [x] MCP tool directory_files_list
+- [x] MCP tool reference_roots_list
+- [x] MCP tool reference_files_list
+- [x] MCP tool file_read
+- [x] MCP tool reference_file_read
+- [x] MCP tool file_write
+- [x] MCP tool project_create
+- [x] MCP tool project_open
+- [x] MCP tool project_save
+- [x] MCP tool project_remove
+- [x] MCP tool unit_create
+- [x] MCP tool form_unit_create
+- [x] MCP tool file_open
+- [x] MCP tool file_activate
+- [x] MCP tool file_close
+- [x] MCP tool project_file_remove
+- [x] MCP tool form_show_as_text
+- [x] MCP tool project_compile
+- [x] MCP tool project_group_compile
+- [x] MCP tool project_run
+- [x] MCP tool project_stop
+- [x] MCP tool ui_message_box
+- [x] MCP tool ui_input_box
+- [x] MCP tool ui_balloon_hint
+- [x] MCP tool codex_registration_status
+- [x] MCP tool codex_register
+- [x] MCP tool codex_unregister
+- [x] MCP tool msbuild_execute
+- [x] MCP tool dcc32_execute
+- [x] permission button Nie erlauben
+- [x] permission button Verweigern
+- [x] permission button Nur diesmal
+- [x] permission button Für diese Session
+- [x] permission button Immer erlauben
+- [x] permission category Lesezugriffe
+- [x] permission category Bearbeiten innerhalb der IDE
+- [ ] permission category Dateien bearbeiten außerhalb der IDE
+- [x] permission category Kompilieren
+- [x] permission category Ausführen
+- [x] verification checkbox propagation implemented
+- [x] Codex chat identity threadId handled
+- [x] MCP session fallback handled
+- [x] project session cleanup notifier implemented
+- [x] localized default project folder Projects
+- [x] localized default project folder Projekte
+- [x] localized default project folder Progetti
+- [x] localized default project folder プロジェクト
+- [x] reference root BDSCatalogRepository
+- [x] reference root BDSCatalogRepositoryAllUsers
+- [x] reference root CatalogRepository
+- [x] reference root Samples
+- [x] direct MSBuild executable is constrained
+- [x] direct DCC32 executable is constrained
+- [x] direct process execution avoids a general shell tool
+- [x] SplashScreenServices registration present
+- [x] IDE options page present
+- [x] OTA message logging present
+- [x] TaskDialog is used for permissions
+- [ ] project open/create code does not automatically close prior projects/groups
+  - `CloseModule(`
+- [x] DAI.dproj XML parses
+- [ ] package verify.py
+  - `$ /opt/pyvenv/bin/python /mnt/data/DAI-Delphi13-1.1.0/Scripts/verify.py /mnt/data/DAI-Delphi13-1.1.0 DAI-Prüfung fehlgeschlagen:   - Altbezeichnung in README.md   - Altbezeichnung in DAI.dpk   - Altbezeichnung in Test-MCP.ps1   - Altbezeichnung in DAI.dproj   - Altbezeichnung in CHANGELOG.md   - Altbezeichnung in Build.ps1   - Altbezeichnung in Scripts/verify.py   - Altbezeichnung in Source/h5u.DAI.Permissions.Manager.pas   - Altbezeichnung in Source/h5u.DAI.Log.pas   - Altbezeichnung in Source/h5u.DAI.OTA.Files.pas   - Altbezeichnung in Source/h5u.DAI.Codex.Registration.pas   - Altbezeichnung in Source/h5u.DAI.OTA.Helpers.pas   - Altbezeichnung in Source/h5u.DAI.Types.pas   - Altbezeichnung in Source/h5u.DAI.Consts.pas   - Altbezeichnung in Source/h5u.DAI.Wizard.pas   - Altbezeichnung in Source/h5u.DAI.Permissions.Store.pas   - Altbezeichnung in Source/h5u.DAI.MCP.Protocol.pas   - Altbezeichnung in Source/h5u.DAI.Permissions.Dialog.pas   - Altbezeichnung in Source/h5u.DAI.Register.pas   - Altbezeichnung in Source/h5u.DAI.MCP.Server.pas   - Altbezeichnung in Source/h5u.DAI.MCP.Tools.pas   - Altbezeichnung in Source/h5u.DAI.Options.Page.pas   - Altbezeichnung in Source/h5u.DAI.Process.pas   - Altbezeichnung in Source/h5u.DAI.OTA.Build.pas   - Altbezeichnung in Source/h5u.DAI.Runtime.pas   - Altbezeichnung in Source/h5u.DAI.IDE.Notifier.pas   - Altbezeichnung in Source/h5u.DAI.Options.Frame.pas   - Altbezeichnung in Source/h5u.DAI.UI.pas   - Altbezeichnung in Source/h5u.DAI.OTA.Projects.pas   - Altbezeichnung in Source/h5u.DAI.Settings.pas   - h5u.DAI.Wizard.pas: referenzierte Unit fehlt: h5u.DAI.DelphiAI   - h5u.DAI.OTA.Projects.pas: referenzierte Unit fehlt: h5u.DAI.OTA.Creators  $ /opt/pyvenv/bin/python /mnt/data/DAI-Delphi13-1.1.0/Scripts/verify.py DAI-Prüfung fehlgeschlagen:   - Altbezeichnung in README.md   - Altbezeichnung in DAI.dpk   - Altbezeichnung in Test-MCP.ps1   - Altbezeichnung in DAI.dproj   - Altbezeichnung in CHANGELOG.md   - Altbezeichnung in Build.ps1   - Altbezeichnung in Scripts/verify.py   - Altbezeichnung in Source/h5u.DAI.Permissions.Manager.pas   - Altbezeichnung in Source/h5u.DAI.Log.pas   - Altbezeichnung in Source/h5u.DAI.OTA.Files.pas   - Altbezeichnung in Source/h5u.DAI.Codex.Registration.pas   - Altbezeichnung in Source/h5u.DAI.OTA.Helpers.pas   - Altbezeichnung in Source/h5u.DAI.Types.pas   - Altbezeichnung in Source/h5u.DAI.Consts.pas   - Altbezeichnung in Source/h5u.DAI.Wizard.pas   - Altbezeichnung in Source/h5u.DAI.Permissions.Store.pas   - Altbezeichnung in Source/h5u.DAI.MCP.Protocol.pas   - Altbezeichnung in Source/h5u.DAI.Permissions.Dialog.pas   - Altbezeichnung in Source/h5u.DAI.Register.pas   - Altbezeichnung in Source/h5u.DAI.MCP.Server.pas   - Altbezeichnung in Source/h5u.DAI.MCP.Tools.pas   - Altbezeichnung in Source/h5u.DAI.Options.Page.pas   - Altbezeichnung in Source/h5u.DAI.Process.pas   - Altbezeichnung in Source/h5u.DAI.OTA.Build.pas   - Altbezeichnung in Source/h5u.DAI.Runtime.pas   - Altbezeichnung in Source/h5u.DAI.IDE.Notifier.pas   - Altbezeichnung in Source/h5u.DAI.Options.Frame.pas   - Altbezeichnung in Source/h5u.DAI.UI.pas   - Altbezeichnung in Source/h5u.DAI.OTA.Projects.pas   - Altbezeichnung in Source/h5u.DAI.Settings.pas   - h5u.DAI.Wizard.pas: referenzierte Unit fehlt: h5u.DAI.DelphiAI   - h5u.DAI.OTA.Projects.pas: referenzierte Unit fehlt: h5u.DAI.OTA.Creators`
+
+## Ausgabe von Scripts/verify.py
+
+```text
+$ /opt/pyvenv/bin/python /mnt/data/DAI-Delphi13-1.1.0/Scripts/verify.py /mnt/data/DAI-Delphi13-1.1.0
+DAI-Prüfung fehlgeschlagen:
+  - Altbezeichnung in README.md
+  - Altbezeichnung in DAI.dpk
+  - Altbezeichnung in Test-MCP.ps1
+  - Altbezeichnung in DAI.dproj
+  - Altbezeichnung in CHANGELOG.md
+  - Altbezeichnung in Build.ps1
+  - Altbezeichnung in Scripts/verify.py
+  - Altbezeichnung in Source/h5u.DAI.Permissions.Manager.pas
+  - Altbezeichnung in Source/h5u.DAI.Log.pas
+  - Altbezeichnung in Source/h5u.DAI.OTA.Files.pas
+  - Altbezeichnung in Source/h5u.DAI.Codex.Registration.pas
+  - Altbezeichnung in Source/h5u.DAI.OTA.Helpers.pas
+  - Altbezeichnung in Source/h5u.DAI.Types.pas
+  - Altbezeichnung in Source/h5u.DAI.Consts.pas
+  - Altbezeichnung in Source/h5u.DAI.Wizard.pas
+  - Altbezeichnung in Source/h5u.DAI.Permissions.Store.pas
+  - Altbezeichnung in Source/h5u.DAI.MCP.Protocol.pas
+  - Altbezeichnung in Source/h5u.DAI.Permissions.Dialog.pas
+  - Altbezeichnung in Source/h5u.DAI.Register.pas
+  - Altbezeichnung in Source/h5u.DAI.MCP.Server.pas
+  - Altbezeichnung in Source/h5u.DAI.MCP.Tools.pas
+  - Altbezeichnung in Source/h5u.DAI.Options.Page.pas
+  - Altbezeichnung in Source/h5u.DAI.Process.pas
+  - Altbezeichnung in Source/h5u.DAI.OTA.Build.pas
+  - Altbezeichnung in Source/h5u.DAI.Runtime.pas
+  - Altbezeichnung in Source/h5u.DAI.IDE.Notifier.pas
+  - Altbezeichnung in Source/h5u.DAI.Options.Frame.pas
+  - Altbezeichnung in Source/h5u.DAI.UI.pas
+  - Altbezeichnung in Source/h5u.DAI.OTA.Projects.pas
+  - Altbezeichnung in Source/h5u.DAI.Settings.pas
+  - h5u.DAI.Wizard.pas: referenzierte Unit fehlt: h5u.DAI.DelphiAI
+  - h5u.DAI.OTA.Projects.pas: referenzierte Unit fehlt: h5u.DAI.OTA.Creators
+
+$ /opt/pyvenv/bin/python /mnt/data/DAI-Delphi13-1.1.0/Scripts/verify.py
+DAI-Prüfung fehlgeschlagen:
+  - Altbezeichnung in README.md
+  - Altbezeichnung in DAI.dpk
+  - Altbezeichnung in Test-MCP.ps1
+  - Altbezeichnung in DAI.dproj
+  - Altbezeichnung in CHANGELOG.md
+  - Altbezeichnung in Build.ps1
+  - Altbezeichnung in Scripts/verify.py
+  - Altbezeichnung in Source/h5u.DAI.Permissions.Manager.pas
+  - Altbezeichnung in Source/h5u.DAI.Log.pas
+  - Altbezeichnung in Source/h5u.DAI.OTA.Files.pas
+  - Altbezeichnung in Source/h5u.DAI.Codex.Registration.pas
+  - Altbezeichnung in Source/h5u.DAI.OTA.Helpers.pas
+  - Altbezeichnung in Source/h5u.DAI.Types.pas
+  - Altbezeichnung in Source/h5u.DAI.Consts.pas
+  - Altbezeichnung in Source/h5u.DAI.Wizard.pas
+  - Altbezeichnung in Source/h5u.DAI.Permissions.Store.pas
+  - Altbezeichnung in Source/h5u.DAI.MCP.Protocol.pas
+  - Altbezeichnung in Source/h5u.DAI.Permissions.Dialog.pas
+  - Altbezeichnung in Source/h5u.DAI.Register.pas
+  - Altbezeichnung in Source/h5u.DAI.MCP.Server.pas
+  - Altbezeichnung in Source/h5u.DAI.MCP.Tools.pas
+  - Altbezeichnung in Source/h5u.DAI.Options.Page.pas
+  - Altbezeichnung in Source/h5u.DAI.Process.pas
+  - Altbezeichnung in Source/h5u.DAI.OTA.Build.pas
+  - Altbezeichnung in Source/h5u.DAI.Runtime.pas
+  - Altbezeichnung in Source/h5u.DAI.IDE.Notifier.pas
+  - Altbezeichnung in Source/h5u.DAI.Options.Frame.pas
+  - Altbezeichnung in Source/h5u.DAI.UI.pas
+  - Altbezeichnung in Source/h5u.DAI.OTA.Projects.pas
+  - Altbezeichnung in Source/h5u.DAI.Settings.pas
+  - h5u.DAI.Wizard.pas: referenzierte Unit fehlt: h5u.DAI.DelphiAI
+  - h5u.DAI.OTA.Projects.pas: referenzierte Unit fehlt: h5u.DAI.OTA.Creators
+```

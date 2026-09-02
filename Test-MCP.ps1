@@ -1,129 +1,109 @@
 [CmdletBinding()]
 param(
-    [ValidateRange(1, 65535)]
-    [int] $Port = 7331,
-
-    [string] $Token = $env:DELPHI_IDE_MCP_TOKEN
+    [int]$Port = 7331,
+    [string]$Token = $env:DELPHI_IDE_MCP_TOKEN
 )
 
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 
-function Get-TokenFromCodexConfig {
-    $configFile = Join-Path $env:USERPROFILE '.codex\config.toml'
+function Get-DAITokenFromCodexConfig {
+    $configFile = Join-Path $HOME '.codex\config.toml'
     if (-not (Test-Path -LiteralPath $configFile)) {
         return $null
     }
 
-    $text = Get-Content -LiteralPath $configFile -Raw
-    $begin = '# BEGIN CodexMCPIDE (managed by the Delphi IDE package)'
-    $end = '# END CodexMCPIDE'
-    $beginIndex = $text.IndexOf($begin, [StringComparison]::Ordinal)
-    if ($beginIndex -lt 0) {
-        return $null
-    }
-    $endIndex = $text.IndexOf($end, $beginIndex, [StringComparison]::Ordinal)
-    if ($endIndex -lt 0) {
-        return $null
+    $content = Get-Content -LiteralPath $configFile -Raw
+    $block = [regex]::Match(
+        $content,
+        '(?s)# >>> DAI managed >>>.*?Authorization\s*=\s*"Bearer\s+([^"]+)".*?# <<< DAI managed <<<'
+    )
+    if ($block.Success) {
+        return $block.Groups[1].Value
     }
 
-    $block = $text.Substring($beginIndex, $endIndex - $beginIndex)
-    $match = [regex]::Match(
-        $block,
-        'Authorization\s*=\s*"Bearer\s+([^"\r\n]+)"',
-        [Text.RegularExpressions.RegexOptions]::IgnoreCase
-    )
-    if ($match.Success) {
-        return $match.Groups[1].Value
-    }
     return $null
 }
 
 if ([string]::IsNullOrWhiteSpace($Token)) {
-    $Token = Get-TokenFromCodexConfig
+    $Token = Get-DAITokenFromCodexConfig
 }
 if ([string]::IsNullOrWhiteSpace($Token)) {
-    throw 'Kein Bearer-Token angegeben. Verwenden Sie -Token oder DELPHI_IDE_MCP_TOKEN.'
+    throw 'Kein Bearer-Token angegeben und kein verwalteter DAI-Block in ~/.codex/config.toml gefunden.'
 }
 
 $uri = "http://127.0.0.1:$Port/mcp"
 $headers = @{
-    Authorization          = "Bearer $Token"
-    Accept                 = 'application/json, text/event-stream'
-    'MCP-Protocol-Version' = '2025-11-25'
+    Authorization = "Bearer $Token"
+    Accept        = 'application/json'
+    'Content-Type'= 'application/json'
 }
 
-function Invoke-McpRequest {
+function Invoke-DAIMcp {
     param(
-        [Parameter(Mandatory = $true)]
-        [hashtable] $Message,
+        [Parameter(Mandatory)]
+        [hashtable]$Payload,
 
-        [switch] $Notification
+        [string]$SessionId
     )
 
-    $json = $Message | ConvertTo-Json -Depth 20 -Compress
-    if ($Notification) {
-        $response = Invoke-WebRequest `
-            -Uri $uri `
-            -Method Post `
-            -Headers $headers `
-            -ContentType 'application/json; charset=utf-8' `
-            -Body $json `
-            -UseBasicParsing
-        if ($response.StatusCode -notin 200, 202, 204) {
-            throw "MCP-Notification fehlgeschlagen: HTTP $($response.StatusCode)"
-        }
-        return $null
+    $requestHeaders = @{} + $headers
+    if (-not [string]::IsNullOrWhiteSpace($SessionId)) {
+        $requestHeaders['Mcp-Session-Id'] = $SessionId
     }
 
-    return Invoke-RestMethod `
+    $response = Invoke-WebRequest `
         -Uri $uri `
         -Method Post `
-        -Headers $headers `
-        -ContentType 'application/json; charset=utf-8' `
-        -Body $json
+        -Headers $requestHeaders `
+        -Body ($Payload | ConvertTo-Json -Depth 20 -Compress)
+
+    [pscustomobject]@{
+        Body      = if ($response.Content) { $response.Content | ConvertFrom-Json } else { $null }
+        SessionId = $response.Headers['Mcp-Session-Id']
+    }
 }
 
-$initialize = Invoke-McpRequest -Message @{
+$initialize = Invoke-DAIMcp -Payload @{
     jsonrpc = '2.0'
-    id = 1
-    method = 'initialize'
-    params = @{
-        protocolVersion = '2025-11-25'
-        capabilities = @{}
-        clientInfo = @{
-            name = 'CodexMCPIDE-Test'
-            version = '1.0.0'
+    id      = 1
+    method  = 'initialize'
+    params  = @{
+        protocolVersion = '2025-06-18'
+        capabilities    = @{}
+        clientInfo      = @{
+            name    = 'DAI-Test'
+            version = '1.1.0'
         }
     }
 }
+$sessionId = $initialize.SessionId
+$initialize.Body | ConvertTo-Json -Depth 20
 
-Invoke-McpRequest -Notification -Message @{
+$null = Invoke-DAIMcp -SessionId $sessionId -Payload @{
     jsonrpc = '2.0'
-    method = 'notifications/initialized'
-    params = @{}
+    method  = 'notifications/initialized'
+    params  = @{}
 }
 
-$tools = Invoke-McpRequest -Message @{
+$tools = Invoke-DAIMcp -SessionId $sessionId -Payload @{
     jsonrpc = '2.0'
-    id = 2
-    method = 'tools/list'
-    params = @{}
+    id      = 2
+    method  = 'tools/list'
+    params  = @{}
 }
+$tools.Body | ConvertTo-Json -Depth 20
 
-$status = Invoke-McpRequest -Message @{
+$status = Invoke-DAIMcp -SessionId $sessionId -Payload @{
     jsonrpc = '2.0'
-    id = 3
-    method = 'tools/call'
-    params = @{
-        name = 'ide_status'
+    id      = 3
+    method  = 'tools/call'
+    params  = @{
+        name      = 'ide_status'
         arguments = @{}
+        _meta     = @{
+            threadId = 'dai-test-thread'
+        }
     }
 }
-
-Write-Host "Server: $($initialize.result.serverInfo.title) $($initialize.result.serverInfo.version)"
-Write-Host "Protokoll: $($initialize.result.protocolVersion)"
-Write-Host "Tools: $($tools.result.tools.Count)"
-$tools.result.tools | ForEach-Object { Write-Host "  - $($_.name)" }
-Write-Host 'IDE-Status:'
-$status.result.structuredContent | ConvertTo-Json -Depth 20
+$status.Body | ConvertTo-Json -Depth 20
