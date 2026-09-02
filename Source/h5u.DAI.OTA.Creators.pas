@@ -129,11 +129,11 @@ begin
   for LIndex := 1 to Length(Result) do
   begin
     LCharacter := Result[LIndex];
-    if not (TCharacter.IsLetterOrDigit(LCharacter) or (LCharacter = '_')) then
+    if not (LCharacter.IsLetterOrDigit or (LCharacter = '_')) then
       Result[LIndex] := '_';
   end;
 
-  if (Result = '') or not (TCharacter.IsLetter(Result[1]) or (Result[1] = '_')) then
+  if (Result = '') or not (Result[1].IsLetter or (Result[1] = '_')) then
     Result := '_' + Result;
 end;
 

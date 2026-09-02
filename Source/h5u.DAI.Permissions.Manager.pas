@@ -192,7 +192,6 @@ var
   LLevel: TDAIPermissionLevel;
   LWildcardKey: string;
 begin
-  Result := False;
   LKey := AccessKey(ACategory, AContext);
   LWildcardKey := WildcardAccessKey(ACategory, AContext);
   LGlobalWildcardKey := GlobalWildcardAccessKey(ACategory);

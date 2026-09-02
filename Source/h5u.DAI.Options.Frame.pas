@@ -1,4 +1,4 @@
-﻿unit h5u.DAI.Options.Frame;
+unit h5u.DAI.Options.Frame;
 
 interface
 

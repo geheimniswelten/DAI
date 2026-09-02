@@ -1,4 +1,4 @@
-﻿unit h5u.DAI.MCP.Server;
+unit h5u.DAI.MCP.Server;
 
 interface
 

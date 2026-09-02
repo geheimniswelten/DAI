@@ -1,5 +1,14 @@
 # Änderungsprotokoll
 
+## 1.1.4
+
+- die vom Benutzer in Delphi 13 bestätigten Compilerfixes übernommen: `Vcl.Graphics` für `fsBold`, gültige `TStreamReader.Create`-Überladung und direkter `nil`-Vergleich für `TDAIOTA.MainProjectGroup`
+- unbenutzten privaten Setter `SetCustomReadDirectories` entfernt
+- unbenutzte Variablen in `TDAIIDENotifier.FileNotification` entfernt
+- drei vom Compiler beanstandete, vor der tatsächlichen Rückgabe überschriebene `Result`-Initialisierungen entfernt
+- veraltete statische `TCharacter`-Aufrufe durch `TCharHelper`-Aufrufe ersetzt
+- Zeilenlänge und Deklarationsformatierung weiterhin auf maximal 180 Zeichen geprüft
+
 ## 1.1.3
 
 - Pascal-Quellcode auf eine maximale Zeilenlänge von 180 Zeichen neu formatiert

@@ -1,4 +1,4 @@
-﻿unit h5u.DAI.UI;
+unit h5u.DAI.UI;
 
 interface
 

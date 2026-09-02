@@ -34,8 +34,6 @@ end;
 procedure TDAIIDENotifier.FileNotification(NotifyCode: TOTAFileNotification; const FileName: string; var Cancel: Boolean);
 var
   LExtension: string;
-  LProjectFileName: string;
-  LProject: IOTAProject;
 begin
   if NotifyCode <> ofnFileClosing then
     Exit;

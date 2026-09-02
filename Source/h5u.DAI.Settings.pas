@@ -19,7 +19,6 @@ type
     function GenerateToken: string;
     function ReadRootDirectory: string;
     function StudioVersion: string;
-    procedure SetCustomReadDirectories(const AValue: TStrings);
   public
     constructor Create;
     destructor Destroy; override;
@@ -282,11 +281,6 @@ begin
   finally
     LRegistry.Free;
   end;
-end;
-
-procedure TDAISettings.SetCustomReadDirectories(const AValue: TStrings);
-begin
-  FCustomReadDirectories.Assign(AValue);
 end;
 
 end.

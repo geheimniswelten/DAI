@@ -208,7 +208,6 @@ var
   LResult: TJSONObject;
   LToolResult: TJSONObject;
 begin
-  Result := nil;
   AHTTPStatus := 200;
   LId := AMessage.GetValue('id');
   LMethod := AMessage.GetValue<string>('method', '');

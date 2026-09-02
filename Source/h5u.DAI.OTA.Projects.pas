@@ -1,4 +1,4 @@
-﻿unit h5u.DAI.OTA.Projects;
+unit h5u.DAI.OTA.Projects;
 
 interface
 
@@ -41,7 +41,6 @@ var
   LButton: TTaskDialogButtonItem;
   LDialog: TTaskDialog;
 begin
-  Result := False;
   LDialog := TTaskDialog.Create(nil);
   try
     LDialog.Caption := 'DAI';
