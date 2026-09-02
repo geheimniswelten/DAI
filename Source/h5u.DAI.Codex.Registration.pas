@@ -73,6 +73,8 @@ begin
     '## Regeln' + sLineBreak + sLineBreak +
     '- Lese vor Änderungen stets den aktuellen Editorpuffer.' + sLineBreak +
     '- Verwende für geöffnete Dateien `file_write`; DAI aktualisiert dann den Undo-fähigen Editorpuffer.' + sLineBreak +
+    '- Neue `.pas`-Dateien werden als UTF-8 mit BOM angelegt; vorhandene Codierung und Zeilenenden werden nach Möglichkeit erhalten.' + sLineBreak +
+    '- Bearbeite DFM-Dateien nur im IDE-Textmodus; Delphi entscheidet beim Speichern selbst über ANSI oder UTF-8.' + sLineBreak +
     '- Delphi-Sourcen, Demos, GetIt-Repositories und zusätzliche Referenzverzeichnisse sind ausschließlich lesbar.' + sLineBreak +
     '- Projektwechsel, Kompilieren und Ausführen können Bestätigungen in der Delphi-IDE erfordern.' + sLineBreak +
     '- Verwende `msbuild_execute` und `dcc32_execute` nur für explizite Compileraufgaben.' + sLineBreak;

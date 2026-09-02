@@ -1,4 +1,4 @@
-unit h5u.DAI.Settings;
+﻿unit h5u.DAI.Settings;
 
 interface
 

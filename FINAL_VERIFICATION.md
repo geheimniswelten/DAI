@@ -1,33 +1,76 @@
-# DAI 1.1.4 – Prüfbericht
+# DAI 1.1.5 – Prüfbericht
 
-## Übernommene Delphi-13-Compilerfixes
+## Grundlage
 
-Die vom Benutzer bereitgestellten, in Delphi 13 erfolgreich kompilierten Änderungen wurden als fachliche Basis übernommen:
+Der Stand basiert auf DAI 1.1.4. Die drei zuletzt vom Benutzer in Delphi 13 erfolgreich kompilierten Dateien wurden erneut unverändert als Grundlage übernommen:
 
-- `h5u.DAI.Options.Frame.pas`: `Vcl.Graphics` für `fsBold` ergänzt
-- `h5u.DAI.MCP.Server.pas`: die in Delphi 13 vorhandene `TStreamReader.Create`-Überladung mit vier Argumenten verwendet
-- `h5u.DAI.OTA.Projects.pas`: das Ergebnis von `TDAIOTA.MainProjectGroup` direkt mit `nil` verglichen, statt `Assigned` auf einen Methodenaufruf anzuwenden
+- `h5u.DAI.MCP.Server.pas`: UTF-8 mit BOM und CRLF, bytegenau übernommen
+- `h5u.DAI.Options.Frame.pas`: UTF-8 mit BOM und CRLF, bytegenau übernommen
+- `h5u.DAI.OTA.Projects.pas`: UTF-8 mit BOM und CRLF übernommen; ausschließlich die bereits bekannte unbenutzte Initialisierung `Result := False` wurde entfernt
 
-## Bereinigte Compilerhinweise und -warnungen
+Es wurde keine pauschale Umstellung der Zeilenenden vorgenommen.
 
-- `H2219` in `h5u.DAI.Settings.pas`: unbenutzten privaten Setter `SetCustomReadDirectories` vollständig entfernt
-- `H2077` in `TDAIPermissionManager.Authorize`: vor der tatsächlichen Rückgabe überschriebene Initialisierung `Result := False` entfernt
-- `H2164` in `TDAIIDENotifier.FileNotification`: `LProjectFileName` und `LProject` entfernt
-- `W1000` in `h5u.DAI.OTA.Creators.pas`: `TCharacter.IsLetterOrDigit` und `TCharacter.IsLetter` durch `TCharHelper`-Aufrufe ersetzt
-- `H2077` in `ConfirmWorkspaceChange`: vor der tatsächlichen Rückgabe überschriebene Initialisierung `Result := False` entfernt
-- `H2077` in `TDAIMCPProtocol.HandleMessage`: vor der tatsächlichen Rückgabe überschriebene Initialisierung `Result := nil` entfernt
+## PAS-Codierung
 
-Die Änderungen an den Warnstellen verändern die fachliche Ablaufsteuerung nicht. Alle vorzeitigen Rückgaben liefern weiterhin explizite Werte; die regulären Pfade weisen den Funktionswert vor dem Verlassen der Funktion zu.
+Alle 25 ausgelieferten `.pas`-Dateien sind jetzt UTF-8 mit BOM. Beim Hinzufügen des BOM wurden die vorhandenen Zeilenenden nicht verändert:
+
+- die beiden bytegenau übernommenen Benutzerdateien behalten CRLF
+- `h5u.DAI.OTA.Projects.pas` behält CRLF
+- die übrigen, aus dem bisherigen Projektstand stammenden Dateien behalten LF
+- die neue Unit `h5u.DAI.Text.Encoding.pas` verwendet UTF-8 mit BOM und LF
+
+Die Prüfung verlangt UTF-8 mit BOM ausschließlich für die ausgelieferten `.pas`-Dateien. Für DFM-Dateien wird keine entsprechende Regel angewendet.
+
+## Laufzeitverhalten von `file_read` und `file_write`
+
+Die neue Unit `h5u.DAI.Text.Encoding.pas` kapselt die Codierungs- und Zeilenendenbehandlung geschlossener Dateien.
+
+### Vorhandene geschlossene Dateien
+
+- BOM-basierte Codierungen werden erkannt und beibehalten.
+- Delphi-Dateien ohne BOM werden entsprechend dem IDE-Verhalten als System-ANSI interpretiert.
+- Vorhandene Zeilenenden werden erkannt und bei vollständiger Ersetzung des Inhalts beibehalten.
+- Kann neuer Inhalt nicht verlustfrei in der bestehenden ANSI-Codierung gespeichert werden, wird eine Pascal-Quelldatei auf UTF-8 mit BOM angehoben.
+
+### Neue Dateien
+
+- Neue `.pas`-Dateien werden standardmäßig als UTF-8 mit BOM geschrieben.
+- Für andere neue Textdateien wird nicht automatisch die PAS-Regel verwendet.
+- Die im übergebenen Inhalt vorhandenen Zeilenenden bleiben unverändert.
+
+### DFM-Dateien
+
+DFM-Dateien werden niemals direkt durch `TFile.WriteAllText` oder `TFile.WriteAllBytes` ersetzt. `file_write` behandelt `.dfm` immer als IDE-Bearbeitung, öffnet beziehungsweise verwendet den IDE-Textpuffer und speichert bei angefordertem `save` über die IDE. Dadurch entscheidet Delphi selbst beim Speichern, ob die DFM als ANSI oder UTF-8 ausgegeben wird.
+
+Ist kein DFM-Textpuffer verfügbar, wird der Schreibvorgang abgelehnt. Ein verdecktes Überschreiben der DFM auf dem Datenträger findet nicht statt.
+
+## Erweiterte Rückgabedaten
+
+`file_read` liefert zusätzlich:
+
+- `encoding`
+- `line_ending`
+
+`file_write` liefert zusätzlich:
+
+- `encoding`
+- `original_encoding`
+- `line_ending`
+- `original_line_ending`
+
+Für einen aktiven Editorpuffer wird die Codierung als `ide-buffer` gemeldet, weil die endgültige Dateicodierung erst beim Speichern durch die IDE festgelegt wird.
 
 ## Statische Prüfungen
 
-- 24 Pascal-Units vorhanden
+- 25 Pascal-Units vorhanden
 - 34 MCP-Werkzeuge deklariert
+- alle `.pas`-Dateien UTF-8 mit BOM
+- keine Prüfung oder erzwungene Standardcodierung für DFM-Dateien
 - maximale erlaubte Zeilenlänge in Pascal-Dateien und `DAI.dpk`: 180 Zeichen
 - tatsächlich längste Pascal-Zeile: 179 Zeichen
 - Methodensignaturen und Property-Deklarationen bleiben einzeilig, solange sie vollständig in höchstens 180 Zeichen passen
 - jeder `finalization`-Abschnitt besitzt einen vorherigen `initialization`-Abschnitt
-- DPK- und DPROJ-Referenzen vollständig
+- DPK- und DPROJ-Referenzen einschließlich `h5u.DAI.Text.Encoding.pas` vollständig
 - DPROJ-XML syntaktisch gültig
 - bekannte ungültige beziehungsweise ungeeignete Dateiausnahmen nicht vorhanden
 - Klammern, Zeichenketten und Kommentare statisch geprüft
@@ -35,4 +78,4 @@ Die Änderungen an den Warnstellen verändern die fachliche Ablaufsteuerung nich
 
 ## Abgrenzung
 
-Der vom Benutzer bereitgestellte Stand mit den drei übernommenen Compilerfixes wurde nach seiner Rückmeldung in Delphi 13 erfolgreich kompiliert. Die anschließende Bereinigung der verbliebenen Hinweise und Warnungen konnte in dieser Umgebung nicht erneut mit `dcc32.exe` ausgeführt werden, weil keine Delphi-13-Toolchain installiert ist.
+DAI 1.1.4 wurde nach Rückmeldung des Benutzers in Delphi 13 kompiliert. Die neue Encoding-Unit und die Änderungen an `file_read`/`file_write` konnten in dieser Umgebung nicht mit `dcc32.exe` kompiliert werden, weil keine Delphi-13-Toolchain installiert ist. Sie wurden statisch gegen die vorhandenen Projektschnittstellen und die Delphi-Signaturregeln geprüft.

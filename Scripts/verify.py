@@ -52,9 +52,35 @@ def fail(errors: list[str], message: str) -> None:
     errors.append(message)
 
 
+
+
+def read_project_text(path: Path) -> str:
+    data = path.read_bytes()
+    if path.suffix.lower() not in {".pas", ".dpk"}:
+        return data.decode("utf-8-sig")
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig")
+    try:
+        return data.decode("ascii")
+    except UnicodeDecodeError:
+        return data.decode("cp1252")
+
+
+def check_pascal_encodings(errors: list[str]) -> None:
+    for path in sorted(SOURCE.glob("*.pas")):
+        data = path.read_bytes()
+        if not data.startswith(b"\xef\xbb\xbf"):
+            fail(errors, f"{path.relative_to(ROOT)}: DAI-PAS-Dateien müssen als UTF-8 mit BOM ausgeliefert werden")
+            continue
+        try:
+            data.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            fail(errors, f"{path.relative_to(ROOT)}: ungültiges UTF-8 mit BOM: {exc}")
+
+
 def check_line_lengths(errors: list[str]) -> None:
     for path in sorted([*SOURCE.glob("*.pas"), ROOT / "DAI.dpk"]):
-        for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
+        for number, line in enumerate(read_project_text(path).splitlines(), start=1):
             if len(line) > MAX_LINE_LENGTH:
                 fail(errors, f"{path.relative_to(ROOT)}:{number}: {len(line)} Zeichen")
 
@@ -104,7 +130,7 @@ def normalized_declaration(lines: list[str]) -> str:
 
 def check_declaration_layout(errors: list[str]) -> None:
     for path in sorted(SOURCE.glob("*.pas")):
-        lines = path.read_text(encoding="utf-8-sig").splitlines()
+        lines = read_project_text(path).splitlines()
         line_index = 0
         while line_index < len(lines):
             routine_match = ROUTINE_HEADER_START.match(lines[line_index])
@@ -139,7 +165,7 @@ def check_declaration_layout(errors: list[str]) -> None:
 
 def check_initialization_finalization(errors: list[str]) -> None:
     for path in sorted(SOURCE.glob("*.pas")):
-        content = path.read_text(encoding="utf-8-sig")
+        content = read_project_text(path)
         stripped, _ = strip_pascal_strings_and_comments(content)
         initialization_match = re.search(r"(?im)^\s*initialization\b", stripped)
         finalization_match = re.search(r"(?im)^\s*finalization\b", stripped)
@@ -151,7 +177,7 @@ def check_unit_names(errors: list[str]) -> None:
     for path in sorted(SOURCE.glob("*.pas")):
         if not path.name.startswith("h5u."):
             fail(errors, f"Pascal-Datei ohne h5u.-Präfix: {path.name}")
-        content = path.read_text(encoding="utf-8-sig")
+        content = read_project_text(path)
         match = re.search(r"(?im)^\s*unit\s+([A-Za-z0-9_.]+)\s*;", content)
         if not match:
             fail(errors, f"Keine Unit-Deklaration: {path.name}")
@@ -161,7 +187,7 @@ def check_unit_names(errors: list[str]) -> None:
 
 
 def check_package_references(errors: list[str]) -> None:
-    dpk = (ROOT / "DAI.dpk").read_text(encoding="utf-8-sig")
+    dpk = read_project_text(ROOT / "DAI.dpk")
     for path in sorted(SOURCE.glob("*.pas")):
         expected = f"{path.stem} in 'Source\\{path.name}'"
         if expected.lower() not in dpk.lower():
@@ -177,7 +203,7 @@ def check_dproj(errors: list[str]) -> None:
         fail(errors, f"DAI.dproj ist kein gültiges XML: {exc}")
         return
 
-    text = (ROOT / "DAI.dproj").read_text(encoding="utf-8-sig")
+    text = read_project_text(ROOT / "DAI.dproj")
     if "<MainSource>DAI.dpk</MainSource>" not in text:
         fail(errors, "DAI.dproj verwendet nicht DAI.dpk")
     for path in sorted(SOURCE.glob("*.pas")):
@@ -188,7 +214,7 @@ def check_dproj(errors: list[str]) -> None:
 
 
 def check_tools(errors: list[str]) -> None:
-    content = (SOURCE / "h5u.DAI.MCP.Tools.pas").read_text(encoding="utf-8-sig")
+    content = read_project_text(SOURCE / "h5u.DAI.MCP.Tools.pas")
     declared = set(re.findall(r"AddTool\s*\(\s*Result\s*,\s*'([^']+)'", content, flags=re.IGNORECASE | re.DOTALL))
     missing = sorted(REQUIRED_TOOLS - declared)
     extra = sorted(declared - REQUIRED_TOOLS)
@@ -208,7 +234,7 @@ def check_old_names(errors: list[str]) -> None:
         if not path.is_file() or path.suffix.lower() in {".zip", ".sha256"}:
             continue
         try:
-            content = path.read_text(encoding="utf-8-sig")
+            content = read_project_text(path)
         except UnicodeDecodeError:
             continue
         for old_name in old_names:
@@ -219,7 +245,7 @@ def check_referenced_units(errors: list[str]) -> None:
     available = {path.stem.lower() for path in SOURCE.glob("*.pas")}
     pattern = re.compile(r"\bh5u\.DAI(?:\.[A-Za-z0-9_]+)+")
     for path in SOURCE.glob("*.pas"):
-        content = path.read_text(encoding="utf-8-sig")
+        content = read_project_text(path)
         stripped, _ = strip_pascal_strings_and_comments(content)
         for token in pattern.findall(stripped):
             parts = token.split(".")
@@ -232,7 +258,7 @@ def check_known_invalid_symbols(errors: list[str]) -> None:
     invalid_symbols = ("EFileExistsException", "EFileNotFoundException")
     unsuitable_file_exception_types = ("EFCreateError", "EFOpenError")
     for path in SOURCE.glob("*.pas"):
-        content = path.read_text(encoding="utf-8-sig")
+        content = read_project_text(path)
         for symbol in invalid_symbols:
             if re.search(rf"\b{re.escape(symbol)}\b", content):
                 fail(errors, f"{path.name}: nicht vorhandener Delphi-Typ {symbol}")
@@ -242,7 +268,7 @@ def check_known_invalid_symbols(errors: list[str]) -> None:
 
 
 def check_dai_type_definitions(errors: list[str]) -> None:
-    content = "\n".join(path.read_text(encoding="utf-8-sig") for path in SOURCE.glob("*.pas"))
+    content = "\n".join(read_project_text(path) for path in SOURCE.glob("*.pas"))
     identifiers = set(re.findall(r"\b(?:TDAI|EDAI)[A-Za-z0-9_]*\b", content))
     definitions = set(re.findall(r"\b((?:TDAI|EDAI)[A-Za-z0-9_]*)\s*=\s*(?:class|record|interface|\()", content, re.IGNORECASE))
     definitions.update(re.findall(r"\b((?:TDAI|EDAI)[A-Za-z0-9_]*)\s*=\s*[^;]+;", content, re.IGNORECASE))
@@ -265,7 +291,7 @@ def check_required_uses(errors: list[str]) -> None:
         "ToolsAPI": ("BorlandIDEServices", "IOTAModule", "IOTAProject", "INTAServices", "SplashScreenServices"),
     }
     for path in sorted(SOURCE.glob("*.pas")):
-        content = path.read_text(encoding="utf-8-sig")
+        content = read_project_text(path)
         used_units = direct_used_units(content)
         stripped, _ = strip_pascal_strings_and_comments(content)
         for unit_name, symbols in requirements.items():
@@ -279,7 +305,7 @@ def check_creator_definitions(errors: list[str]) -> None:
     if not path.is_file():
         fail(errors, "Creator-Unit h5u.DAI.OTA.Creators.pas fehlt")
         return
-    content = path.read_text(encoding="utf-8-sig")
+    content = read_project_text(path)
     required = (
         "TDAIModuleCreator",
         "TDAIProjectCreator",
@@ -294,14 +320,49 @@ def check_creator_definitions(errors: list[str]) -> None:
         if not re.search(rf"\b{re.escape(symbol)}\b", content):
             fail(errors, f"Creator-Unit deklariert oder implementiert {symbol} nicht")
 
+def check_encoding_policy(errors: list[str]) -> None:
+    files_content = read_project_text(SOURCE / "h5u.DAI.OTA.Files.pas")
+    tools_content = read_project_text(SOURCE / "h5u.DAI.MCP.Tools.pas")
+    encoding_content = read_project_text(SOURCE / "h5u.DAI.Text.Encoding.pas")
+
+    if "TDAITextEncoding.PrepareWrite" not in files_content:
+        fail(errors, "h5u.DAI.OTA.Files.pas: geschlossene Dateien werden nicht codierungserhaltend geschrieben")
+    if re.search(r"TFile\.WriteAllText\s*\(\s*LFileName\s*,\s*AContent\s*,\s*TEncoding\.UTF8", files_content):
+        fail(errors, "h5u.DAI.OTA.Files.pas: Dateiinhalt darf nicht pauschal als UTF-8 geschrieben werden")
+    if "DFM-Dateien werden ausschließlich über den IDE-Textpuffer geändert" not in files_content:
+        fail(errors, "h5u.DAI.OTA.Files.pas: DFM-Direktschreibschutz fehlt")
+    if "SameText(TPath.GetExtension(LExpandedFileName), '.dfm')" not in tools_content:
+        fail(errors, "h5u.DAI.MCP.Tools.pas: DFM-Schreibzugriffe müssen als IDE-Bearbeitung autorisiert werden")
+    for required in (
+        "tekANSI",
+        "tekUTF8BOM",
+        "CanEncodeWithSystemANSI",
+        "NormalizeLineEndings",
+        "IsDelphiTextFile",
+        "UsesUTF8BOMByDefault",
+    ):
+        if required not in encoding_content:
+            fail(errors, f"h5u.DAI.Text.Encoding.pas: Encoding-Policy fehlt: {required}")
+
+    default_match = re.search(
+        r"class function TDAITextEncoding\.UsesUTF8BOMByDefault.*?begin(.*?)end;",
+        encoding_content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not default_match or "'.pas'" not in default_match.group(1).lower():
+        fail(errors, "h5u.DAI.Text.Encoding.pas: UTF-8 mit BOM muss der Standard für neue PAS-Dateien sein")
+    elif "'.dfm'" in default_match.group(1).lower():
+        fail(errors, "h5u.DAI.Text.Encoding.pas: Die PAS-Standardcodierung darf nicht auf DFM-Dateien angewendet werden")
+
+
 def check_duplicate_implementations(errors: list[str]) -> None:
     pattern = re.compile(
         r"(?ims)^\s*((?:class\s+)?(?:function|procedure|constructor|destructor)\s+"
         r"[A-Za-z0-9_.]+\s*(?:\([^;]*?\))?(?:\s*:\s*[^;]+)?\s*;)"
     )
     for path in SOURCE.glob("*.pas"):
-        content = path.read_text(encoding="utf-8-sig")
-        implementation = content.split("\nimplementation\n", 1)
+        content = read_project_text(path)
+        implementation = re.split(r"(?im)^\s*implementation\s*$", content, maxsplit=1)
         if len(implementation) != 2:
             fail(errors, f"{path.name}: implementation-Abschnitt fehlt")
             continue
@@ -382,7 +443,7 @@ def strip_pascal_strings_and_comments(content: str) -> tuple[str, list[str]]:
 
 def check_lexical_balance(errors: list[str]) -> None:
     for path in sorted([*SOURCE.glob("*.pas"), ROOT / "DAI.dpk"]):
-        content = path.read_text(encoding="utf-8-sig")
+        content = read_project_text(path)
         stripped, lexical_errors = strip_pascal_strings_and_comments(content)
         for lexical_error in lexical_errors:
             fail(errors, f"{path.relative_to(ROOT)}: {lexical_error}")
@@ -422,6 +483,7 @@ def write_manifest() -> None:
 
 def main() -> int:
     errors: list[str] = []
+    check_pascal_encodings(errors)
     check_line_lengths(errors)
     check_declaration_layout(errors)
     check_initialization_finalization(errors)
@@ -435,6 +497,7 @@ def main() -> int:
     check_dai_type_definitions(errors)
     check_required_uses(errors)
     check_creator_definitions(errors)
+    check_encoding_policy(errors)
     check_duplicate_implementations(errors)
     check_lexical_balance(errors)
 

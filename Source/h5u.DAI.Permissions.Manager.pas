@@ -1,4 +1,4 @@
-unit h5u.DAI.Permissions.Manager;
+﻿unit h5u.DAI.Permissions.Manager;
 
 interface
 

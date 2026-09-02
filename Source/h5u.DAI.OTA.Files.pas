@@ -1,4 +1,4 @@
-unit h5u.DAI.OTA.Files;
+﻿unit h5u.DAI.OTA.Files;
 
 interface
 
@@ -32,6 +32,7 @@ uses
   h5u.DAI.Consts,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Settings,
+  h5u.DAI.Text.Encoding,
   h5u.DAI.Types;
 
 procedure AddUniqueFile(const AFiles: TDictionary<string, Boolean>; const AFileName: string);
@@ -74,7 +75,7 @@ begin
   if Assigned(Result) or not SameText(TPath.GetExtension(AFileName), '.dfm') then
     Exit;
 
-  if not TDAIOTA.IsFormLoadedForFile(AFileName) then
+  if not TFile.Exists(AFileName) and not TDAIOTA.IsFormLoadedForFile(AFileName) then
     Exit;
 
   TDAIOTA.RunOnMainThread(
@@ -86,7 +87,7 @@ begin
   Result := TDAIOTA.FindSourceEditor(AFileName);
 end;
 
-function ReadCompleteText(const AFileName: string; out AFromEditor: Boolean): string;
+function ReadCompleteText(const AFileName: string; out AFromEditor: Boolean; out AFormat: TDAITextFileFormat): string;
 var
   LResult: string;
   LSourceEditor: IOTASourceEditor;
@@ -102,6 +103,8 @@ begin
       begin
         LResult := TDAIOTA.ReadEditorText(LSourceEditor);
       end);
+    AFormat.EncodingKind := tekIDEBuffer;
+    AFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LResult);
     Exit(LResult);
   end;
 
@@ -109,7 +112,7 @@ begin
     raise EDAIFileNotFound.CreateFmt('Datei nicht gefunden: %s', [AFileName]);
   if TFile.GetSize(AFileName) > CDAIMaxTextFileBytes then
     raise EInvalidOperation.CreateFmt('Die Datei überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
-  Result := TFile.ReadAllText(AFileName, TEncoding.UTF8);
+  Result := TDAITextEncoding.ReadFile(AFileName, AFormat);
 end;
 
 class function TDAIFileService.DirectoryFiles(const ADirectory: string; const ASearchPattern: string; const ARecursive: Boolean; const AMaximumCount: Integer): TJSONArray;
@@ -264,6 +267,7 @@ class function TDAIFileService.ReadFile(const AFileName: string; const AMaximumC
 var
   LContent: string;
   LFileName: string;
+  LFormat: TDAITextFileFormat;
   LFromEditor: Boolean;
   LHash: string;
   LOriginalLength: Integer;
@@ -273,7 +277,7 @@ begin
   if not FileAllowedForRead(LFileName) then
     raise EDAIAccessDenied.Create('Lesezugriff ist nur auf Workspace- und freigegebene Referenzdateien erlaubt.');
 
-  LContent := ReadCompleteText(LFileName, LFromEditor);
+  LContent := ReadCompleteText(LFileName, LFromEditor, LFormat);
   LOriginalLength := Length(LContent);
   LHash := THashSHA2.GetHashString(LContent);
   LTruncated := (AMaximumCharacters > 0) and (Length(LContent) > AMaximumCharacters);
@@ -284,6 +288,8 @@ begin
   Result.AddPair('file', LFileName);
   Result.AddPair('content', LContent);
   Result.AddPair('source', IfThen(LFromEditor, 'editor_buffer', 'disk'));
+  Result.AddPair('encoding', TDAITextEncoding.EncodingName(LFormat.EncodingKind));
+  Result.AddPair('line_ending', TDAITextEncoding.LineEndingName(LFormat.LineEndingKind));
   Result.AddPair('sha256', LHash);
   Result.AddPair('original_characters', TJSONNumber.Create(LOriginalLength));
   Result.AddPair('truncated', TJSONBool.Create(LTruncated));
@@ -308,25 +314,36 @@ class function TDAIFileService.WriteFile(const AFileName: string; const AContent
   TJSONObject;
 var
   LActionServices: IOTAActionServices;
+  LBytes: TBytes;
   LCurrentContent: string;
+  LCurrentFormat: TDAITextFileFormat;
   LCurrentHash: string;
   LFileName: string;
+  LHasCurrentContent: Boolean;
+  LOriginalEncoding: string;
+  LOriginalLineEnding: string;
+  LFormat: TDAITextFileFormat;
   LSourceEditor: IOTASourceEditor;
+  LWrittenContent: string;
 begin
   AUsedEditorBuffer := False;
+  LHasCurrentContent := False;
+  LOriginalEncoding := '';
+  LOriginalLineEnding := '';
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
 
   if TDAIOTA.IsReadOnlyReferenceFile(LFileName) then
     raise EDAIAccessDenied.Create('Delphi-Sourcen, Demos, GetIt-Pakete und zusätzliche Referenzverzeichnisse sind schreibgeschützt.');
   if not TDAIOTA.IsWorkspaceFile(LFileName) then
     raise EDAIAccessDenied.Create('Schreibzugriff ist nur innerhalb geöffneter Workspaces erlaubt.');
-  if TEncoding.UTF8.GetByteCount(AContent) > CDAIMaxTextFileBytes then
-    raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
 
   if TFile.Exists(LFileName) or TDAIOTA.IsFileOpenInEditor(LFileName) then
   begin
-    LCurrentContent := ReadCompleteText(LFileName, AUsedEditorBuffer);
+    LCurrentContent := ReadCompleteText(LFileName, AUsedEditorBuffer, LCurrentFormat);
+    LHasCurrentContent := True;
     LCurrentHash := THashSHA2.GetHashString(LCurrentContent);
+    LOriginalEncoding := TDAITextEncoding.EncodingName(LCurrentFormat.EncodingKind);
+    LOriginalLineEnding := TDAITextEncoding.LineEndingName(LCurrentFormat.LineEndingKind);
     if (Trim(AExpectedSha256) <> '') and not SameText(LCurrentHash, Trim(AExpectedSha256)) then
       raise EInvalidOperation.CreateFmt('Die Datei wurde zwischenzeitlich geändert. Erwartet: %s; aktuell: %s.', [AExpectedSha256, LCurrentHash]);
   end;
@@ -334,11 +351,20 @@ begin
   LSourceEditor := EnsureDFMTextEditor(LFileName);
   if Assigned(LSourceEditor) then
   begin
+    if LHasCurrentContent then
+      LWrittenContent := TDAITextEncoding.ApplyLineEnding(AContent, LCurrentFormat.LineEndingKind)
+    else
+      LWrittenContent := AContent;
+    if TEncoding.UTF8.GetByteCount(LWrittenContent) > CDAIMaxTextFileBytes then
+      raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
+
     AUsedEditorBuffer := True;
+    LFormat.EncodingKind := tekIDEBuffer;
+    LFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LWrittenContent);
     TDAIOTA.RunOnMainThread(
       procedure
       begin
-        if not TDAIOTA.ReplaceEditorText(LSourceEditor, AContent) then
+        if not TDAIOTA.ReplaceEditorText(LSourceEditor, LWrittenContent) then
           raise EInvalidOperation.Create('Der Editorpuffer konnte nicht ersetzt werden.');
         if ASave and Supports(BorlandIDEServices, IOTAActionServices, LActionServices) and not LActionServices.SaveFile(LFileName) then
           raise EInvalidOperation.Create('Der Editorpuffer wurde geändert, konnte aber nicht gespeichert werden.');
@@ -346,17 +372,27 @@ begin
   end
   else
   begin
+    if SameText(TPath.GetExtension(LFileName), '.dfm') then
+      raise EInvalidOperation.Create('DFM-Dateien werden ausschließlich über den IDE-Textpuffer geändert, damit Delphi die Dateicodierung beim Speichern selbst festlegt.');
     if TDAIOTA.IsFormLoadedForFile(LFileName) then
       raise EInvalidOperation.Create('Das Formular ist im Designer geladen. Wechseln Sie zuerst mit form_show_as_text in den Textmodus.');
+
+    LBytes := TDAITextEncoding.PrepareWrite(LFileName, AContent, LWrittenContent, LFormat);
+    if Length(LBytes) > CDAIMaxTextFileBytes then
+      raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
     ForceDirectories(TPath.GetDirectoryName(LFileName));
-    TFile.WriteAllText(LFileName, AContent, TEncoding.UTF8);
+    TFile.WriteAllBytes(LFileName, LBytes);
   end;
 
   Result := TJSONObject.Create;
   Result.AddPair('file', LFileName);
   Result.AddPair('target', IfThen(AUsedEditorBuffer, 'editor_buffer', 'disk'));
   Result.AddPair('saved', TJSONBool.Create((not AUsedEditorBuffer) or ASave));
-  Result.AddPair('sha256', THashSHA2.GetHashString(AContent));
+  Result.AddPair('encoding', TDAITextEncoding.EncodingName(LFormat.EncodingKind));
+  Result.AddPair('original_encoding', LOriginalEncoding);
+  Result.AddPair('line_ending', TDAITextEncoding.LineEndingName(LFormat.LineEndingKind));
+  Result.AddPair('original_line_ending', LOriginalLineEnding);
+  Result.AddPair('sha256', THashSHA2.GetHashString(LWrittenContent));
 end;
 
 end.

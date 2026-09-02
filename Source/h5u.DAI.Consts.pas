@@ -1,11 +1,11 @@
-unit h5u.DAI.Consts;
+﻿unit h5u.DAI.Consts;
 
 interface
 
 const
   CDAIName = 'DAI';
   CDAIDisplayName = 'Delphi AI';
-  CDAIVersion = '1.1.4';
+  CDAIVersion = '1.1.5';
   CDAIDefaultPort = 7331;
   CDAIDefaultBindAddress = '127.0.0.1';
   CDAIMcpPath = '/mcp';

@@ -59,6 +59,7 @@ contains
   h5u.DAI.Register in 'Source\h5u.DAI.Register.pas',
   h5u.DAI.Runtime in 'Source\h5u.DAI.Runtime.pas',
   h5u.DAI.Settings in 'Source\h5u.DAI.Settings.pas',
+  h5u.DAI.Text.Encoding in 'Source\h5u.DAI.Text.Encoding.pas',
   h5u.DAI.Types in 'Source\h5u.DAI.Types.pas',
   h5u.DAI.UI in 'Source\h5u.DAI.UI.pas',
   h5u.DAI.Wizard in 'Source\h5u.DAI.Wizard.pas';

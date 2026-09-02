@@ -1,4 +1,4 @@
-unit h5u.DAI.MCP.Tools;
+﻿unit h5u.DAI.MCP.Tools;
 
 interface
 
@@ -150,6 +150,7 @@ class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSO
 var
   LBuildFirst: Boolean;
   LCompileResult: TJSONObject;
+  LExpandedFileName: string;
   LFileName: string;
   LProjectObject: IOTAProject;
   LProject: string;
@@ -262,8 +263,9 @@ begin
   if SameText(AName, 'file_write') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    if TDAIOTA.IsFileOpenInEditor(TDAISettings.Instance.ExpandPath(LFileName)) or
-       TDAIOTA.IsFormLoadedForFile(TDAISettings.Instance.ExpandPath(LFileName)) then
+    LExpandedFileName := TDAISettings.Instance.ExpandPath(LFileName);
+    if SameText(TPath.GetExtension(LExpandedFileName), '.dfm') or TDAIOTA.IsFileOpenInEditor(LExpandedFileName) or
+       TDAIOTA.IsFormLoadedForFile(LExpandedFileName) then
       RequirePermission(pcEditInsideIDE, 'Datei im Editorpuffer bearbeiten', LFileName, AContext)
     else
       RequirePermission(pcEditOutsideIDE, 'Datei auf dem Datenträger bearbeiten', LFileName, AContext);
@@ -567,7 +569,7 @@ begin
   AddTool(
     Result,
     'file_write',
-    'Ersetzt den Editorpuffer einer geöffneten Datei oder schreibt eine geschlossene Workspace-Datei.',
+    'Ersetzt den Editorpuffer oder schreibt eine geschlossene Workspace-Datei codierungs- und zeilenendenbewusst; DFM wird über die IDE gespeichert.',
     '{"type":"object","properties":{"file":{"type":"string"},"content":{"type":"string"},"expected_sha256":{"type":"string"},' +
     '"save":{"type":"boolean"}},"required":["file","content"],"additionalProperties":false}',
     False

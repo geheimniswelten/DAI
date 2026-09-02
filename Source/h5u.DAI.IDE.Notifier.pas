@@ -1,4 +1,4 @@
-unit h5u.DAI.IDE.Notifier;
+﻿unit h5u.DAI.IDE.Notifier;
 
 interface
 
