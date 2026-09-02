@@ -55,7 +55,7 @@
         <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;Bde;$(DCC_Namespace)</DCC_Namespace>
         <BT_BuildType>Debug</BT_BuildType>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
-        <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=1.1.6.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.1.6.0;Comments=</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=1.1.7.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.1.7.0;Comments=</VerInfo_Keys>
         <VerInfo_Locale>1033</VerInfo_Locale>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1)'!=''">
@@ -95,7 +95,11 @@
         <DCCReference Include="Source\h5u.DAI.MCP.Protocol.pas"/>
         <DCCReference Include="Source\h5u.DAI.MCP.Server.pas"/>
         <DCCReference Include="Source\h5u.DAI.MCP.Tools.pas"/>
-        <DCCReference Include="Source\h5u.DAI.Options.Frame.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Options.Frame.pas">
+            <Form>DAIOptionsFrame</Form>
+            <FormType>dfm</FormType>
+            <DesignClass>TFrame</DesignClass>
+        </DCCReference>
         <DCCReference Include="Source\h5u.DAI.Options.Page.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Build.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Files.pas"/>

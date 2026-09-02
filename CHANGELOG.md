@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 1.1.7
+
+- minimale DFM-Ressource für `TDAIOptionsFrame` ergänzt; `TCustomFrame.Create` kann den Options-Frame damit über `INTAAddInOptions` laden
+- `{$R *.dfm}` in `h5u.DAI.Options.Frame.pas` ergänzt
+- DPROJ-Metadaten des Frames um `Form`, `FormType=dfm` und `DesignClass=TFrame` ergänzt
+- statische Prüfung erkennt künftig von `TFrame` abgeleitete Klassen ohne passende DFM-Ressource oder ohne DPROJ-Frame-Metadaten
+
 ## 1.1.6
 
 - vorhandenes einheitliches CRLF beziehungsweise LF wird beim Schreiben beibehalten; eine pauschale Konvertierung des Projektbestands findet nicht statt

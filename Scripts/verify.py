@@ -201,6 +201,73 @@ def check_unit_names(errors: list[str]) -> None:
             fail(errors, f"Unit/Dateiname abweichend: {match.group(1)} <> {path.stem}")
 
 
+
+def read_dfm_text(path: Path) -> str:
+    data = path.read_bytes()
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig")
+    try:
+        return data.decode("ascii")
+    except UnicodeDecodeError:
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError:
+            return data.decode("cp1252")
+
+
+def check_frame_resources(errors: list[str]) -> None:
+    dproj_text = read_project_text(ROOT / "DAI.dproj")
+    frame_pattern = re.compile(r"\b(T[A-Za-z_][A-Za-z0-9_]*)\s*=\s*class\s*\(\s*TFrame\s*\)", re.IGNORECASE)
+    for path in sorted(SOURCE.glob("*.pas")):
+        content = read_project_text(path)
+        frame_classes = frame_pattern.findall(content)
+        if not frame_classes:
+            continue
+
+        dfm_path = path.with_suffix(".dfm")
+        if not re.search(r"\{\$R\s+\*\.dfm\}", content, flags=re.IGNORECASE):
+            fail(errors, f"{path.name}: TFrame-Nachkomme benötigt {{$R *.dfm}}")
+        if not dfm_path.is_file():
+            fail(errors, f"{path.name}: passende DFM-Ressource fehlt: {dfm_path.name}")
+            continue
+
+        dfm_data = dfm_path.read_bytes()
+        body = dfm_data[3:] if dfm_data.startswith(b"\xef\xbb\xbf") else dfm_data
+        crlf_count = body.count(b"\r\n")
+        lf_count = body.count(b"\n") - crlf_count
+        cr_count = body.count(b"\r") - crlf_count
+        if cr_count > 0 or (crlf_count > 0 and lf_count > 0):
+            fail(errors, f"{dfm_path.name}: gemischte oder alleinstehende CR-Zeilenenden sind nicht erlaubt")
+
+        reference_pattern = re.compile(
+            rf'<DCCReference\s+Include="Source\\{re.escape(path.name)}">(.*?)</DCCReference>',
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        reference_match = reference_pattern.search(dproj_text)
+        if not reference_match:
+            fail(errors, f"DAI.dproj: Frame-Unit {path.name} benötigt einen nicht selbstschließenden DCCReference-Eintrag")
+            continue
+        reference_body = reference_match.group(1)
+
+        dfm_text = read_dfm_text(dfm_path)
+        for frame_class in frame_classes:
+            root_pattern = re.compile(
+                rf"(?im)^\s*(?:object|inherited)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*{re.escape(frame_class)}\s*$"
+            )
+            root_match = root_pattern.search(dfm_text)
+            if not root_match:
+                fail(errors, f"{dfm_path.name}: Root-Komponente für {frame_class} fehlt")
+                continue
+
+            root_name = root_match.group(1)
+            if not re.search(rf"<Form>{re.escape(root_name)}</Form>", reference_body, flags=re.IGNORECASE):
+                fail(errors, f"DAI.dproj: Form-Metadatum für Root-Komponente {root_name} fehlt")
+
+        if not re.search(r"<FormType>dfm</FormType>", reference_body, flags=re.IGNORECASE):
+            fail(errors, f"DAI.dproj: FormType=dfm für {path.name} fehlt")
+        if not re.search(r"<DesignClass>TFrame</DesignClass>", reference_body, flags=re.IGNORECASE):
+            fail(errors, f"DAI.dproj: DesignClass=TFrame für {path.name} fehlt")
+
 def check_package_references(errors: list[str]) -> None:
     dpk = read_project_text(ROOT / "DAI.dpk")
     for path in sorted(SOURCE.glob("*.pas")):
@@ -513,6 +580,7 @@ def main() -> int:
     check_declaration_layout(errors)
     check_initialization_finalization(errors)
     check_unit_names(errors)
+    check_frame_resources(errors)
     check_package_references(errors)
     check_dproj(errors)
     check_tools(errors)

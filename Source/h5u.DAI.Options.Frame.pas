@@ -46,6 +46,8 @@ type
 
 implementation
 
+{$R *.dfm}
+
 uses
   System.JSON,
   System.IOUtils,

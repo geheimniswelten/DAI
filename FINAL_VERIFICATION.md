@@ -1,80 +1,107 @@
-# DAI 1.1.6 – Prüfbericht
+# DAI 1.1.7 – Prüfbericht
 
-## Änderung
+## Fehlerbild
 
-Die Behandlung von Zeilenenden und Einrückungen wurde an den Windows-/Delphi- und Git-Arbeitsablauf angepasst:
-
-- ein bereits einheitliches CRLF bleibt CRLF
-- ein bereits einheitliches LF bleibt LF
-- es findet keine projektweite Konvertierung zwischen CRLF und LF statt
-- gemischte Zeilenenden werden beim Schreiben vereinheitlicht
-- alleinstehendes CR wird nicht als Zielformat weitergeführt
-- Tabulatorzeichen werden in Pascal-Sourcen durch zwei Leerzeichen ersetzt
-
-Die Tab-Regel gilt für `.pas`, `.dpr`, `.dpk` und `.inc`, nicht für DFM-Dateien.
-
-## Laufzeitverhalten von `file_write`
-
-`TDAITextEncoding.PrepareText` wird sowohl für geöffnete IDE-Puffer als auch für direkt geschriebene, geschlossene Dateien verwendet.
-
-### Vorhandene Dateien
-
-- Bei eindeutigem CRLF oder LF wird dieses Format für den vollständig ersetzten Inhalt beibehalten.
-- Bei gemischten Zeilenenden oder alleinstehendem CR wird der neue Inhalt auf CRLF normalisiert.
-- Pascal-Sourcen werden anschließend von echten Tabulatorzeichen auf jeweils zwei Leerzeichen normalisiert.
-- Die bestehende Codierung bleibt erhalten; eine vorhandene ANSI-PAS-Datei wird nur dann auf UTF-8 mit BOM angehoben, wenn der neue Inhalt nicht verlustfrei in ANSI darstellbar ist.
-
-### Neue Dateien
-
-- Einheitliches CRLF beziehungsweise LF aus dem übergebenen Inhalt bleibt erhalten.
-- Gemischte Zeilenenden oder alleinstehendes CR werden auf CRLF normalisiert.
-- Neue `.pas`-Dateien verwenden weiterhin UTF-8 mit BOM.
-- Andere neue Textdateien erhalten nicht automatisch die PAS-Codierungsregel.
-
-### DFM-Dateien
-
-DFM-Dateien werden weiterhin ausschließlich über den IDE-Textpuffer bearbeitet. Delphi entscheidet beim Speichern selbst über ANSI oder UTF-8. Die Tabulatorregel für Pascal-Sourcen wird nicht auf DFM angewendet.
-
-## Auslieferungsformat
-
-Die vorhandenen Zeilenenden der Projektdateien wurden nicht pauschal verändert:
-
-- 3 PAS-Dateien verwenden CRLF
-- 22 PAS-Dateien verwenden LF
-- keine PAS-Datei enthält gemischte Zeilenenden
-- `DAI.dpk` verwendet weiterhin LF
-- alle 25 PAS-Dateien verwenden UTF-8 mit BOM
-- keine ausgelieferte Pascal-Source enthält ein Tabulatorzeichen
-
-Die drei CRLF-Dateien bleiben:
+DAI 1.1.6 wurde nach Rückmeldung des Benutzers mit Delphi 13 ohne Fehler, Warnungen oder Hinweise kompiliert und erfolgreich in der IDE installiert. Der Settings-Tab war im IDE-Optionsbaum sichtbar. Beim Öffnen des Tabs brach die Instanziierung jedoch mit folgender Ausnahme ab:
 
 ```text
-h5u.DAI.MCP.Server.pas
-h5u.DAI.OTA.Projects.pas
-h5u.DAI.Options.Frame.pas
+Ressource TDAIOptionsFrame nicht gefunden.
 ```
 
-## Statische Prüfungen
+Der Stacktrace führte von `Vcl.Forms.TCustomFrame.Create` unmittelbar in `TDAIOptionsFrame.Create`. Der Fehler entstand damit im Aufruf von `inherited Create(AOwner)`, noch bevor `BuildControls` ausgeführt wurde.
 
-`Scripts/verify.py` prüft jetzt zusätzlich:
+## Ursache
 
-- keine Tabulatorzeichen in `.pas` und `DAI.dpk`
-- keine Mischung von CRLF und LF innerhalb derselben Pascal-Source
-- keine alleinstehenden CR-Zeilenenden
-- die Laufzeit-Schreiblogik verwendet `PrepareText` auch für IDE-Puffer
-- gemischte beziehungsweise CR-Zeilenenden besitzen einen CRLF-Fallback
-- Pascal-Tabulatoren werden beim Schreiben durch zwei Leerzeichen ersetzt
+`TDAIOptionsFrame` ist ein `TFrame`-Nachkomme. Der normale Frame-Konstruktor erwartet für die konkrete Klasse eine eingebundene DFM-Klassenressource. In DAI 1.1.6 fehlten sowohl die Resource-Direktive als auch die dazugehörige DFM-Datei.
 
-Die neuen Prüfungen wurden mit absichtlich fehlerhaften Testkopien kontrolliert:
+Die Tatsache, dass sämtliche sichtbaren Controls programmatisch in `BuildControls` erzeugt werden, beseitigt diese Anforderung des Frame-Konstruktors nicht.
 
-- ein eingefügter Tabulator wurde mit Dateiname und Zeilennummer erkannt
-- eine absichtlich erzeugte CRLF-/LF-Mischung wurde erkannt
+## Korrektur
+
+### Frame-Unit
+
+In `Source/h5u.DAI.Options.Frame.pas` steht unmittelbar nach `implementation` jetzt:
+
+```pascal
+{$R *.dfm}
+```
+
+Der bestehende Konstruktor bleibt unverändert:
+
+```pascal
+constructor TDAIOptionsFrame.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  Align := alClient;
+  AutoScroll := False;
+  BuildControls;
+end;
+```
+
+### Minimale DFM-Ressource
+
+Neu hinzugekommen ist `Source/h5u.DAI.Options.Frame.dfm`:
+
+```text
+object DAIOptionsFrame: TDAIOptionsFrame
+  Left = 0
+  Top = 0
+  Width = 800
+  Height = 600
+  TabOrder = 0
+end
+```
+
+Die DFM enthält bewusst ausschließlich die Root-Komponente. Alle sichtbaren Controls werden weiterhin in `TDAIOptionsFrame.BuildControls` erzeugt.
+
+### DPROJ-Metadaten
+
+Der Eintrag der Frame-Unit lautet jetzt:
+
+```xml
+<DCCReference Include="Source\h5u.DAI.Options.Frame.pas">
+    <Form>DAIOptionsFrame</Form>
+    <FormType>dfm</FormType>
+    <DesignClass>TFrame</DesignClass>
+</DCCReference>
+```
+
+## Dateiformate
+
+- Alle 25 PAS-Dateien bleiben UTF-8 mit BOM.
+- Die vorhandenen Zeilenenden der PAS-Dateien bleiben unverändert.
+- Keine PAS-Datei enthält gemischte Zeilenenden oder Tabulatorzeichen.
+- Die neue DFM ist reines ASCII/ANSI ohne BOM und verwendet einheitliches CRLF.
+- Die UTF-8+BOM-Vorgabe gilt weiterhin nur für `.pas`, nicht für `.dfm`.
+
+## Erweiterte statische Prüfung
+
+`Scripts/verify.py` prüft jetzt für jeden direkten `TFrame`-Nachkommen:
+
+- eine gleichnamige DFM-Datei,
+- `{$R *.dfm}` in der Unit,
+- eine zur Frame-Klasse passende Root-Komponente,
+- einheitliche Zeilenenden in der DFM,
+- einen nicht selbstschließenden DPROJ-Eintrag,
+- `Form`-Metadaten,
+- `FormType=dfm`,
+- und `DesignClass=TFrame`.
+
+Vier Negativtests wurden ausgeführt:
+
+```text
+fehlendes {$R *.dfm}:       erkannt
+fehlende DFM-Datei:         erkannt
+falsche DFM-Root-Klasse:    erkannt
+falsches Form-Metadatum:    erkannt
+```
 
 ## Gesamtergebnis
 
 ```text
 Pascal-Units:                          25
 MCP-Werkzeuge:                         34
+Neue DFM-Ressourcen:                    1
 Maximal erlaubte Pascal-Zeilenlänge:  180
 Tatsächlich längste Pascal-Zeile:     179
 PAS-Dateien mit UTF-8-BOM:             25 von 25
@@ -82,13 +109,13 @@ PAS-Dateien mit CRLF:                   3
 PAS-Dateien mit LF:                    22
 Gemischte Pascal-Zeilenenden:           0
 Tabulatoren in Pascal-Sourcen:          0
+DFM-Zeilenenden:                       einheitliches CRLF
 DPK-/DPROJ-Referenzen:                 vollständig
 DPROJ-XML:                             gültig
 Statische Prüfung:                     bestanden
-Negative Tabulatorprüfung:             bestanden
-Negative Mischzeilenendenprüfung:      bestanden
+Negative Frame-Ressourcentests:        bestanden
 ```
 
 ## Abgrenzung
 
-DAI 1.1.4 wurde nach Rückmeldung des Benutzers in Delphi 13 erfolgreich kompiliert. Die seitdem hinzugekommene Codierungs- und Zeilenendenlogik konnte in dieser Umgebung nicht mit `dcc32.exe` kompiliert werden, weil keine Delphi-13-Toolchain installiert ist. Die vorliegenden Änderungen wurden statisch geprüft; ihre Pascal-Schnittstellen sind konsistent in Deklaration und Implementierung vorhanden.
+DAI 1.1.6 wurde laut Benutzer in Delphi 13 erfolgreich kompiliert und installiert. DAI 1.1.7 konnte in dieser Umgebung mangels Delphi-13-Toolchain nicht erneut mit `dcc32.exe` gebaut werden. Die Codeänderung beschränkt sich auf die fehlende Frame-Ressource, ihre Projektmetadaten, Versionsangaben und die zugehörige statische Prüfung.
