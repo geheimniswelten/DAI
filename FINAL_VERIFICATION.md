@@ -1,88 +1,64 @@
-# DAI 1.1.11 – Prüfbericht
+# DAI 1.1.12 – Prüfbericht
 
-## Ziel
+## Änderung
 
-DAI 1.1.11 erweitert die bereits nichtfatal behandelte Portkollision des eingebetteten MCP-Servers. Wenn Indy den konfigurierten Listener nicht anlegen kann,
-ermittelt DAI über die Windows-TCP-Tabelle den Besitzer des bereits vorhandenen IPv4-Listeners und ergänzt die Fehlermeldung um PID und Prozessname.
+DAI 1.1.12 erweitert ausschließlich den MCP-Bereich des IDE-Options-Frames:
 
-## Implementierung
+- neben dem Portfeld wird der aus `CDAIDefaultPort` gelesene Standardwert angezeigt
+- das Bearer-Token-Feld wurde von 500 auf 330 Pixel verkürzt
+- rechts daneben befindet sich die Schaltfläche `Token erzeugen`
+- die bestehende GUID-basierte Erzeugung aus `TDAISettings.GenerateToken` wird wiederverwendet
+- der Schaltflächen-Hinweis erinnert daran, eine vorhandene Codex-Konfiguration anschließend erneut zu registrieren
 
-Die neue Unit `h5u.DAI.WinAPI.TCP.pas` stellt bereit:
+## Token-Verhalten
+
+Ein Bearer-Token muss keine GUID sein. DAI behält die bisherige GUID-Erzeugung als Standard bei, weil der erzeugte Wert ohne geschweifte Klammern und mit
+kleingeschriebenen Hexadezimalzeichen problemlos als HTTP-Bearer-Token und in der verwalteten TOML-Konfiguration verwendet werden kann.
+
+Die Schaltfläche ändert zunächst nur `FTokenEdit.Text`. Die persistente Einstellung, der laufende MCP-Server und die Codex-Registrierung werden dadurch
+nicht sofort verändert. Erst Anwenden beziehungsweise OK speichert den neuen Wert. Für eine bereits registrierte Codex-Konfiguration ist danach zusätzlich
+`Registrieren` aufzurufen.
+
+## Relevanter Code
 
 ```pascal
-TDAITCPListener.TryFindIPv4Owner
-TDAITCPListener.DescribeIPv4Owner
+with NewLabel(Self, Format('Standard: %d', [CDAIDefaultPort]), FPortEdit.Left + FPortEdit.Width + 12, LTop + 4) do
+  Font.Color := clGrayText;
+
+FTokenEdit.Width := 330;
+
+FGenerateTokenButton := TButton.Create(Self);
+FGenerateTokenButton.Parent := Self;
+FGenerateTokenButton.Left := FTokenEdit.Left + FTokenEdit.Width + 12;
+FGenerateTokenButton.Top := LTop;
+FGenerateTokenButton.Width := 158;
+FGenerateTokenButton.Caption := 'Token erzeugen';
+FGenerateTokenButton.OnClick := GenerateTokenClicked;
 ```
 
-Die Ermittlung erfolgt ohne externes Kommando:
-
-1. `GetExtendedTcpTable` wird dynamisch aus `iphlpapi.dll` geladen.
-2. Abgefragt wird die IPv4-Tabelle `TCP_TABLE_OWNER_PID_LISTENER`.
-3. Der Netzwerk-Byte-Order-Port wird in Host-Byte-Order umgewandelt.
-4. Für einen Listener auf `127.0.0.1` beziehungsweise `0.0.0.0` wird `dwOwningPid` gelesen.
-5. `QueryFullProcessImageNameW` wird dynamisch aus `kernel32.dll` geladen und der Dateiname aus dem vollständigen Prozesspfad extrahiert.
-6. Entspricht die PID `GetCurrentProcessId`, kennzeichnet DAI den Listener als Bestandteil der aktuellen Delphi-IDE-Instanz.
-
-Die Diagnose ist vollständig in `try/except` gekapselt. Ein Fehler bei der PID- oder Prozessnamen-Ermittlung kann daher den ursprünglichen, bereits abgefangenen
-`EIdCouldNotBindSocket`-Fehler nicht durch eine zweite Exception überlagern.
-
-## Fehlermeldung
-
-Bei einem fremden Prozess enthält `LastServerError` beispielsweise:
-
-```text
-Der MCP-Server konnte nicht an 127.0.0.1:7331 gebunden werden. Der Port ist bereits belegt.
-Listener: PID 12345, Prozess example.exe.
+```pascal
+procedure TDAIOptionsFrame.GenerateTokenClicked(Sender: TObject);
+begin
+  FTokenEdit.Text := TDAISettings.Instance.GenerateToken;
+  FTokenEdit.SetFocus;
+  FTokenEdit.SelectAll;
+end;
 ```
 
-Gehört der Listener zur laufenden IDE, wird ergänzt:
+## Statische Prüfung
 
-```text
-Die PID gehört zur aktuellen Delphi-IDE-Instanz; das verantwortliche Package oder Plugin ist über die TCP-Tabelle nicht ermittelbar.
-```
+- 27 Pascal-Units erkannt
+- 39 MCP-Werkzeuge erkannt
+- alle PAS-Dateien besitzen UTF-8 mit BOM
+- keine Tabulatorzeichen in Pascal-Sourcen
+- keine gemischten Zeilenenden innerhalb einer Pascal-Datei
+- maximale Pascal-Zeilenlänge: höchstens 180 Zeichen
+- DPK- und DPROJ-Referenzen vollständig
+- DPROJ-XML gültig
+- Options-Frame ohne eigene ScrollBox und weiterhin mit `Align := alTop; Height := LTop`
+- Standardport-Anzeige, verkürztes Tokenfeld, Ereignisverknüpfung und öffentliche Token-Erzeugung statisch geprüft
 
-Die Meldung wird unverändert über die bestehende Runtime sowohl im IDE-Meldungsfenster als auch im Statusfeld des DAI-Options-Frames angezeigt.
+## Einschränkung
 
-## Technische Grenze
-
-Die Windows-TCP-Tabelle ordnet einen Socket einem Betriebssystemprozess zu. Bei `bds.exe` kann sie daher die PID und den Prozessnamen liefern, aber nicht
-nachträglich bestimmen, welches BPL, IDE-Plugin oder Objekt innerhalb dieses Prozesses den Socket erzeugt hat.
-
-## Geänderte Dateien
-
-- `Source/h5u.DAI.WinAPI.TCP.pas` neu
-- `Source/h5u.DAI.MCP.Server.pas`
-- `Source/h5u.DAI.Consts.pas`
-- `DAI.dpk`
-- `DAI.dproj`
-- `Test-MCP.ps1`
-- `README.md`
-- `CHANGELOG.md`
-- `Scripts/verify.py`
-
-## Statische Prüfungen
-
-```text
-Pascal-Units:                         27
-MCP-Werkzeuge:                        39
-PAS-Dateien mit UTF-8-BOM:            27 von 27
-Gemischte Pascal-Zeilenenden:          0
-Tabulatoren in Pascal-Sourcen:         0
-Maximal erlaubte Zeilenlänge:        180
-Tatsächlich längste Pascal-Zeile:    179
-DPROJ-XML:                           gültig
-DPK-/DPROJ-Referenzen:               vollständig
-```
-
-Zusätzlich wurden drei Negativtests durchgeführt:
-
-1. Aufruf der Listener-Besitzer-Ermittlung aus dem Bindefehler entfernt – Prüfer schlägt erwartungsgemäß fehl.
-2. `QueryFullProcessImageNameW` aus der WinAPI-Unit entfernt – Prüfer schlägt erwartungsgemäß fehl.
-3. Neue Unit aus `DAI.dpk` entfernt – Prüfer schlägt erwartungsgemäß fehl.
-
-Die Port-Konvertierung wurde für die Ports `80`, `7331` und `65535` gegen die Netzwerk-Byte-Order simuliert.
-
-## Binärprüfung
-
-Der vorherige Stand wurde nach Rückmeldung des Anwenders fehlerfrei in Delphi 13 kompiliert und in der IDE installiert. In der vorliegenden Ausführungsumgebung
-ist keine Delphi-13-Toolchain vorhanden; die neue WinAPI-Unit konnte daher hier nicht mit `dcc32.exe` kompiliert oder in `bds.exe` ausgeführt werden.
+In dieser Umgebung ist keine Delphi-13-Toolchain vorhanden. Ein Binärbuild mit `dcc32.exe` und ein Laufzeittest im IDE-Optionsdialog konnten daher nicht
+ausgeführt werden.

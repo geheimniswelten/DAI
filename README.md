@@ -21,7 +21,11 @@ http://127.0.0.1:7331/mcp
 ```
 
 Der Zugriff ist mit einem Bearer-Token geschützt. Aktivierung, Port, Token, Logging, zusätzliche Referenzverzeichnisse und Berechtigungen werden unter
-`Tools → Options → Third Party → DAI` verwaltet.
+`Tools → Options → Third Party → DAI` verwaltet. Der Options-Frame zeigt neben dem frei änderbaren Port den Standardwert `7331`.
+
+Ein Bearer-Token muss keine GUID sein. DAI erzeugt standardmäßig eine kleingeschriebene GUID ohne geschweifte Klammern, weil dieses Format kompakt,
+zufällig sowie problemlos in HTTP-Headern und der verwalteten Codex-TOML-Konfiguration verwendbar ist. Über `Token erzeugen` kann ein neuer Wert erstellt
+werden. Bei einer vorhandenen Codex-Registrierung ist danach `Registrieren` aufzurufen, damit der neue Token dort ebenfalls gespeichert wird.
 
 Kann der konfigurierte Port nicht gebunden werden, bleibt das Design-Time-Package geladen. DAI wechselt den Port nicht automatisch, weil Codex sonst
 unbemerkt mit einer anderen IDE-Instanz verbunden werden könnte. Über die Windows-TCP-Tabelle werden PID und Prozessname des vorhandenen Listeners ermittelt

@@ -16,7 +16,6 @@ type
     FToken: string;
     FCustomReadDirectories: TStringList;
     FRegistryRoot: string;
-    function GenerateToken: string;
     function ReadRootDirectory: string;
     function StudioVersion: string;
   public
@@ -24,6 +23,7 @@ type
     destructor Destroy; override;
     class destructor Finalize;
     class function Instance: TDAISettings; static;
+    function GenerateToken: string;
     procedure Load;
     procedure Save;
     function ExpandPath(const APath: string): string;

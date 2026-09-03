@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 1.1.12
+
+- Standardport `7331` direkt neben dem Portfeld im Options-Frame ausgewiesen
+- Bearer-Token-Eingabefeld von 500 auf 330 Pixel verkürzt und daneben die Schaltfläche `Token erzeugen` ergänzt
+- vorhandene GUID-basierte Token-Erzeugung aus `TDAISettings` für den Options-Frame öffentlich bereitgestellt
+- Hinweis ergänzt, dass eine vorhandene Codex-Registrierung nach einem Tokenwechsel über `Registrieren` aktualisiert werden muss
+
 ## 1.1.11
 
 - bei einem belegten MCP-Port wird der Listener-Besitzer über `GetExtendedTcpTable` aus `iphlpapi.dll` ermittelt

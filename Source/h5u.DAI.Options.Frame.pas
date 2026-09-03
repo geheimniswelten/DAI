@@ -17,6 +17,7 @@ type
     FLoggingCheckBox: TCheckBox;
     FPortEdit: TEdit;
     FTokenEdit: TEdit;
+    FGenerateTokenButton: TButton;
     FDirectoriesMemo: TMemo;
     FDirectoryHintLabel: TLabel;
     FScopeComboBox: TComboBox;
@@ -31,6 +32,7 @@ type
     procedure AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
     procedure PopulatePermissionCombo(const AComboBox: TComboBox);
     procedure ScopeChanged(Sender: TObject);
+    procedure GenerateTokenClicked(Sender: TObject);
     procedure RegisterClicked(Sender: TObject);
     procedure UnregisterClicked(Sender: TObject);
     function SelectedPermissionScope: TDAIPermissionScope;
@@ -122,6 +124,8 @@ begin
   FPortEdit.Top := LTop;
   FPortEdit.Width := 100;
   FPortEdit.NumbersOnly := True;
+  with NewLabel(Self, Format('Standard: %d', [CDAIDefaultPort]), FPortEdit.Left + FPortEdit.Width + 12, LTop + 4) do
+    Font.Color := clGrayText;
   Inc(LTop, 32);
 
   NewLabel(Self, 'Bearer-Token', 24, LTop + 4);
@@ -129,7 +133,17 @@ begin
   FTokenEdit.Parent := Self;
   FTokenEdit.Left := 160;
   FTokenEdit.Top := LTop;
-  FTokenEdit.Width := 500;
+  FTokenEdit.Width := 330;
+
+  FGenerateTokenButton := TButton.Create(Self);
+  FGenerateTokenButton.Parent := Self;
+  FGenerateTokenButton.Left := FTokenEdit.Left + FTokenEdit.Width + 12;
+  FGenerateTokenButton.Top := LTop;
+  FGenerateTokenButton.Width := 158;
+  FGenerateTokenButton.Caption := 'Token erzeugen';
+  FGenerateTokenButton.Hint := 'Erzeugt eine neue GUID. Mit „Registrieren“ wird anschließend auch die Codex-Konfiguration aktualisiert.';
+  FGenerateTokenButton.ShowHint := True;
+  FGenerateTokenButton.OnClick := GenerateTokenClicked;
   Inc(LTop, 32);
 
   FServerStatusLabel := NewLabel(Self, '', 24, LTop);
@@ -231,6 +245,13 @@ begin
 
   Align := alTop;
   Height := LTop;
+end;
+
+procedure TDAIOptionsFrame.GenerateTokenClicked(Sender: TObject);
+begin
+  FTokenEdit.Text := TDAISettings.Instance.GenerateToken;
+  FTokenEdit.SetFocus;
+  FTokenEdit.SelectAll;
 end;
 
 procedure TDAIOptionsFrame.LoadFromSettings;

@@ -511,9 +511,27 @@ def check_options_frame_layout(errors: list[str]) -> None:
     if not re.search(r"Align\s*:=\s*alTop\s*;\s*Height\s*:=\s*LTop\s*;\s*$", body, flags=re.IGNORECASE):
         fail(errors, "h5u.DAI.Options.Frame.pas: BuildControls muss mit Align := alTop und Height := LTop enden")
 
+    if "Format('Standard: %d', [CDAIDefaultPort])" not in content:
+        fail(errors, "h5u.DAI.Options.Frame.pas: der konfigurierbare Port muss den Standardport aus CDAIDefaultPort anzeigen")
+    if "FGenerateTokenButton" not in content or "FGenerateTokenButton.OnClick := GenerateTokenClicked" not in content:
+        fail(errors, "h5u.DAI.Options.Frame.pas: Schaltfläche zum Erzeugen eines neuen Bearer-Tokens fehlt")
+    if not re.search(r"(?is)procedure\s+TDAIOptionsFrame\.GenerateTokenClicked.*?TDAISettings\.Instance\.GenerateToken", content):
+        fail(errors, "h5u.DAI.Options.Frame.pas: Token-Schaltfläche muss TDAISettings.GenerateToken verwenden")
+    token_width = re.search(r"FTokenEdit\.Width\s*:=\s*(\d+)", content)
+    if not token_width or int(token_width.group(1)) > 360:
+        fail(errors, "h5u.DAI.Options.Frame.pas: Bearer-Token-Edit muss genügend Platz für die Token-Schaltfläche lassen")
+
+    settings = read_project_text(SOURCE / "h5u.DAI.Settings.pas")
+    public_part = re.split(r"(?im)^\s*implementation\s*$", settings, maxsplit=1)[0]
+    public_section = re.search(r"(?is)\bpublic\b(.*?)(?:\bend\s*;)", public_part)
+    if not public_section or "function GenerateToken: string;" not in public_section.group(1):
+        fail(errors, "h5u.DAI.Settings.pas: GenerateToken muss für den Options-Frame öffentlich sein")
+    if not re.search(r"(?is)function\s+TDAISettings\.GenerateToken\s*:\s*string.*?CreateGUID", settings):
+        fail(errors, "h5u.DAI.Settings.pas: Bearer-Token-Erzeugung muss weiterhin eine neue GUID erzeugen")
+
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.1.11"
+    expected = "1.1.12"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
