@@ -543,7 +543,7 @@ begin
   LProviderId := '';
   LProviderName := '';
 
-  TMonitor.Enter(GOperationLock);
+  System.TMonitor.Enter(GOperationLock);
   try
     PrepareOperation(cioDefinition);
     TDAIOTA.RunOnMainThread(
@@ -597,7 +597,7 @@ begin
     Result.AddPair('input_line', TJSONNumber.Create(ALine));
     Result.AddPair('input_character', TJSONNumber.Create(ACharacter));
   finally
-    TMonitor.Exit(GOperationLock);
+    System.TMonitor.Exit(GOperationLock);
   end;
 end;
 
@@ -632,7 +632,7 @@ begin
   LProviderId := '';
   LProviderName := '';
 
-  TMonitor.Enter(GOperationLock);
+  System.TMonitor.Enter(GOperationLock);
   try
     PrepareOperation(cioHover);
     TDAIOTA.RunOnMainThread(
@@ -705,7 +705,7 @@ begin
     Result.AddPair('input_column', TJSONNumber.Create(AColumn));
     Result.AddPair('requires_open_editor', TJSONBool.Create(True));
   finally
-    TMonitor.Exit(GOperationLock);
+    System.TMonitor.Exit(GOperationLock);
   end;
 end;
 

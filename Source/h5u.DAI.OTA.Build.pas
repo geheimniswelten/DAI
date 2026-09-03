@@ -126,7 +126,7 @@ var
   LProcess: TDAIRunningProcess;
 begin
   LKey := LowerCase(TDAIOTA.NormalizeFileName(AProjectFileName));
-  TMonitor.Enter(GProcessLock);
+  System.TMonitor.Enter(GProcessLock);
   try
     if GRunningProcesses.TryGetValue(LKey, LProcess) then
     begin
@@ -135,7 +135,7 @@ begin
       GRunningProcesses.Remove(LKey);
     end;
   finally
-    TMonitor.Exit(GProcessLock);
+    System.TMonitor.Exit(GProcessLock);
   end;
 end;
 
@@ -270,7 +270,7 @@ begin
     raise EDAIFileNotFound.CreateFmt('Die Projekt-Ausgabedatei wurde nicht gefunden: %s', [LExecutable]);
 
   LKey := LowerCase(TDAIOTA.NormalizeFileName(TDAIOTA.ProjectFileName(LProject)));
-  TMonitor.Enter(GProcessLock);
+  System.TMonitor.Enter(GProcessLock);
   try
     if GRunningProcesses.TryGetValue(LKey, LProcess) then
     begin
@@ -293,7 +293,7 @@ begin
     if LStarted then
       GRunningProcesses.AddOrSetValue(LKey, LProcess);
   finally
-    TMonitor.Exit(GProcessLock);
+    System.TMonitor.Exit(GProcessLock);
   end;
 
   Result := TJSONObject.Create;
@@ -308,14 +308,14 @@ class procedure TDAIBuildService.Shutdown;
 var
   LProcess: TDAIRunningProcess;
 begin
-  TMonitor.Enter(GProcessLock);
+  System.TMonitor.Enter(GProcessLock);
   try
     for LProcess in GRunningProcesses.Values do
       if LProcess.Handle <> 0 then
         CloseHandle(LProcess.Handle);
     GRunningProcesses.Clear;
   finally
-    TMonitor.Exit(GProcessLock);
+    System.TMonitor.Exit(GProcessLock);
   end;
 end;
 
@@ -364,7 +364,7 @@ begin
   end;
 
   LRemoveKey := '';
-  TMonitor.Enter(GProcessLock);
+  System.TMonitor.Enter(GProcessLock);
   try
     for LPair in GRunningProcesses do
     begin
@@ -383,7 +383,7 @@ begin
     if LRemoveKey <> '' then
       GRunningProcesses.Remove(LRemoveKey);
   finally
-    TMonitor.Exit(GProcessLock);
+    System.TMonitor.Exit(GProcessLock);
   end;
 
   Result := TJSONObject.Create;

@@ -354,6 +354,15 @@ def check_known_invalid_symbols(errors: list[str]) -> None:
                 fail(errors, f"{path.name}: {symbol} nicht verwenden; die von EFileStreamError deklarierte Create-Signatur verdeckt Exception.Create(string)")
 
 
+def check_qualified_system_monitor(errors: list[str]) -> None:
+    pattern = re.compile(r"(?<![A-Za-z0-9_.])TMonitor\b", re.IGNORECASE)
+    for path in sorted([*SOURCE.glob("*.pas"), ROOT / "DAI.dpk"]):
+        content = read_project_text(path)
+        stripped, _ = strip_pascal_strings_and_comments(content)
+        for match in pattern.finditer(stripped):
+            line = stripped.count("\n", 0, match.start()) + 1
+            fail(errors, f"{path.relative_to(ROOT)}:{line}: Synchronisationszugriffe müssen System.TMonitor verwenden")
+
 def check_dai_type_definitions(errors: list[str]) -> None:
     content = "\n".join(read_project_text(path) for path in SOURCE.glob("*.pas"))
     identifiers = set(re.findall(r"\b(?:TDAI|EDAI)[A-Za-z0-9_]*\b", content))
@@ -531,7 +540,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.1.12"
+    expected = "1.1.13"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
@@ -722,6 +731,7 @@ def main() -> int:
     check_old_names(errors)
     check_referenced_units(errors)
     check_known_invalid_symbols(errors)
+    check_qualified_system_monitor(errors)
     check_dai_type_definitions(errors)
     check_required_uses(errors)
     check_creator_definitions(errors)

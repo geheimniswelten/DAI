@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 1.1.13
+
+- alle Synchronisationszugriffe von `TMonitor.Enter/Exit` auf `System.TMonitor.Enter/Exit` umgestellt
+- Namenskollision mit `Vcl.Forms.TMonitor`, das die Bildschirmdarstellung beschreibt, zuverlässig ausgeschlossen
+- statische Prüfung ergänzt, die unqualifizierte `TMonitor`-Aufrufe in Pascal-Sourcen und im Package zurückweist
+
 ## 1.1.12
 
 - Standardport `7331` direkt neben dem Portfeld im Options-Frame ausgewiesen

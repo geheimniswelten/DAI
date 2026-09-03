@@ -196,7 +196,7 @@ begin
   LWildcardKey := WildcardAccessKey(ACategory, AContext);
   LGlobalWildcardKey := GlobalWildcardAccessKey(ACategory);
 
-  TMonitor.Enter(FLock);
+  System.TMonitor.Enter(FLock);
   try
     if ConsumeCounter(FOneShotDenials, LKey) or ConsumeCounter(FOneShotDenials, LWildcardKey) or
        ConsumeCounter(FOneShotDenials, LGlobalWildcardKey) then
@@ -221,7 +221,7 @@ begin
         Exit(True);
     end;
   finally
-    TMonitor.Exit(FLock);
+    System.TMonitor.Exit(FLock);
   end;
 
   if GetCurrentThreadId = MainThreadID then
@@ -233,13 +233,13 @@ begin
         LDecision := TDAIPermissionDialog.Ask(ACategory, AOperation, AResource, AContext);
       end);
 
-  TMonitor.Enter(FLock);
+  System.TMonitor.Enter(FLock);
   try
     ApplyDecisionUnlocked(ACategory, LDecision.Level, AContext, True);
     if LDecision.ApplyToLowerLevels then
       ApplyToLowerLevelsUnlocked(ACategory, LDecision.Level, AContext);
   finally
-    TMonitor.Exit(FLock);
+    System.TMonitor.Exit(FLock);
   end;
 
   Result := LDecision.Level in [plOnce, plSession, plAlways];
@@ -248,13 +248,13 @@ end;
 
 procedure TDAIPermissionManager.ClearAllSessions;
 begin
-  TMonitor.Enter(FLock);
+  System.TMonitor.Enter(FLock);
   try
     FSessionAllows.Clear;
     FOneShotAllows.Clear;
     FOneShotDenials.Clear;
   finally
-    TMonitor.Exit(FLock);
+    System.TMonitor.Exit(FLock);
   end;
 end;
 
@@ -267,7 +267,7 @@ begin
   LNormalizedProject := NormalizeKeyPart(AProjectFileName);
   LRemoveKeys := TList<string>.Create;
   try
-    TMonitor.Enter(FLock);
+    System.TMonitor.Enter(FLock);
     try
       for LKey in FOneShotAllows.Keys do
         if LKey.StartsWith(LNormalizedProject + '|', True) then
@@ -289,7 +289,7 @@ begin
       for LKey in LRemoveKeys do
         FSessionAllows.Remove(LKey);
     finally
-      TMonitor.Exit(FLock);
+      System.TMonitor.Exit(FLock);
     end;
   finally
     LRemoveKeys.Free;
@@ -331,11 +331,11 @@ end;
 
 function TDAIPermissionManager.GetEffectiveLevel(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): TDAIPermissionLevel;
 begin
-  TMonitor.Enter(FLock);
+  System.TMonitor.Enter(FLock);
   try
     Result := EffectiveLevelUnlocked(ACategory, AContext);
   finally
-    TMonitor.Exit(FLock);
+    System.TMonitor.Exit(FLock);
   end;
 end;
 
@@ -348,7 +348,7 @@ end;
 
 procedure TDAIPermissionManager.SetLevelFromOptions(const ACategory: TDAIPermissionCategory; const ALevel: TDAIPermissionLevel; const AContext: TDAIRequestContext);
 begin
-  TMonitor.Enter(FLock);
+  System.TMonitor.Enter(FLock);
   try
     case ALevel of
       plNever,
@@ -364,7 +364,7 @@ begin
         ApplyDecisionUnlocked(ACategory, ALevel, AContext, False);
     end;
   finally
-    TMonitor.Exit(FLock);
+    System.TMonitor.Exit(FLock);
   end;
 end;
 

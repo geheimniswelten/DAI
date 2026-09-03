@@ -11,6 +11,7 @@ vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
 - Unterfunktionen sind in Dateinamen und Unit-Namen mit Punkten getrennt, zum Beispiel `h5u.DAI.Permissions.Manager.pas`
 - Pascal-Quellzeilen sind auf höchstens 180 Zeichen begrenzt
 - Tabulatoren sind in Pascal-Sourcen nicht zulässig und werden durch zwei Leerzeichen ersetzt
+- Zugriffe auf die RTL-Sperrklasse werden immer als `System.TMonitor` qualifiziert, damit keine Kollision mit `Vcl.Forms.TMonitor` entsteht
 
 ## MCP-Server
 
@@ -265,7 +266,7 @@ Berechtigungsdialoge erscheinen.
 python .\Scripts\verify.py
 ```
 
-Geprüft werden unter anderem Dateinamen, Unit-Namen, DPK-/DPROJ-Referenzen, XML, erforderliche MCP-Werkzeuge, bekannte ungültige Delphi-Typen, fehlende DAI-Typdeklarationen, Altbezeichnungen, Tabulatoren, gemischte Zeilenenden und die maximale Zeilenlänge von 180 Zeichen.
+Geprüft werden unter anderem Dateinamen, Unit-Namen, DPK-/DPROJ-Referenzen, XML, erforderliche MCP-Werkzeuge, bekannte ungültige Delphi-Typen, fehlende DAI-Typdeklarationen, Altbezeichnungen, unqualifizierte `TMonitor`-Aufrufe, Tabulatoren, gemischte Zeilenenden und die maximale Zeilenlänge von 180 Zeichen.
 
 ## Hinweis zur Binärprüfung
 
