@@ -141,7 +141,7 @@ begin
   FGenerateTokenButton.Top := LTop;
   FGenerateTokenButton.Width := 158;
   FGenerateTokenButton.Caption := 'Token erzeugen';
-  FGenerateTokenButton.Hint := 'Erzeugt eine neue GUID. Mit „Registrieren“ wird anschließend auch die Codex-Konfiguration aktualisiert.';
+  FGenerateTokenButton.Hint := 'Erzeugt eine neue GUID. Danach „Registrieren“ und Codex neu starten, damit die neue Verbindung verwendet wird.';
   FGenerateTokenButton.ShowHint := True;
   FGenerateTokenButton.OnClick := GenerateTokenClicked;
   Inc(LTop, 32);

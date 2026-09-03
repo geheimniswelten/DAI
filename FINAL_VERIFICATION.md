@@ -1,60 +1,98 @@
-# DAI 1.1.13 – Prüfbericht
+# DAI 1.1.14 – Prüfbericht
 
-## Änderung
+## Anlass
 
-DAI 1.1.13 qualifiziert sämtliche Zugriffe auf die RTL-Sperrklasse explizit mit dem Unit-Namespace `System`:
+Codex erkannte den konfigurierten DAI-Server und sendete den statischen HTTP-Header `Authorization: Bearer …`. Indy verwarf das ihm unbekannte Autorisierungsschema jedoch bereits während des Parsens der HTTP-Anfrage mit `EIdHTTPUnsupportedAuthorisationScheme`. Der MCP-Handler von DAI wurde deshalb gar nicht erreicht.
+
+Daneben befanden sich die von DAI erzeugten Codex- und Skill-Dateien wegen `TPath.GetHomePath` unter `%APPDATA%`. Für die von Codex verwendeten persönlichen Pfade muss dagegen `%USERPROFILE%` verwendet werden.
+
+## Bearer-Authentifizierung
+
+`TDAIMCPServer` registriert nun vor dem Aktivieren des Indy-Servers:
 
 ```pascal
-System.TMonitor.Enter(ALock);
-try
-  // geschützter Bereich
-finally
-  System.TMonitor.Exit(ALock);
+FHTTPServer.OnParseAuthentication := HandleParseAuthentication;
+```
+
+Der Handler erkennt das Schema case-insensitiv, übernimmt den unveränderten Tokenwert und markiert Bearer gegenüber Indy als verarbeitet:
+
+```pascal
+procedure TDAIMCPServer.HandleParseAuthentication(AContext: TIdContext; const AAuthType, AAuthData: string; var VUsername, VPassword: string; var VHandled: Boolean);
+begin
+  if not SameText(AAuthType, 'Bearer') then
+    Exit;
+
+  VUsername := '';
+  VPassword := Trim(AAuthData);
+  VHandled := True;
 end;
 ```
 
-Die unqualifizierte Schreibweise `TMonitor.Enter` beziehungsweise `TMonitor.Exit` wird nicht mehr verwendet. Dadurch kann `Vcl.Forms.TMonitor`, das einen
-Bildschirm beschreibt, die Synchronisationsklasse aus `System` nicht mehr überdecken.
-
-Geänderte Units:
-
-- `h5u.DAI.OTA.Build.pas`
-- `h5u.DAI.OTA.CodeInsight.pas`
-- `h5u.DAI.Permissions.Manager.pas`
-
-Insgesamt wurden 24 Synchronisationsaufrufe umgestellt.
-
-## Statische Regressionserkennung
-
-`Scripts/verify.py` durchsucht Pascal-Code außerhalb von Zeichenketten und Kommentaren nach unqualifizierten Verwendungen des Symbols:
+Erst im normalen DAI-MCP-Handler erfolgt die eigentliche Authentifizierung. Dabei wird das Schema case-insensitiv und der Token als case-sensitiver, undurchsichtiger Wert geprüft:
 
 ```pascal
-TMonitor
+Result := ARequestInfo.AuthExists and SameText(ARequestInfo.AuthType, 'Bearer') and SameStr(ARequestInfo.AuthPassword, AExpectedToken);
 ```
 
-Ein solcher Aufruf führt nun zu einem Fehler wie:
+Ein fehlender oder falscher Token führt kontrolliert zu HTTP 401 mit:
 
 ```text
-Source/h5u.DAI.OTA.Build.pas:129: Synchronisationszugriffe müssen System.TMonitor verwenden
+WWW-Authenticate: Bearer realm="DAI"
 ```
 
-Der Negativtest wurde mit einem absichtlich zurückgesetzten `TMonitor.Enter` ausgeführt und erwartungsgemäß abgelehnt.
+## Registrierungsverzeichnisse
 
-## Prüfung
+DAI verwendet jetzt ausdrücklich das Windows-Benutzerprofil:
+
+```text
+%USERPROFILE%\.codex\config.toml
+%USERPROFILE%\.agents\skills\delphi-ide\SKILL.md
+```
+
+Ein Verzeichnis `.skills` wird von DAI nicht verwendet. Der Skill enthält nur Arbeitsanweisungen und keine Zugangsdaten. Port und Bearer-Token werden ausschließlich im verwalteten DAI-Block der Codex-Konfiguration gespeichert.
+
+Beim Registrieren und Deregistrieren werden zusätzlich ausschließlich eindeutig von DAI markierte Altinhalte unter `%APPDATA%` entfernt. Fremde Konfigurationen und nicht von DAI verwaltete Skills bleiben unangetastet.
+
+## Erforderliche Schritte nach dem Update
+
+Da der bisherige Token während der Diagnose in einem Werkzeugprotokoll sichtbar wurde, muss er ersetzt werden:
+
+1. DAI 1.1.14 kompilieren und installieren.
+2. Delphi vollständig neu starten, damit die neue BPL geladen wird.
+3. Unter `Tools → Options → Third Party → DAI` auf `Token erzeugen` klicken.
+4. Auf `Registrieren` klicken. Dadurch werden Server, Registry und `%USERPROFILE%\.codex\config.toml` auf denselben Token aktualisiert.
+5. Codex vollständig neu starten beziehungsweise den MCP-Server in Codex neu starten.
+6. Mit `/mcp` oder `codex mcp list` prüfen, ob `dai` verbunden ist.
+
+Der Token darf nicht in einen Chat oder in Diagnoseausgaben kopiert werden.
+
+## Statische und strukturelle Prüfung
 
 - 27 Pascal-Units erkannt
 - 39 MCP-Werkzeuge erkannt
-- 24 von 24 Monitor-Sperraufrufen als `System.TMonitor` qualifiziert
-- keine unqualifizierten `TMonitor`-Aufrufe in Pascal-Sourcen oder `DAI.dpk`
 - alle PAS-Dateien besitzen UTF-8 mit BOM
+- 4 PAS-Dateien verwenden CRLF, 23 verwenden LF
+- keine Datei enthält vermischte Zeilenenden
 - keine Tabulatorzeichen in Pascal-Sourcen
-- keine gemischten Zeilenenden innerhalb einer Pascal-Datei
 - maximale Pascal-Zeilenlänge: 179 von erlaubten 180 Zeichen
 - DPK- und DPROJ-Referenzen vollständig
 - DPROJ-XML gültig
+- erzeugter Codex-TOML-Block mit Python `tomllib` erfolgreich geparst
+- Bearer-Schema wird über `OnParseAuthentication` registriert
+- geparste Indy-Felder `AuthType` und `AuthPassword` werden für die Tokenprüfung verwendet
+- Tokenvergleich bleibt case-sensitiv
+- Codex- und Skill-Pfade verwenden `%USERPROFILE%`
+- sichere Bereinigung ausschließlich eigener Altregistrierungen unter `%APPDATA%`
 - internes SHA-256-Manifest vollständig erzeugt
+
+## Negativtests
+
+Die Regressionstests lehnen folgende absichtlich erzeugte Fehler erwartungsgemäß ab:
+
+1. fehlende Zuweisung von `OnParseAuthentication`
+2. Bearer-Handler ohne `VHandled := True`
+3. erneute Verwendung von `TPath.GetHomePath` für die Codex-Konfiguration
 
 ## Einschränkung
 
-In dieser Umgebung ist keine Delphi-13-Toolchain vorhanden. Der vorherige Projektstand wurde vom Benutzer in Delphi 13 fehler-, warnungs- und hinweisfrei
-kompiliert. Die Änderung in 1.1.13 beschränkt sich auf die eindeutige Qualifikation vorhandener RTL-Aufrufe sowie die statische Regressionserkennung.
+In dieser Umgebung ist keine Delphi-13-Toolchain vorhanden. DAI 1.1.13 wurde vom Benutzer bereits fehler-, warnungs- und hinweisfrei kompiliert und in der IDE installiert. Die neuen Delphi-Änderungen in 1.1.14 müssen einmal lokal mit Delphi 13 kompiliert und anschließend gegen die laufende Codex-App getestet werden.

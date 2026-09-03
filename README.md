@@ -24,6 +24,8 @@ http://127.0.0.1:7331/mcp
 Der Zugriff ist mit einem Bearer-Token geschützt. Aktivierung, Port, Token, Logging, zusätzliche Referenzverzeichnisse und Berechtigungen werden unter
 `Tools → Options → Third Party → DAI` verwaltet. Der Options-Frame zeigt neben dem frei änderbaren Port den Standardwert `7331`.
 
+DAI registriert `Bearer` über Indys `OnParseAuthentication`. Dadurch erreicht der Authorization-Header den MCP-Handler, der den Token prüft und bei einem falschen Wert kontrolliert HTTP 401 zurückgibt.
+
 Ein Bearer-Token muss keine GUID sein. DAI erzeugt standardmäßig eine kleingeschriebene GUID ohne geschweifte Klammern, weil dieses Format kompakt,
 zufällig sowie problemlos in HTTP-Headern und der verwalteten Codex-TOML-Konfiguration verwendbar ist. Über `Token erzeugen` kann ein neuer Wert erstellt
 werden. Bei einer vorhandenen Codex-Registrierung ist danach `Registrieren` aufzurufen, damit der neue Token dort ebenfalls gespeichert wird.
@@ -222,6 +224,10 @@ Die Optionsseite zeigt den Status folgender Dateien über `FileExists` und die D
 %USERPROFILE%\.codex\config.toml
 %USERPROFILE%\.agents\skills\delphi-ide\SKILL.md
 ```
+
+DAI verwendet ausdrücklich `%USERPROFILE%`. `TPath.GetHomePath` zeigt unter Windows auf `%APPDATA%` und ist für diese benutzerspezifischen Codex-Pfade ungeeignet. Beim nächsten Registrieren entfernt DAI ausschließlich eigene markierte Altinhalte unter `%APPDATA%`.
+
+Der persönliche Skill liegt unter `.agents\skills`; ein Verzeichnis `.skills` wird von DAI nicht verwendet. Der Skill enthält nur Arbeitsanweisungen. Port und Bearer-Token stehen ausschließlich im verwalteten Block der `.codex\config.toml`. Nach einer Änderung von Port oder Token ist erneut `Registrieren` auszuführen und Codex neu zu starten.
 
 „Registrieren“ ergänzt ausschließlich einen markierten DAI-Block und den verwalteten Skill. „Deregistrieren“ entfernt nur diese verwalteten Inhalte.
 Ein bereits vorhandener, nicht markierter `[mcp_servers.dai]`-Abschnitt wird nicht überschrieben.

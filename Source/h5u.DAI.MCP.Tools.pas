@@ -528,14 +528,14 @@ begin
 
   if SameText(AName, 'codex_register') then
   begin
-    RequirePermission(pcEditOutsideIDE, 'DAI in .codex und .agents registrieren', TPath.GetHomePath, AContext);
+    RequirePermission(pcEditOutsideIDE, 'DAI in .codex und .agents registrieren', TDAICodexRegistration.UserProfileDirectory, AContext);
     TDAICodexRegistration.RegisterFiles;
     Exit(TDAICodexRegistration.Status);
   end;
 
   if SameText(AName, 'codex_unregister') then
   begin
-    RequirePermission(pcEditOutsideIDE, 'DAI aus .codex und .agents deregistrieren', TPath.GetHomePath, AContext);
+    RequirePermission(pcEditOutsideIDE, 'DAI aus .codex und .agents deregistrieren', TDAICodexRegistration.UserProfileDirectory, AContext);
     TDAICodexRegistration.UnregisterFiles;
     Exit(TDAICodexRegistration.Status);
   end;

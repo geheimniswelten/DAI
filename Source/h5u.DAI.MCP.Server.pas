@@ -13,6 +13,7 @@ type
     FHTTPServer: TIdHTTPServer;
     FLastError: string;
     procedure HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure HandleParseAuthentication(AContext: TIdContext; const AAuthType, AAuthData: string; var VUsername, VPassword: string; var VHandled: Boolean);
     procedure ResetAfterFailedStart;
   public
     constructor Create;
@@ -58,6 +59,11 @@ begin
   LOrigin := LowerCase(Trim(AOrigin));
   Result := (LOrigin = '') or LOrigin.StartsWith('http://127.0.0.1') or LOrigin.StartsWith('http://localhost') or
     LOrigin.StartsWith('https://127.0.0.1') or LOrigin.StartsWith('https://localhost');
+end;
+
+function HasValidBearerToken(const ARequestInfo: TIdHTTPRequestInfo; const AExpectedToken: string): Boolean;
+begin
+  Result := ARequestInfo.AuthExists and SameText(ARequestInfo.AuthType, 'Bearer') and SameStr(ARequestInfo.AuthPassword, AExpectedToken);
 end;
 
 function ReadRequestBody(const ARequestInfo: TIdHTTPRequestInfo): string;
@@ -108,6 +114,7 @@ begin
   FHTTPServer.ServerSoftware := CDAIDisplayName + '/' + CDAIVersion;
   FHTTPServer.OnCommandGet := HandleCommand;
   FHTTPServer.OnCommandOther := HandleCommand;
+  FHTTPServer.OnParseAuthentication := HandleParseAuthentication;
 end;
 
 destructor TDAIMCPServer.Destroy;
@@ -115,6 +122,16 @@ begin
   Stop;
   FHTTPServer.Free;
   inherited Destroy;
+end;
+
+procedure TDAIMCPServer.HandleParseAuthentication(AContext: TIdContext; const AAuthType, AAuthData: string; var VUsername, VPassword: string; var VHandled: Boolean);
+begin
+  if not SameText(AAuthType, 'Bearer') then
+    Exit;
+
+  VUsername := '';
+  VPassword := Trim(AAuthData);
+  VHandled := True;
 end;
 
 function TDAIMCPServer.Active: Boolean;
@@ -186,7 +203,7 @@ begin
     Exit;
   end;
 
-  if not SameText(Trim(ARequestInfo.RawHeaders.Values['Authorization']), 'Bearer ' + TDAISettings.Instance.Token) then
+  if not HasValidBearerToken(ARequestInfo, TDAISettings.Instance.Token) then
   begin
     AResponseInfo.ResponseNo := 401;
     AResponseInfo.CustomHeaders.Values['WWW-Authenticate'] := 'Bearer realm="DAI"';

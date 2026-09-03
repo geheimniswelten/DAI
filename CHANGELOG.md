@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 1.1.14
+
+- Indy akzeptiert das Autorisierungsschema `Bearer` nun über `OnParseAuthentication`, bevor unbekannte Schemata verworfen werden
+- Bearer-Schema wird case-insensitiv, der eigentliche Token weiterhin als case-sensitiver undurchsichtiger Wert geprüft
+- Codex-Konfiguration und persönlicher Skill werden aus `%USERPROFILE%` statt aus `TPath.GetHomePath` abgeleitet
+- beim Registrieren und Deregistrieren werden ausschließlich von DAI markierte Altdateien unter `%APPDATA%` sicher bereinigt
+
 ## 1.1.13
 
 - alle Synchronisationszugriffe von `TMonitor.Enter/Exit` auf `System.TMonitor.Enter/Exit` umgestellt

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import re
@@ -540,7 +540,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.1.13"
+    expected = "1.1.14"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
@@ -588,6 +588,38 @@ def check_nonfatal_server_binding(errors: list[str]) -> None:
         fail(errors, "DAI-Logging muss bei Fehlern von IOTAMessageServices auf OutputDebugString zurückfallen")
     if "RefreshServerStatus" not in options or "TDAIRuntime.LastServerError" not in options:
         fail(errors, "DAI-Optionsseite muss den inaktiven Server und den letzten Startfehler anzeigen")
+
+
+def check_bearer_authentication_and_registration_paths(errors: list[str]) -> None:
+    server = read_project_text(SOURCE / "h5u.DAI.MCP.Server.pas")
+    registration = read_project_text(SOURCE / "h5u.DAI.Codex.Registration.pas")
+    tools = read_project_text(SOURCE / "h5u.DAI.MCP.Tools.pas")
+
+    if "FHTTPServer.OnParseAuthentication := HandleParseAuthentication" not in server:
+        fail(errors, "h5u.DAI.MCP.Server.pas: Indy benötigt einen OnParseAuthentication-Handler für Bearer")
+    if not re.search(
+        r"(?is)procedure\s+TDAIMCPServer\.HandleParseAuthentication.*?SameText\s*\(\s*AAuthType\s*,\s*'Bearer'\s*\).*?VPassword\s*:=\s*Trim\s*\(\s*AAuthData\s*\).*?VHandled\s*:=\s*True",
+        server,
+    ):
+        fail(errors, "h5u.DAI.MCP.Server.pas: Bearer muss vor HandleCommand als unterstütztes Indy-Authentifizierungsschema markiert werden")
+    if "HasValidBearerToken" not in server or "ARequestInfo.AuthType" not in server or "ARequestInfo.AuthPassword" not in server or "SameStr(ARequestInfo.AuthPassword, AExpectedToken)" not in server:
+        fail(errors, "h5u.DAI.MCP.Server.pas: der von Indy geparste Bearer-Token muss case-sensitiv geprüft werden")
+    if "WWW-Authenticate" not in server or 'Bearer realm="DAI"' not in server:
+        fail(errors, "h5u.DAI.MCP.Server.pas: eine fehlgeschlagene Prüfung muss eine Bearer-Challenge liefern")
+
+    if "class function UserProfileDirectory: string; static;" not in registration:
+        fail(errors, "h5u.DAI.Codex.Registration.pas: UserProfileDirectory muss öffentlich verfügbar sein")
+    if "GetEnvironmentVariable('USERPROFILE')" not in registration:
+        fail(errors, "h5u.DAI.Codex.Registration.pas: Codex-Dateien müssen aus USERPROFILE abgeleitet werden")
+    if "TPath.GetHomePath" in registration or "TPath.GetHomePath" in tools:
+        fail(errors, "Codex- und Skill-Registrierung darf TPath.GetHomePath unter Windows nicht verwenden")
+    if "LegacyApplicationDataDirectory" not in registration or "RemoveLegacyRegistration" not in registration:
+        fail(errors, "h5u.DAI.Codex.Registration.pas: DAI muss eigene Altregistrierungen unter APPDATA bereinigen")
+    for required in (".codex\\config.toml", ".agents\\skills\\", 'http_headers = { Authorization = "Bearer '):
+        if required not in registration:
+            fail(errors, f"h5u.DAI.Codex.Registration.pas: Registrierungselement fehlt: {required}")
+    if tools.count("TDAICodexRegistration.UserProfileDirectory") < 2:
+        fail(errors, "h5u.DAI.MCP.Tools.pas: Registrieren und Deregistrieren müssen USERPROFILE als Berechtigungsziel verwenden")
 
 
 def check_duplicate_implementations(errors: list[str]) -> None:
@@ -740,6 +772,7 @@ def main() -> int:
     check_options_frame_layout(errors)
     check_version_consistency(errors)
     check_nonfatal_server_binding(errors)
+    check_bearer_authentication_and_registration_paths(errors)
     check_duplicate_implementations(errors)
     check_lexical_balance(errors)
 
