@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 1.1.10
+
+- eigene `TScrollBox` aus dem DAI-Options-Frame entfernt; der von der Delphi-IDE bereitgestellte scrollbare Options-Host übernimmt das Scrollen
+- alle dynamisch erzeugten Steuerelemente liegen nun direkt auf `TDAIOptionsFrame`
+- der Frame verwendet am Ende von `BuildControls` `Align := alTop` und `Height := LTop`, damit der IDE-Dialog seine Inhaltsgröße korrekt bestimmen kann
+- doppelte vertikale Scrollbar beseitigt und Mausrad-Scrollen über das Standardverhalten des IDE-Einstellungsdialogs ermöglicht
+
 ## 1.1.9
 
 - Zugriff auf den bereits von Delphi 13 verwendeten Code-Insight-/LSP-Provider über die öffentliche OpenToolsAPI ergänzt

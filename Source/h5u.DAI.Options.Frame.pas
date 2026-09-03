@@ -5,7 +5,6 @@ interface
 uses
   System.Classes,
   Vcl.Controls,
-  Vcl.ExtCtrls,
   Vcl.Forms,
   Vcl.StdCtrls,
   h5u.DAI.Types;
@@ -27,7 +26,6 @@ type
     FSkillStatusLabel: TLabel;
     FRegisterButton: TButton;
     FUnregisterButton: TButton;
-    FScrollBox: TScrollBox;
     procedure BuildControls;
     procedure RefreshServerStatus;
     procedure AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
@@ -78,7 +76,6 @@ end;
 constructor TDAIOptionsFrame.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-  Align := alClient;
   AutoScroll := False;
   BuildControls;
 end;
@@ -105,66 +102,60 @@ var
   LInfoLabel: TLabel;
   LTop: Integer;
 begin
-  FScrollBox := TScrollBox.Create(Self);
-  FScrollBox.Parent := Self;
-  FScrollBox.Align := alClient;
-  FScrollBox.BorderStyle := bsNone;
-  FScrollBox.VertScrollBar.Tracking := True;
-
   LTop := 18;
-  with NewLabel(FScrollBox, 'MCP-Server', 16, LTop) do
+  with NewLabel(Self, 'MCP-Server', 16, LTop) do
     Font.Style := [fsBold];
   Inc(LTop, 30);
 
-  FServerEnabledCheckBox := TCheckBox.Create(FScrollBox);
-  FServerEnabledCheckBox.Parent := FScrollBox;
+  FServerEnabledCheckBox := TCheckBox.Create(Self);
+  FServerEnabledCheckBox.Parent := Self;
   FServerEnabledCheckBox.Left := 24;
   FServerEnabledCheckBox.Top := LTop;
   FServerEnabledCheckBox.Caption := 'MCP-Server für Codex aktivieren';
   FServerEnabledCheckBox.Width := 300;
   Inc(LTop, 32);
 
-  NewLabel(FScrollBox, 'Port', 24, LTop + 4);
-  FPortEdit := TEdit.Create(FScrollBox);
-  FPortEdit.Parent := FScrollBox;
+  NewLabel(Self, 'Port', 24, LTop + 4);
+  FPortEdit := TEdit.Create(Self);
+  FPortEdit.Parent := Self;
   FPortEdit.Left := 160;
   FPortEdit.Top := LTop;
   FPortEdit.Width := 100;
   FPortEdit.NumbersOnly := True;
   Inc(LTop, 32);
 
-  NewLabel(FScrollBox, 'Bearer-Token', 24, LTop + 4);
-  FTokenEdit := TEdit.Create(FScrollBox);
-  FTokenEdit.Parent := FScrollBox;
+  NewLabel(Self, 'Bearer-Token', 24, LTop + 4);
+  FTokenEdit := TEdit.Create(Self);
+  FTokenEdit.Parent := Self;
   FTokenEdit.Left := 160;
   FTokenEdit.Top := LTop;
   FTokenEdit.Width := 500;
   Inc(LTop, 32);
 
-  FServerStatusLabel := NewLabel(FScrollBox, '', 24, LTop);
+  FServerStatusLabel := NewLabel(Self, '', 24, LTop);
   FServerStatusLabel.AutoSize := False;
   FServerStatusLabel.WordWrap := True;
   FServerStatusLabel.Width := 760;
   FServerStatusLabel.Height := 72;
   Inc(LTop, 76);
 
-  FLoggingCheckBox := TCheckBox.Create(FScrollBox);
-  FLoggingCheckBox.Parent := FScrollBox;
+  FLoggingCheckBox := TCheckBox.Create(Self);
+  FLoggingCheckBox.Parent := Self;
   FLoggingCheckBox.Left := 24;
   FLoggingCheckBox.Top := LTop;
   FLoggingCheckBox.Caption := 'Alle Zugriffspunkte mit IOTAMessageServices.AddTitleMessage protokollieren';
   FLoggingCheckBox.Width := 650;
   Inc(LTop, 40);
 
-  with NewLabel(FScrollBox, 'Zusätzliche schreibgeschützte Verzeichnisse', 16, LTop) do
+  with NewLabel(Self, 'Zusätzliche schreibgeschützte Verzeichnisse', 16, LTop) do
     Font.Style := [fsBold];
   Inc(LTop, 28);
 
-  FDirectoryHintLabel := NewLabel(FScrollBox, '', 24, LTop);
+  FDirectoryHintLabel := NewLabel(Self, '', 24, LTop);
   Inc(LTop, 24);
 
-  FDirectoriesMemo := TMemo.Create(FScrollBox);
-  FDirectoriesMemo.Parent := FScrollBox;
+  FDirectoriesMemo := TMemo.Create(Self);
+  FDirectoriesMemo.Parent := Self;
   FDirectoriesMemo.Left := 24;
   FDirectoriesMemo.Top := LTop;
   FDirectoriesMemo.Width := 636;
@@ -173,13 +164,13 @@ begin
   FDirectoriesMemo.WordWrap := False;
   Inc(LTop, 122);
 
-  with NewLabel(FScrollBox, 'Berechtigungen', 16, LTop) do
+  with NewLabel(Self, 'Berechtigungen', 16, LTop) do
     Font.Style := [fsBold];
   Inc(LTop, 30);
 
-  NewLabel(FScrollBox, 'Geltungsbereich', 24, LTop + 4);
-  FScopeComboBox := TComboBox.Create(FScrollBox);
-  FScopeComboBox.Parent := FScrollBox;
+  NewLabel(Self, 'Geltungsbereich', 24, LTop + 4);
+  FScopeComboBox := TComboBox.Create(Self);
+  FScopeComboBox.Parent := Self;
   FScopeComboBox.Left := 160;
   FScopeComboBox.Top := LTop;
   FScopeComboBox.Width := 240;
@@ -190,7 +181,7 @@ begin
   FScopeComboBox.OnChange := ScopeChanged;
   Inc(LTop, 34);
 
-  FProjectLabel := NewLabel(FScrollBox, '', 24, LTop);
+  FProjectLabel := NewLabel(Self, '', 24, LTop);
   FProjectLabel.Width := 636;
   FProjectLabel.AutoSize := False;
   FProjectLabel.WordWrap := True;
@@ -198,10 +189,10 @@ begin
   Inc(LTop, 52);
 
   for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
-    AddPermissionRow(FScrollBox, LCategory, LTop);
+    AddPermissionRow(Self, LCategory, LTop);
 
   LInfoLabel := NewLabel(
-    FScrollBox,
+    Self,
     '„Verweigern“, „Nur diesmal“ und „Für diese Session“ sind Laufzeitentscheidungen. „Nie“ und „Immer“ werden projektbezogen gespeichert.',
     24,
     LTop
@@ -212,25 +203,25 @@ begin
   LInfoLabel.Height := 36;
   Inc(LTop, 42);
 
-  with NewLabel(FScrollBox, 'Codex- und Skill-Registrierung', 16, LTop) do
+  with NewLabel(Self, 'Codex- und Skill-Registrierung', 16, LTop) do
     Font.Style := [fsBold];
   Inc(LTop, 30);
 
-  FCodexStatusLabel := NewLabel(FScrollBox, '', 24, LTop);
+  FCodexStatusLabel := NewLabel(Self, '', 24, LTop);
   Inc(LTop, 24);
-  FSkillStatusLabel := NewLabel(FScrollBox, '', 24, LTop);
+  FSkillStatusLabel := NewLabel(Self, '', 24, LTop);
   Inc(LTop, 34);
 
-  FRegisterButton := TButton.Create(FScrollBox);
-  FRegisterButton.Parent := FScrollBox;
+  FRegisterButton := TButton.Create(Self);
+  FRegisterButton.Parent := Self;
   FRegisterButton.Left := 24;
   FRegisterButton.Top := LTop;
   FRegisterButton.Width := 160;
   FRegisterButton.Caption := 'Registrieren';
   FRegisterButton.OnClick := RegisterClicked;
 
-  FUnregisterButton := TButton.Create(FScrollBox);
-  FUnregisterButton.Parent := FScrollBox;
+  FUnregisterButton := TButton.Create(Self);
+  FUnregisterButton.Parent := Self;
   FUnregisterButton.Left := 196;
   FUnregisterButton.Top := LTop;
   FUnregisterButton.Width := 160;
@@ -238,7 +229,8 @@ begin
   FUnregisterButton.OnClick := UnregisterClicked;
   Inc(LTop, 48);
 
-  FScrollBox.VertScrollBar.Range := LTop;
+  Align := alTop;
+  Height := LTop;
 end;
 
 procedure TDAIOptionsFrame.LoadFromSettings;

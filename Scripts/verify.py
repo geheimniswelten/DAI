@@ -488,8 +488,32 @@ def check_code_insight_integration(errors: list[str]) -> None:
             fail(errors, f"h5u.DAI.MCP.Tools.pas: Dispatch für {tool} fehlt")
 
 
+def check_options_frame_layout(errors: list[str]) -> None:
+    content = read_project_text(SOURCE / "h5u.DAI.Options.Frame.pas")
+    stripped, _ = strip_pascal_strings_and_comments(content)
+
+    for forbidden in ("FScrollBox", "TScrollBox", "VertScrollBar.Range", "Align := alClient"):
+        if forbidden in stripped:
+            fail(errors, f"h5u.DAI.Options.Frame.pas: eigene ScrollBox beziehungsweise alClient-Layout ist nicht erlaubt: {forbidden}")
+
+    if "vcl.extctrls" in direct_used_units(content):
+        fail(errors, "h5u.DAI.Options.Frame.pas: Vcl.ExtCtrls darf nicht nur für eine eigene ScrollBox eingebunden werden")
+
+    build_match = re.search(
+        r"(?is)procedure\s+TDAIOptionsFrame\.BuildControls\s*;.*?begin(.*?)end\s*;",
+        stripped,
+    )
+    if not build_match:
+        fail(errors, "h5u.DAI.Options.Frame.pas: BuildControls-Implementierung fehlt")
+        return
+
+    body = build_match.group(1)
+    if not re.search(r"Align\s*:=\s*alTop\s*;\s*Height\s*:=\s*LTop\s*;\s*$", body, flags=re.IGNORECASE):
+        fail(errors, "h5u.DAI.Options.Frame.pas: BuildControls muss mit Align := alTop und Height := LTop enden")
+
+
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.1.9"
+    expected = "1.1.10"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
@@ -676,6 +700,7 @@ def main() -> int:
     check_creator_definitions(errors)
     check_encoding_policy(errors)
     check_code_insight_integration(errors)
+    check_options_frame_layout(errors)
     check_version_consistency(errors)
     check_nonfatal_server_binding(errors)
     check_duplicate_implementations(errors)
