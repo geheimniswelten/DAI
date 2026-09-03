@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 1.1.15
+
+- dynamisch geladene WinAPI-Funktionen werden direkt den typisierten Codepointer-Variablen zugewiesen
+- unzulässige Schreibzugriffe über `Pointer(LQueryFullProcessImageNameW)` und `Pointer(LGetExtendedTcpTable)` entfernt
+- statische Prüfung ergänzt, die linkseitige Pointer-Casts bei `GetProcAddress` für diese Funktionsvariablen zurückweist
+
 ## 1.1.14
 
 - Indy akzeptiert das Autorisierungsschema `Bearer` nun über `OnParseAuthentication`, bevor unbekannte Schemata verworfen werden

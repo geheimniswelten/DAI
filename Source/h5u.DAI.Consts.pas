@@ -5,7 +5,7 @@ interface
 const
   CDAIName = 'DAI';
   CDAIDisplayName = 'Delphi AI';
-  CDAIVersion = '1.1.14';
+  CDAIVersion = '1.1.15';
   CDAIDefaultPort = 7331;
   CDAIDefaultBindAddress = '127.0.0.1';
   CDAIMcpPath = '/mcp';

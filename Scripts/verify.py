@@ -540,7 +540,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.1.14"
+    expected = "1.1.15"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
@@ -576,6 +576,15 @@ def check_nonfatal_server_binding(errors: list[str]) -> None:
     for required in ("GetExtendedTcpTable", "QueryFullProcessImageNameW", "GetCurrentProcessId", "OwningProcessId"):
         if required not in tcp_owner:
             fail(errors, f"h5u.DAI.WinAPI.TCP.pas: Portbesitzer-Ermittlung fehlt: {required}")
+    for variable_name, type_name in (
+        ("LGetExtendedTcpTable", "TGetExtendedTcpTable"),
+        ("LQueryFullProcessImageNameW", "TQueryFullProcessImageNameW"),
+    ):
+        if re.search(rf"Pointer\s*\(\s*{variable_name}\s*\)\s*:=", tcp_owner):
+            fail(errors, f"h5u.DAI.WinAPI.TCP.pas: {variable_name} darf auf der linken Seite nicht nach Pointer gecastet werden")
+        expected_assignment = rf"{variable_name}\s*:=\s*{type_name}\s*\(\s*GetProcAddress\s*\("
+        if not re.search(expected_assignment, tcp_owner):
+            fail(errors, f"h5u.DAI.WinAPI.TCP.pas: {variable_name} muss direkt aus dem typisierten GetProcAddress-Ergebnis zugewiesen werden")
     if "das verantwortliche Package oder Plugin ist über die TCP-Tabelle nicht ermittelbar" not in tcp_owner:
         fail(errors, "h5u.DAI.WinAPI.TCP.pas: Hinweis zur fehlenden BPL-/Plugin-Zuordnung innerhalb von bds.exe fehlt")
     if not re.search(r"(?is)class\s+function\s+TDAIRuntime\.ApplySettings\s*:\s*Boolean.*?except.*?Result\s*:=\s*False", runtime):

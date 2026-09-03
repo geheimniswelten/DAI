@@ -74,7 +74,7 @@ begin
   if LKernelModule = 0 then
     Exit;
 
-  Pointer(LQueryFullProcessImageNameW) := GetProcAddress(LKernelModule, 'QueryFullProcessImageNameW');
+  LQueryFullProcessImageNameW := TQueryFullProcessImageNameW(GetProcAddress(LKernelModule, 'QueryFullProcessImageNameW'));
   if not Assigned(LQueryFullProcessImageNameW) then
     Exit;
 
@@ -138,7 +138,7 @@ begin
   if LModule = 0 then
     Exit;
   try
-    Pointer(LGetExtendedTcpTable) := GetProcAddress(LModule, 'GetExtendedTcpTable');
+    LGetExtendedTcpTable := TGetExtendedTcpTable(GetProcAddress(LModule, 'GetExtendedTcpTable'));
     if not Assigned(LGetExtendedTcpTable) then
       Exit;
 
