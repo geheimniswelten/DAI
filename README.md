@@ -24,8 +24,10 @@ Der Zugriff ist mit einem Bearer-Token geschützt. Aktivierung, Port, Token, Log
 `Tools → Options → Third Party → DAI` verwaltet.
 
 Kann der konfigurierte Port nicht gebunden werden, bleibt das Design-Time-Package geladen. DAI wechselt den Port nicht automatisch, weil Codex sonst
-unbemerkt mit einer anderen IDE-Instanz verbunden werden könnte. Der Fehler erscheint im IDE-Meldungsfenster und als Status auf der DAI-Optionsseite;
-nach Auswahl eines freien Ports kann der Server durch Übernehmen der Optionen erneut gestartet werden.
+unbemerkt mit einer anderen IDE-Instanz verbunden werden könnte. Über die Windows-TCP-Tabelle werden PID und Prozessname des vorhandenen Listeners ermittelt
+und im IDE-Meldungsfenster sowie auf der DAI-Optionsseite angezeigt. Gehört der Listener zur aktuellen `bds.exe`, kann die TCP-Tabelle nicht zusätzlich
+bestimmen, welches BPL oder IDE-Plugin innerhalb dieses Prozesses den Socket geöffnet hat. Nach Auswahl eines freien Ports kann der Server durch Übernehmen
+der Optionen erneut gestartet werden.
 
 DAI unterstützt den klassischen MCP-Initialisierungsablauf und die moderne `server/discover`-Methode. Bei Codex-Anfragen wird `_meta.threadId` ausgewertet.
 Dadurch können Session-Freigaben nach Projekt und Codex-Chat getrennt werden. Fehlt die Chat-ID, verwendet DAI ersatzweise die MCP-Transport-Session.

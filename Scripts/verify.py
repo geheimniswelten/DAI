@@ -513,7 +513,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.1.10"
+    expected = "1.1.11"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
@@ -540,8 +540,17 @@ def check_nonfatal_server_binding(errors: list[str]) -> None:
         fail(errors, "MCP-Server muss EIdCouldNotBindSocket ausdrücklich behandeln")
     if not re.search(r"(?is)on\s+E\s*:\s*EIdCouldNotBindSocket\s+do.*?Result\s*:=\s*False", server):
         fail(errors, "MCP-Bindefehler muss ohne erneutes Auslösen der Ausnahme als Startfehler zurückgegeben werden")
-    if "ResetAfterFailedStart" not in server or "Der Port ist wahrscheinlich bereits" not in server:
+    if "ResetAfterFailedStart" not in server or "Der Port ist bereits belegt" not in server:
         fail(errors, "MCP-Bindefehler benötigt Listener-Bereinigung und eine verständliche Portkonflikt-Meldung")
+    if "TDAITCPListener.DescribeIPv4Owner" not in server:
+        fail(errors, "MCP-Bindefehler muss PID und Prozessname des vorhandenen TCP-Listeners ermitteln")
+
+    tcp_owner = read_project_text(SOURCE / "h5u.DAI.WinAPI.TCP.pas")
+    for required in ("GetExtendedTcpTable", "QueryFullProcessImageNameW", "GetCurrentProcessId", "OwningProcessId"):
+        if required not in tcp_owner:
+            fail(errors, f"h5u.DAI.WinAPI.TCP.pas: Portbesitzer-Ermittlung fehlt: {required}")
+    if "das verantwortliche Package oder Plugin ist über die TCP-Tabelle nicht ermittelbar" not in tcp_owner:
+        fail(errors, "h5u.DAI.WinAPI.TCP.pas: Hinweis zur fehlenden BPL-/Plugin-Zuordnung innerhalb von bds.exe fehlt")
     if not re.search(r"(?is)class\s+function\s+TDAIRuntime\.ApplySettings\s*:\s*Boolean.*?except.*?Result\s*:=\s*False", runtime):
         fail(errors, "TDAIRuntime.ApplySettings muss Serverstartfehler abfangen")
     if "LastServerError" not in runtime:

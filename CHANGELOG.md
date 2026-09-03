@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 1.1.11
+
+- bei einem belegten MCP-Port wird der Listener-Besitzer über `GetExtendedTcpTable` aus `iphlpapi.dll` ermittelt
+- die Fehlermeldung nennt die PID und, soweit über `QueryFullProcessImageNameW` lesbar, den Prozessnamen
+- gehört der Listener zur aktuellen `bds.exe`, weist DAI ausdrücklich darauf hin, dass die TCP-Tabelle kein einzelnes BPL oder IDE-Plugin zuordnen kann
+- die Listener-Ermittlung ist rein diagnostisch und darf einen fehlgeschlagenen Serverstart nicht selbst mit einer weiteren Exception überlagern
+
 ## 1.1.10
 
 - eigene `TScrollBox` aus dem DAI-Options-Frame entfernt; der von der Delphi-IDE bereitgestellte scrollbare Options-Host übernimmt das Scrollen

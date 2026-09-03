@@ -35,7 +35,8 @@ uses
   h5u.DAI.Consts,
   h5u.DAI.Log,
   h5u.DAI.MCP.Protocol,
-  h5u.DAI.Settings;
+  h5u.DAI.Settings,
+  h5u.DAI.WinAPI.TCP;
 
 function NewSessionId: string;
 var
@@ -259,6 +260,7 @@ end;
 function TDAIMCPServer.Start: Boolean;
 var
   LBinding: TIdSocketHandle;
+  LOwnerDescription: string;
   LPort: Integer;
 begin
   if Active then
@@ -281,10 +283,11 @@ begin
     on E: EIdCouldNotBindSocket do
     begin
       ResetAfterFailedStart;
+      LOwnerDescription := TDAITCPListener.DescribeIPv4Owner(LPort);
       FLastError := Format(
-        'Der MCP-Server konnte nicht an %s:%d gebunden werden. Der Port ist wahrscheinlich bereits durch eine andere Delphi-/DAI-Instanz oder einen anderen Prozess belegt. ' +
+        'Der MCP-Server konnte nicht an %s:%d gebunden werden. Der Port ist bereits belegt. %s ' +
         'Das DAI-Package bleibt geladen; wählen Sie in den DAI-Einstellungen einen freien Port. Indy: %s',
-        [CDAIDefaultBindAddress, LPort, E.Message]
+        [CDAIDefaultBindAddress, LPort, LOwnerDescription, E.Message]
       );
       TDAILog.Error(FLastError);
       Result := False;
