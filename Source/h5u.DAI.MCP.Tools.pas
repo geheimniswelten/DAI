@@ -24,6 +24,7 @@ uses
   h5u.DAI.Codex.Registration,
   h5u.DAI.Log,
   h5u.DAI.OTA.Build,
+  h5u.DAI.OTA.CodeInsight,
   h5u.DAI.OTA.Files,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.OTA.Projects,
@@ -258,6 +259,62 @@ begin
     LFileName := ArgumentString(AArguments, 'file');
     RequirePermission(pcReadAccess, 'Dateiinhalt lesen', LFileName, AContext);
     Exit(TDAIFileService.ReadFile(LFileName, ArgumentInteger(AArguments, 'maximum_characters', 0)));
+  end;
+
+  if SameText(AName, 'code_insight_status') then
+  begin
+    LFileName := ArgumentString(AArguments, 'file');
+    RequirePermission(pcReadAccess, 'Status der IDE-Code-Insight-Provider lesen', LFileName, AContext);
+    Exit(TDAICodeInsightService.Status(LFileName));
+  end;
+
+  if SameText(AName, 'code_definition') then
+  begin
+    LFileName := ArgumentString(AArguments, 'file');
+    RequirePermission(pcReadAccess, 'Semantische Definition über IDE Code Insight ermitteln', LFileName, AContext);
+    Exit(
+      TDAICodeInsightService.Definition(
+        LFileName,
+        ArgumentInteger(AArguments, 'line', 0),
+        ArgumentInteger(AArguments, 'character', -1),
+        ArgumentInteger(AArguments, 'timeout_ms', 10000)
+      )
+    );
+  end;
+
+  if SameText(AName, 'code_hover') then
+  begin
+    LFileName := ArgumentString(AArguments, 'file');
+    RequirePermission(pcReadAccess, 'Help Insight für eine Quelltextposition lesen', LFileName, AContext);
+    Exit(
+      TDAICodeInsightService.Hover(
+        LFileName,
+        ArgumentInteger(AArguments, 'line', 0),
+        ArgumentInteger(AArguments, 'column', 0),
+        ArgumentInteger(AArguments, 'timeout_ms', 10000)
+      )
+    );
+  end;
+
+  if SameText(AName, 'file_diagnostics') then
+  begin
+    LFileName := ArgumentString(AArguments, 'file');
+    RequirePermission(pcReadAccess, 'Error-Insight-Diagnosen einer IDE-Datei lesen', LFileName, AContext);
+    Exit(TDAICodeInsightService.Diagnostics(LFileName));
+  end;
+
+  if SameText(AName, 'project_context') then
+  begin
+    LProject := ArgumentString(AArguments, 'project');
+    RequirePermission(pcReadAccess, 'Aktiven Projekt- und Compilerkontext lesen', LProject, AContext);
+    Exit(
+      TDAICodeInsightService.ProjectContext(
+        LProject,
+        ArgumentBoolean(AArguments, 'include_files', True),
+        ArgumentInteger(AArguments, 'maximum_files', 5000),
+        ArgumentBoolean(AArguments, 'include_compiler_options', True)
+      )
+    );
   end;
 
   if SameText(AName, 'file_write') then
@@ -564,6 +621,47 @@ begin
     'reference_file_read',
     'Liest eine Datei aus den schreibgeschützten Referenzpfaden.',
     '{"type":"object","properties":{"file":{"type":"string"},"maximum_characters":{"type":"integer","minimum":0}},"required":["file"],"additionalProperties":false}',
+    True
+  );
+  AddTool(
+    Result,
+    'code_insight_status',
+    'Listet die IDE-Code-Insight-Provider und deren semantische Fähigkeiten für eine optionale Datei.',
+    '{"type":"object","properties":{"file":{"type":"string"}},"additionalProperties":false}',
+    True
+  );
+  AddTool(
+    Result,
+    'code_definition',
+    'Ermittelt die Definition eines Symbols über den bereits von Delphi verwendeten Code-Insight-/LSP-Provider.',
+    '{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer","minimum":1},' +
+    '"character":{"type":"integer","minimum":0},"timeout_ms":{"type":"integer","minimum":100,"maximum":60000}},' +
+    '"required":["file","line","character"],"additionalProperties":false}',
+    True
+  );
+  AddTool(
+    Result,
+    'code_hover',
+    'Liest Help Insight an einer Editorposition; die Datei muss in einem Code-Editor geöffnet sein.',
+    '{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer","minimum":1},' +
+    '"column":{"type":"integer","minimum":1},"timeout_ms":{"type":"integer","minimum":100,"maximum":60000}},' +
+    '"required":["file","line","column"],"additionalProperties":false}',
+    True
+  );
+  AddTool(
+    Result,
+    'file_diagnostics',
+    'Liest die von Delphi Error Insight gemeldeten Fehler, Warnungen und Hinweise einer geladenen Datei.',
+    '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}',
+    True
+  );
+  AddTool(
+    Result,
+    'project_context',
+    'Liest den aktiven Delphi-Projekt-, Plattform-, Build-Konfigurations- und Compilerkontext.',
+    '{"type":"object","properties":{"project":{"type":"string"},"include_files":{"type":"boolean"},' +
+    '"maximum_files":{"type":"integer","minimum":1,"maximum":50000},"include_compiler_options":{"type":"boolean"}},' +
+    '"additionalProperties":false}',
     True
   );
   AddTool(

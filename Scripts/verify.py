@@ -21,6 +21,11 @@ REQUIRED_TOOLS = {
     "reference_files_list",
     "file_read",
     "reference_file_read",
+    "code_insight_status",
+    "code_definition",
+    "code_hover",
+    "file_diagnostics",
+    "project_context",
     "file_write",
     "project_create",
     "project_open",
@@ -446,6 +451,60 @@ def check_encoding_policy(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.OTA.Files.pas: Editor-Schreibzugriffe müssen Zeilenenden und Source-Tabs normalisieren")
 
 
+def check_code_insight_integration(errors: list[str]) -> None:
+    path = SOURCE / "h5u.DAI.OTA.CodeInsight.pas"
+    if not path.is_file():
+        fail(errors, "Code-Insight-Unit h5u.DAI.OTA.CodeInsight.pas fehlt")
+        return
+
+    content = read_project_text(path)
+    required = (
+        "IOTACodeInsightServices",
+        "IOTAAsyncCodeInsightManager",
+        "IOTAAsyncCodeInsightManager290",
+        "AsyncGotoDefinitionEx",
+        "AsyncGetHintText",
+        "AsyncOperationCanceled",
+        "SetQueryContext(nil, nil)",
+        "IOTAModuleErrors",
+        "GetCompleteFileList",
+        "DCC_UnitSearchPath",
+        "TDAIOTA.RunOnMainThread",
+        "TMonitor.Enter(GOperationLock)",
+        "function MarkRequestCancelled",
+        "if GState.Completed then",
+        "if not MarkRequestCancelled(ARequestId) then",
+    )
+    for symbol in required:
+        if symbol not in content:
+            fail(errors, f"h5u.DAI.OTA.CodeInsight.pas: erforderliche Integration fehlt: {symbol}")
+
+    if content.count("if LRequestId < 0 then") < 2:
+        fail(errors, "h5u.DAI.OTA.CodeInsight.pas: ungültige Request-IDs müssen für Definition und Help Insight behandelt werden")
+
+    tools = read_project_text(SOURCE / "h5u.DAI.MCP.Tools.pas")
+    for tool in ("code_insight_status", "code_definition", "code_hover", "file_diagnostics", "project_context"):
+        if not re.search(rf"SameText\s*\(\s*AName\s*,\s*'{re.escape(tool)}'", tools, flags=re.IGNORECASE):
+            fail(errors, f"h5u.DAI.MCP.Tools.pas: Dispatch für {tool} fehlt")
+
+
+def check_version_consistency(errors: list[str]) -> None:
+    expected = "1.1.9"
+    consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
+    dproj = read_project_text(ROOT / "DAI.dproj")
+    test_client = read_project_text(ROOT / "Test-MCP.ps1")
+    changelog = read_project_text(ROOT / "CHANGELOG.md")
+
+    if f"CDAIVersion = '{expected}'" not in consts:
+        fail(errors, f"h5u.DAI.Consts.pas: CDAIVersion muss {expected} sein")
+    if f"FileVersion={expected}.0" not in dproj or f"ProductVersion={expected}.0" not in dproj:
+        fail(errors, f"DAI.dproj: Datei- und Produktversion müssen {expected}.0 sein")
+    if f"version = '{expected}'" not in test_client:
+        fail(errors, f"Test-MCP.ps1: Clientversion muss {expected} sein")
+    if not changelog.startswith(f"# Änderungsprotokoll\n\n## {expected}\n"):
+        fail(errors, f"CHANGELOG.md: erster Eintrag muss Version {expected} sein")
+
+
 def check_nonfatal_server_binding(errors: list[str]) -> None:
     server = read_project_text(SOURCE / "h5u.DAI.MCP.Server.pas")
     runtime = read_project_text(SOURCE / "h5u.DAI.Runtime.pas")
@@ -616,6 +675,8 @@ def main() -> int:
     check_required_uses(errors)
     check_creator_definitions(errors)
     check_encoding_policy(errors)
+    check_code_insight_integration(errors)
+    check_version_consistency(errors)
     check_nonfatal_server_binding(errors)
     check_duplicate_implementations(errors)
     check_lexical_balance(errors)

@@ -1,5 +1,16 @@
 # Änderungsprotokoll
 
+## 1.1.9
+
+- Zugriff auf den bereits von Delphi 13 verwendeten Code-Insight-/LSP-Provider über die öffentliche OpenToolsAPI ergänzt
+- fünf neue read-only MCP-Werkzeuge: `code_insight_status`, `code_definition`, `code_hover`, `file_diagnostics` und `project_context`
+- `code_definition` verwendet `IOTAAsyncCodeInsightManager290.AsyncGotoDefinitionEx`, sofern verfügbar, sonst die kompatible Basisfunktion
+- `code_hover` setzt den zur Datei gehörenden `IOTAEditView` als Query-Kontext und stellt den ursprünglichen IDE-Zustand anschließend wieder her
+- asynchrone Code-Insight-Anfragen werden serialisiert, zeitlich begrenzt und bei Timeout über `AsyncOperationCanceled` abgebrochen
+- `file_diagnostics` liest die von Error Insight bereitgestellten Fehler, Warnungen und Hinweise über `IOTAModuleErrors`
+- `project_context` liefert aktive Plattform, Konfiguration, Framework, vollständige Projektdateiliste und ausgewertete DCC-Suchpfade/-Defines
+- Analyse der verwendeten Delphi-13-OpenToolsAPI in `OPENTOOLSAPI_CODE_INSIGHT.md` dokumentiert
+
 ## 1.1.8
 
 - ein belegter MCP-Port löst während der Package-Registrierung keine ungefangene `EIdCouldNotBindSocket` mehr aus

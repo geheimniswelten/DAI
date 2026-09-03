@@ -48,6 +48,7 @@ contains
   h5u.DAI.Options.Frame in 'Source\h5u.DAI.Options.Frame.pas',
   h5u.DAI.Options.Page in 'Source\h5u.DAI.Options.Page.pas',
   h5u.DAI.OTA.Build in 'Source\h5u.DAI.OTA.Build.pas',
+  h5u.DAI.OTA.CodeInsight in 'Source\h5u.DAI.OTA.CodeInsight.pas',
   h5u.DAI.OTA.Files in 'Source\h5u.DAI.OTA.Files.pas',
   h5u.DAI.OTA.Helpers in 'Source\h5u.DAI.OTA.Helpers.pas',
   h5u.DAI.OTA.Creators in 'Source\h5u.DAI.OTA.Creators.pas',

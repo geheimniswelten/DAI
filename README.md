@@ -90,6 +90,27 @@ wird. Ist kein DFM-Textpuffer verfügbar, wird der Schreibvorgang abgelehnt; bei
 `file_read` liefert zusätzlich `encoding` und `line_ending`. `file_write` meldet außerdem die ursprüngliche und die nach dem Schreibvorgang verwendete
 Codierung sowie die ursprüngliche und resultierende Art des Zeilenumbruchs.
 
+## Code Insight und Delphi-LSP
+
+DAI greift nicht als zweiter JSON-RPC-Client auf die privaten Standard-I/O-Pipes der von Delphi gestarteten `DelphiLSP.exe` zu. Stattdessen verwendet es den
+bereits von der IDE verwalteten Provider über `IOTACodeInsightServices` und `IOTAAsyncCodeInsightManager`. Dadurch gelten dieselbe Projektkonfiguration,
+dieselben Suchpfade und der von Delphi synchronisierte aktuelle Editorstand.
+
+Die Integration ist ausschließlich lesend:
+
+- `code_insight_status` listet Provider, Bereitschaft und unterstützte Operationen auf.
+- `code_definition` ermittelt die Definition eines Symbols. `line` ist einsbasiert, `character` ist der nullbasierte Zeichenindex vor Tabulator-Expansion.
+- `code_hover` liefert das IDE-Help-Insight. `line` und `column` sind einsbasierte Editorpositionen; die Datei muss sichtbar in einem Code-Editor geöffnet sein.
+- `file_diagnostics` liest Fehler, Warnungen und Hinweise über `IOTAModuleErrors`; die Datei muss von der IDE geladen sein.
+- `project_context` liefert aktive Konfiguration, Plattform, Framework, Ziel, Projektdateien und ausgewählte ausgewertete DCC-Optionen.
+
+Code-Insight-Anfragen werden serialisiert, mit einem Timeout versehen und bei Zeitüberschreitung über `AsyncOperationCanceled` abgebrochen. Ein für Help
+Insight gesetzter `SetQueryContext` wird anschließend stets mit `nil, nil` zurückgesetzt.
+
+Die öffentliche OpenToolsAPI stellt keinen allgemeinen Zugriff auf alle LSP-Methoden bereit. Insbesondere „Find all references“, Workspace-/Document-Symbole,
+Rename, Call Hierarchy, Type Hierarchy und Semantic Tokens sind in dieser Stufe nicht enthalten. Dafür wäre zusätzlich eine eigene, von DAI verwaltete
+LSP-Instanz pro Projekt erforderlich.
+
 Schreibgeschützt bleiben:
 
 ```text
@@ -150,6 +171,11 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `reference_files_list`
 - `file_read`
 - `reference_file_read`
+- `code_insight_status`
+- `code_definition`
+- `code_hover`
+- `file_diagnostics`
+- `project_context`
 - `codex_registration_status`
 
 ### Bearbeiten und IDE-Steuerung
