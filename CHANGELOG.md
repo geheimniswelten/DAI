@@ -1,5 +1,14 @@
 # Änderungsprotokoll
 
+## 1.2.5
+
+- DAI-Skill heißt künftig dai-delphi-ide; Verzeichnis und YAML-Name tragen die Herkunft, vorgeschriebene Einstiegsdatei bleibt SKILL.md.
+- Native Skillmigration für beide alten delphi-ide-Pfade unter USERPROFILE/APPDATA, mit Besitzmarkern, Sicherungen und Konfliktprüfung.
+- MigrateSkillFiles aktualisiert ausschließlich Skills; vorhandene Clientkonfigurationen und Settings bleiben unverändert.
+- Status und Deregistrierung erkennen alte und neue eigene Skills. Fremde Inhalte bleiben erhalten.
+- Eigene Verwaltungs-/Sicherungs-/Hilfsdateien tragen weiterhin dai/DAI; vorgeschriebene gemeinsame Clientdateinamen bleiben kompatibel.
+- Native Registrierungstests um Migration, Idempotenz, Fremdkollisionen, schreibgeschützte Altdaten und unveränderte Konfigurationen erweitert.
+
 ## 1.2.4
 
 - interfaces_only mit Standard true in source_search, file_read und reference_file_read; Pascal-Units enden in der Antwort vor implementation.

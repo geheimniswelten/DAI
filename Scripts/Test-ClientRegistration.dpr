@@ -325,6 +325,156 @@ begin
   Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = AText, AName + ' contents retained');
 end;
 
+procedure WriteFixture(const AFileName, AText: string);
+begin
+  ForceDirectories(TPath.GetDirectoryName(AFileName));
+  TFile.WriteAllText(AFileName, AText, TEncoding.UTF8);
+end;
+
+procedure CodexMigrationTests;
+const
+  CLegacySkill = '---' + #13#10 + 'name: delphi-ide' + #13#10 + 'description: legacy DAI skill' + #13#10 +
+    '---' + #13#10 + '<!-- DAI managed skill -->' + #13#10 + 'Historical generated content.' + #13#10;
+var
+  LProfileLegacy: string;
+  LAppDataLegacy: string;
+  LForeignSibling: string;
+  LFileName: string;
+  LConfigPath: string;
+  LConfigText: string;
+  LLegacyConfigPath: string;
+  LLegacyConfigText: string;
+  LSkillText: string;
+  LBackupCount: Integer;
+  LConflict: Boolean;
+  LJson: TJSONObject;
+begin
+  LProfileLegacy := TPath.Combine(GRoot, '.agents\skills\delphi-ide\SKILL.md');
+  LAppDataLegacy := TPath.Combine(GetEnvironmentVariable('APPDATA'), '.agents\skills\delphi-ide\SKILL.md');
+  LForeignSibling := TPath.Combine(TPath.GetDirectoryName(LProfileLegacy), 'user-resources\notes.txt');
+  LConfigPath := TDAICodexRegistration.CodexConfigFileName;
+  Check(TDAICodexRegistration.SkillFileName = TPath.Combine(GRoot, '.agents\skills\dai-delphi-ide\SKILL.md'), 'DAI-prefixed skill directory');
+  Check(TDAICodexRegistration.BuildSkillContent.StartsWith('---' + sLineBreak + 'name: ' + CDAISkillDirectoryName + sLineBreak),
+    'skill frontmatter uses DAI name constant');
+  WriteFixture(LProfileLegacy, CLegacySkill);
+  WriteFixture(LAppDataLegacy, CLegacySkill);
+  WriteFixture(LForeignSibling, 'foreign resource');
+  LJson := TDAICodexRegistration.Status;
+  try
+    Check(LJson.GetValue<Boolean>('legacy_user_profile_skill_registered'), 'profile legacy skill detected');
+    Check(LJson.GetValue<Boolean>('legacy_application_data_skill_registered'), 'AppData legacy skill detected');
+    Check(LJson.GetValue<Boolean>('legacy_skill_registered'), 'legacy skill status aggregates both roots');
+    Check(LJson.GetValue<string>('legacy_user_profile_skill_file') = LProfileLegacy, 'profile legacy path exposed');
+    Check(LJson.GetValue<string>('legacy_skill_file') = LAppDataLegacy, 'AppData legacy path exposed');
+  finally
+    LJson.Free;
+  end;
+  LConfigText := TFile.ReadAllText(LConfigPath, TEncoding.UTF8);
+  LLegacyConfigPath := TPath.Combine(GetEnvironmentVariable('APPDATA'), '.codex\config.toml');
+  LLegacyConfigText := CDAIManagedBlockBegin + #13#10 + '[mcp_servers.dai]' + #13#10 + 'url = "http://legacy"' + #13#10 +
+    CDAIManagedBlockEnd + #13#10;
+  WriteFixture(LLegacyConfigPath, LLegacyConfigText);
+  TDAICodexRegistration.MigrateSkillFiles;
+  Check(TFile.ReadAllText(LConfigPath, TEncoding.UTF8) = LConfigText, 'skill-only migration retains current shared config');
+  Check(TFile.ReadAllText(LLegacyConfigPath, TEncoding.UTF8) = LLegacyConfigText, 'skill-only migration retains legacy shared config');
+  Check(not TFile.Exists(LProfileLegacy) and not TFile.Exists(LAppDataLegacy), 'skill-only migration cleans both own legacy roots');
+  LJson := TDAIClientRegistration.RegisterFiles('codex');
+  try
+    Check(ClientStatus(LJson) = 'registered', 'generic registration migrates Codex skill');
+  finally
+    LJson.Free;
+  end;
+  LSkillText := TFile.ReadAllText(TDAICodexRegistration.SkillFileName, TEncoding.UTF8);
+  Check(LSkillText = TDAICodexRegistration.BuildSkillContent, 'new skill receives current generated content');
+  Check(not TFile.Exists(LProfileLegacy), 'profile legacy own skill removed after write');
+  Check(not TFile.Exists(LAppDataLegacy), 'AppData legacy own skill removed after write');
+  Check(TFile.ReadAllText(LForeignSibling, TEncoding.UTF8) = 'foreign resource', 'legacy foreign subdirectory retained');
+  for LFileName in [LProfileLegacy, LAppDataLegacy] do
+  begin
+    Check(Length(TDirectory.GetFiles(TPath.GetDirectoryName(LFileName), 'SKILL.md.dai-*.bak')) = 1, 'legacy migration makes DAI-prefixed backup');
+    Check(TFile.ReadAllText(TDirectory.GetFiles(TPath.GetDirectoryName(LFileName), 'SKILL.md.dai-*.bak')[0], TEncoding.UTF8) = CLegacySkill,
+      'legacy migration backup contains original skill');
+  end;
+  LBackupCount := Length(TDirectory.GetFiles(GRoot, '*.bak', TSearchOption.soAllDirectories));
+  TDAICodexRegistration.RegisterFiles;
+  Check(TFile.ReadAllText(TDAICodexRegistration.SkillFileName, TEncoding.UTF8) = LSkillText, 'migrated registration idempotent content');
+  Check(Length(TDirectory.GetFiles(GRoot, '*.bak', TSearchOption.soAllDirectories)) = LBackupCount, 'idempotent registration creates no backups');
+  LJson := TDAICodexRegistration.Status;
+  try
+    Check(LJson.GetValue<Boolean>('skill_registered'), 'new metadata and marker recognized');
+    Check(not LJson.GetValue<Boolean>('legacy_skill_registered'), 'legacy status clear after migration');
+  finally
+    LJson.Free;
+  end;
+  TDAICodexRegistration.UnregisterFiles;
+  Check(not TFile.Exists(TDAICodexRegistration.SkillFileName), 'new own skill removed');
+  Check(TFile.Exists(LForeignSibling), 'unregister keeps legacy foreign resource');
+  WriteFixture(LProfileLegacy, 'foreign profile skill');
+  WriteFixture(LAppDataLegacy, 'foreign AppData skill');
+  TDAICodexRegistration.RegisterFiles;
+  Check(TFile.ReadAllText(LProfileLegacy, TEncoding.UTF8) = 'foreign profile skill', 'foreign profile legacy remains');
+  Check(TFile.ReadAllText(LAppDataLegacy, TEncoding.UTF8) = 'foreign AppData skill', 'foreign AppData legacy remains');
+  LJson := TDAICodexRegistration.Status;
+  try
+    Check(not LJson.GetValue<Boolean>('legacy_skill_registered'), 'foreign legacy is not owned');
+  finally
+    LJson.Free;
+  end;
+  TDAICodexRegistration.UnregisterFiles;
+  Check(TFile.Exists(LProfileLegacy) and TFile.Exists(LAppDataLegacy), 'unregister retains both foreign legacy skills');
+  WriteFixture(LProfileLegacy, CLegacySkill);
+  WriteFixture(LAppDataLegacy, CLegacySkill);
+  WriteFixture(TDAICodexRegistration.SkillFileName, 'foreign new skill');
+  LConfigText := TFile.ReadAllText(LConfigPath, TEncoding.UTF8);
+  LConflict := False;
+  try
+    TDAICodexRegistration.RegisterFiles;
+  except
+    on E: EInvalidOperation do LConflict := True;
+  end;
+  Check(LConflict, 'foreign new skill blocks migration');
+  Check(TFile.ReadAllText(TDAICodexRegistration.SkillFileName, TEncoding.UTF8) = 'foreign new skill', 'foreign new target is not overwritten');
+  Check(TFile.ReadAllText(LConfigPath, TEncoding.UTF8) = LConfigText, 'new skill collision retains Codex config');
+  Check(TFile.ReadAllText(LProfileLegacy, TEncoding.UTF8) = CLegacySkill, 'target collision retains old profile skill');
+  Check(TFile.ReadAllText(LAppDataLegacy, TEncoding.UTF8) = CLegacySkill, 'target collision retains old AppData skill');
+  LConflict := False;
+  try
+    TDAICodexRegistration.MigrateSkillFiles;
+  except
+    on E: EInvalidOperation do LConflict := True;
+  end;
+  Check(LConflict, 'skill-only migration also blocks foreign destination');
+  Check(TFile.ReadAllText(LProfileLegacy, TEncoding.UTF8) = CLegacySkill, 'skill-only target collision retains old skill');
+  WriteFixture(TDAICodexRegistration.SkillFileName, CLegacySkill);
+  TDAICodexRegistration.RegisterFiles;
+  Check(TFile.ReadAllText(TDAICodexRegistration.SkillFileName, TEncoding.UTF8) = TDAICodexRegistration.BuildSkillContent,
+    'owned destination with historical metadata is refreshed');
+  WriteFixture(LProfileLegacy, CLegacySkill);
+  WriteFixture(LAppDataLegacy, CLegacySkill);
+  TDAICodexRegistration.UnregisterFiles;
+  Check(not TFile.Exists(TDAICodexRegistration.SkillFileName), 'unregister removes current own destination');
+  Check(not TFile.Exists(LProfileLegacy) and not TFile.Exists(LAppDataLegacy), 'unregister removes both old own skills');
+  Check(TFile.Exists(LForeignSibling), 'unregister never deletes foreign subdirectories');
+  WriteFixture(LProfileLegacy, CLegacySkill);
+  SetFileAttributes(PChar(LProfileLegacy), FILE_ATTRIBUTE_READONLY);
+  LConflict := False;
+  try
+    TDAICodexRegistration.RegisterFiles;
+  except
+    on E: EInvalidOperation do LConflict := True;
+  end;
+  SetFileAttributes(PChar(LProfileLegacy), FILE_ATTRIBUTE_NORMAL);
+  Check(LConflict, 'read-only legacy prevents partial migration');
+  Check(not TFile.Exists(TDAICodexRegistration.SkillFileName), 'failed legacy preflight creates no new skill');
+  Check(TFile.ReadAllText(LConfigPath, TEncoding.UTF8) = LConfigText, 'failed legacy preflight retains config');
+  Check(TFile.ReadAllText(LProfileLegacy, TEncoding.UTF8) = CLegacySkill, 'failed legacy preflight retains own source');
+  WriteFixture(TDAICodexRegistration.SkillFileName, 'foreign new skill');
+  TDAICodexRegistration.UnregisterFiles;
+  Check(TFile.ReadAllText(TDAICodexRegistration.SkillFileName, TEncoding.UTF8) = 'foreign new skill', 'unregister retains foreign new target');
+  Check(not TFile.Exists(LProfileLegacy), 'unregister still cleans old own skill with foreign destination');
+  TFile.Delete(TDAICodexRegistration.SkillFileName);
+end;
+
 procedure CodexPreservationTests;
 var
   LPath: string;
@@ -371,6 +521,7 @@ begin
     ParserTests;
     SafeFileTests;
     RegistrationTests;
+    CodexMigrationTests;
     CodexPreservationTests;
     Writeln('OK: ', GCount, ' isolated registration/parser/file checks');
   except

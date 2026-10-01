@@ -1,6 +1,42 @@
-# DAI 1.2.4 – Prüfbericht vom 1. Oktober 2026
+# DAI 1.2.5 – Prüfbericht vom 1. Oktober 2026
 
-## Änderungen und Verhalten
+## DAI-Dateinamen und aktuelle Migration
+
+Der verwaltete Skill heißt dai-delphi-ide und liegt unter %USERPROFILE%\.agents\skills\dai-delphi-ide\SKILL.md.
+SKILL.md bleibt als vorgeschriebener Einstiegsdateiname bestehen; Verzeichnis und YAML-Name kennzeichnen DAI.
+Eigene Verwaltungsdateien (.dai-registration.json), Sicherungen/Temporärdateien (.dai-GUID.bak/.tmp) und DAI.McpBridge.exe tragen bereits DAI im Namen.
+Gemeinsame Clientdateien wie config.toml, .claude.json, settings.json, mcp.json und config.yaml behalten ihre vorgeschriebenen Namen.
+
+Die öffentliche native Routine TDAICodexRegistration.MigrateSkillFiles aktualisiert ausschließlich den Skill.
+Sie wurde als frisch kompilierter Delphi-Code jetzt gegen die vorhandene Benutzerregistrierung ausgeführt:
+neuer Skill geschrieben, interne Metadaten angepasst, alter verwalteter Einstieg entfernt, ursprüngliche Datei mit .dai-Sicherung erhalten.
+Die vorhandenen fünf Clientkonfigurationen und zugehörigen Verwaltungsdateien wurden vor/nach der Migration bytegenau verglichen und blieben unverändert.
+Die installierte Datei entspricht bytegenau dem aktuellen nativen Delphi-Generator. Es gab keine bestehenden Skill-Pfadverweise in den Clientkonfigurationen.
+
+Registrieren, Status und Deregistrieren erkennen beide alten delphi-ide-Skillpfade unter USERPROFILE und APPDATA.
+Nur Dateien mit DAI-Verwaltungsmarker werden migriert oder entfernt; fremde Ziel-Skills blockieren vor Änderung der Clientkonfiguration,
+fremde alte Dateien und Unterordner bleiben erhalten. MigrateSkillFiles schreibt weder aktuelle/alte Clientkonfiguration noch DAI-Settings.
+
+## Verifikation 1.2.5
+
+- Je 144 native Registrierungs-/Parser-/SafeFile-Prüfungen unter Win32/Win64 erfolgreich (98 bestehende und 46 neue Migrationsprüfungen).
+- Je 67 native HTTP-/MCP-Protokoll- und Versionsprüfungen unter Win32/Win64 erfolgreich; insgesamt 422 Checks in diesen Testreihen.
+- Release-Package und native Bridge für Win32/Win64 erfolgreich gebaut; Architektur sowie DLL-/EXE-Typ aller vier PE-Dateien geprüft.
+- Generierter Skill: YAML und Name dai-delphi-ide gültig; 41 Werkzeugnennungen, zwei JSON-Beispiele und elf Argumentverträge gegen 52 Schemas geprüft.
+- Aktuelle Live-Skillmigration mit der echten Produktionsroutine erfolgreich; Sicherung und unveränderte Clientdateien als Receipt dokumentiert.
+- Statische Prüfung: 38 Pascal-Units, 52 MCP-Werkzeuge, Versionen, Packageverweise, Quellformat; git diff --check sauber und Manifest aktualisiert.
+
+Unveränderte SourceView-/SourceSearch-/Editor-/ReadOnly-/Fenster-/Instanz-/Sessiontests wurden nicht wiederholt; ihre vorherigen Ergebnisse stehen unten.
+Die bekannte W1002-/H2077-Hinweisliste bleibt ohne Buildfehler. Es gibt keine neue GetIt-Abhängigkeit.
+
+Die laufende IDE verwendet noch das ältere Package. Die zukünftige Namensvergabe bei Registrieren in der IDE greift nach Laden des neu gebauten Packages;
+die jetzige Benutzer-Skillmigration wurde bereits unabhängig davon als nativer Delphi-Code ausgeführt. Kein Neustart/Hot-Unload der IDE vorgenommen.
+
+## Historischer Prüfstand 1.2.4
+
+Die folgenden Beobachtungen und damaligen Skillnamen beschreiben den vorherigen Stand.
+
+### Änderungen und Verhalten
 
 source_search, file_read und reference_file_read nehmen interfaces_only entgegen, mit Standard true in Schema und Ausführung.
 Bei erkannten .pas-Units endet die Textansicht vor dem echten implementation-Schlüsselwort. Das gemeinsame Delphi-Lexing ignoriert
@@ -20,7 +56,7 @@ LSP-/Code-Insight-Zugriff wurde am installierten ToolsAPI-Quellbestand nachgepr�
 die Antwort nennt jetzt Diagnosequelle und unbekannte Aktualität. Die öffentliche API bietet keine gefundenen hypothetischen Textdiagnosen und keine
 Versionsbindung der gemeldeten Fehler. Eine leere Liste ist keine Bestätigung einer abgeschlossenen Prüfung des neuesten Texts.
 
-## Verifikation 1.2.4
+### Verifikation 1.2.4
 
 Release-Package und native Bridge für Win32/Win64 erfolgreich gebaut. PE-Architektur und DLL-/EXE-Typ aller vier Ausgaben geprüft.
 Keine neue GetIt-Laufzeitabhängigkeit; bekannte W1002/H2077-Hinweise ohne Buildfehler.
@@ -44,18 +80,18 @@ YAML gültig, 41 Werkzeugnennungen, zwei JSON-Beispiele und elf dokumentierte Ar
 Die installierte Datei entspricht bytegenau dem nativen Export. Statische Prüfung: 38 Pascal-Units, 52 Werkzeuge, Referenzen, Versionen und Quellformat;
 git diff --check sauber, Manifest aktualisiert.
 
-## Praktischer Stand
+### Praktischer Stand
 
 Die laufende Win32-IDE verwendet noch das ältere Debug-Package. Die neue Release-Version wurde nicht geladen; Interfacefilter, PAS-Schreibguard
 und neue Diagnosemetadaten sind deshalb noch nicht in dieser IDE live geprüft. Das ungespeicherte Testprojekt bleibt erhalten.
 Compilerprüfungen, isolierte Tests und aktuelle ToolsAPI-Quellanalyse sind erfolgreich; für die neuen Funktionen ist das Laden des neuen Packages erforderlich.
 
-## Historischer Prüfstand 1.2.3
+### Historischer Prüfstand 1.2.3
 
 Die folgenden Ergebnisse beschreiben den vorherigen Stand. Die früheren Einschränkungen zum Datei-Symlinktest betreffen eine unveränderte Prüfung;
 in 1.2.4 wurde keine blockierte Aktion erneut versucht.
 
-### Aktueller Stand
+#### Aktueller Stand
 
 - 52 MCP-Werkzeuge; neue native Quellsuche in Projekt, Projektgruppe und ReadOnly-Referenzen mit Editor-/Designerpuffervorrang.
 - Delphi-Source, ToolsAPI, Samples und beide GetIt-Kataloge sind lesbar. Ihre BDS-/GetIt-Aliase werden versionsbezogen aufgelöst.
@@ -68,7 +104,7 @@ in 1.2.4 wurde keine blockierte Aktion erneut versucht.
 - Korrektur des Editor-CRLF-Readbacks; Hash und Zeilenenden entsprechen dem tatsächlich zurückgelesenen Puffer.
 - Generierter und installierter delphi-ide-Skill aktualisiert; keine neue GetIt-Laufzeitabhängigkeit.
 
-### Aktuelle Verifikation
+#### Aktuelle Verifikation
 
 Release-Builds von DAI.bpl und DAI.McpBridge.exe für Win32 und Win64 mit Delphi 37.0 erfolgreich. Der Build prüft die vier PE-Ausgaben
 auf Architektur sowie DLL-/EXE-Typ. Die bekannten W1002-Hinweise zu Windows-Plattformdefinitionen und H2077 zum YAML-Ergebniswert bleiben; keine Buildfehler.
@@ -95,7 +131,7 @@ Delphi-Generator überein; vorheriger Skill als Backup erhalten.
 Statische Prüfung: 37 Pascal-Units und 52 MCP-Werkzeuge, DPK-/DPROJ-Verweise, Schemas, Versionen, BOM/CRLF, Layout und Standardpaketgrenze.
 git diff --check sauber; Manifest der ausgelieferten Quellen aktualisiert.
 
-### Grenzen und Live-Stand
+#### Grenzen und Live-Stand
 
 Die laufende 32-Bit-IDE verwendet weiterhin das zuvor geladene Win32-Debug-Package. Die neuen Release-Binaries wurden nicht geladen,
 damit das offene ungespeicherte Testprojekt erhalten bleibt. Neue Werkzeuge, project_create(save=false), Hauptformular-/CreateForm-Injektion
@@ -116,11 +152,11 @@ Symlinkanlage mangels Administratorrechten. Der zusätzliche Test ist entfernt, 
 Der frühere Win32-Live-Test bestätigte Build, Debuggerstart, Quellhaltepunkt, Step over, Exception, Pause/Continue und Stop am ungespeicherten
 VCL-Projekt. Bei Exceptions bleibt strukturierter Quellort, Exceptiontext und Aufrufstack eingeschränkt; siehe den historischen Test unten.
 
-### Historischer Prüfstand 1.2.2 und Win32-Live-Test
+#### Historischer Prüfstand 1.2.2 und Win32-Live-Test
 
 Die folgenden Zahlen und Beobachtungen beziehen sich auf den früheren Stand 1.2.2.
 
-#### Änderungen seit 1.2.1
+##### Änderungen seit 1.2.1
 
 - Win32 und Win64 im DPROJ aktiviert, getrennte Build-Ausgaben und PE-Prüfung für Package/Bridge in beiden Architekturen.
 - Eigene Delphi-Instanzsperre: ein aktiver DAI-Server je Windowsbenutzer, unabhängig von Port, IDE-Architektur und Delphi-Version.
@@ -131,7 +167,7 @@ Die folgenden Zahlen und Beobachtungen beziehen sich auf den früheren Stand 1.2
 - ide_status nennt aktive IDE, Architektur, PID, EXE, BPL und den zur Architektur passenden Package-Registrierungsschlüssel.
 - Sessions, Clientregistrierungen, Skill-Metadaten, Editor-/Projektzugriffe, Designerinspektion und Debuggerwerkzeuge bleiben enthalten.
 
-#### Verifikation
+##### Verifikation
 
 - Vollständiger Win32- und Win64-Release-Build von DAI.bpl und DAI.McpBridge.exe mit Delphi 37.0 erfolgreich.
 - PE-Headerprüfung bestätigt die richtige Architektur und DLL-/EXE-Kennung aller vier Ausgaben.
@@ -149,7 +185,7 @@ Die folgenden Zahlen und Beobachtungen beziehen sich auf den früheren Stand 1.2
 Die unveränderte Sessionverwaltung hatte in 1.2.1 je 69 erfolgreiche native Checks unter Win32/Win64; die unveränderte Registrierungslogik zuvor je 98.
 Diese beiden separaten Tests wurden in diesem Schritt nicht erneut ausgeführt. Die aktuellen HTTP-Tests prüfen weiterhin den eingebundenen Sessionablauf.
 
-#### Installation und praktische Grenzen
+##### Installation und praktische Grenzen
 
 32-Bit-IDE: bin\bds.exe, Win32-BPL, HKEY_CURRENT_USER\Software\Embarcadero\BDS\37.0\Known Packages.
 64-Bit-IDE: bin64\bds.exe, Win64-BPL, HKEY_CURRENT_USER\Software\Embarcadero\BDS\37.0\Known Packages x64.
@@ -163,7 +199,7 @@ Die bekannten Compilerhinweise W1002 zum Windows-Flag und H2077 zum initialen YA
 
 Ressourcen- und Prompt-Endpunkte sowie eine gemeinsame Toolregistry sind dokumentierte Ideen und noch nicht implementiert.
 
-#### Nachfolgender Live-Test in der 32-Bit-IDE
+##### Nachfolgender Live-Test in der 32-Bit-IDE
 
 - Laufende Delphi-13-IDE über DAI erkannt: Win32, bin\bds.exe, geladenes Build\Win32\Debug\Bpl\DAI.bpl.
 - Ungespeicherte VCL-Anwendung Project1 mit Form1 über den nativen Delphi-Assistenten angelegt; offene Dateien und Designerinspektion über DAI gelesen.

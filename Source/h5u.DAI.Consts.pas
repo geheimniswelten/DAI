@@ -12,7 +12,7 @@ const
   {$ENDIF}
   CDAIName = 'DAI';
   CDAIDisplayName = 'Delphi AI';
-  CDAIVersion = '1.2.4';
+  CDAIVersion = '1.2.5';
   CDAIDefaultPort = 7331;
   CDAIDefaultBindAddress = '127.0.0.1';
   CDAIMcpPath = '/mcp';
@@ -20,7 +20,8 @@ const
   CDAICodexServerName = 'dai';
   CDAIManagedBlockBegin = '# >>> DAI managed >>>';
   CDAIManagedBlockEnd = '# <<< DAI managed <<<';
-  CDAISkillDirectoryName = 'delphi-ide';
+  CDAISkillDirectoryName = 'dai-delphi-ide';
+  CDAILegacySkillDirectoryName = 'delphi-ide';
   CDAIMaxRequestBytes = 32 * 1024 * 1024;
   CDAIMaxTextFileBytes = 16 * 1024 * 1024;
   CDAIDefaultProcessTimeoutMs = 300000;

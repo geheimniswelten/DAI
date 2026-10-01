@@ -14,6 +14,7 @@ type
     class function SkillFileName: string; static;
     class function BuildSkillContent: string; static;
     class function Status: TJSONObject; static;
+    class procedure MigrateSkillFiles; static;
     class procedure RegisterFiles; static;
     class procedure UnregisterFiles; static;
   end;
@@ -54,7 +55,12 @@ begin
   LDirectory := LegacyApplicationDataDirectory;
   if LDirectory = '' then
     Exit('');
-  Result := TPath.Combine(LDirectory, '.agents\skills\' + CDAISkillDirectoryName + '\SKILL.md');
+  Result := TPath.Combine(LDirectory, '.agents\skills\' + CDAILegacySkillDirectoryName + '\SKILL.md');
+end;
+
+function LegacyUserProfileSkillFileName: string;
+begin
+  Result := TPath.Combine(TDAICodexRegistration.UserProfileDirectory, '.agents\skills\' + CDAILegacySkillDirectoryName + '\SKILL.md');
 end;
 
 function ReadTextIfExists(const AFileName: string): string;
@@ -169,7 +175,8 @@ end;
 
 function HasSkillMetadata(const AText: string): Boolean;
 begin
-  Result := TRegEx.IsMatch(AText, '\A---\r?\nname:\s*delphi-ide\r?\ndescription:[^\r\n]+\r?\n---(?:\r?\n|$)');
+  Result := TRegEx.IsMatch(AText, '\A---\r?\nname:\s*' + TRegEx.Escape(CDAISkillDirectoryName) +
+    '\r?\ndescription:[^\r\n]+\r?\n---(?:\r?\n|$)');
 end;
 
 function HasDaiConfigSection(const AText: string): Boolean;
@@ -235,18 +242,57 @@ begin
     TDirectory.Delete(LDirectory);
 end;
 
+procedure RemoveLegacySkillFiles;
+var
+  LLegacySkillFileName: string;
+begin
+  LLegacySkillFileName := LegacySkillFileName;
+  if not SameText(LLegacySkillFileName, TDAICodexRegistration.SkillFileName) then
+    RemoveManagedSkillFile(LLegacySkillFileName);
+
+  LLegacySkillFileName := LegacyUserProfileSkillFileName;
+  if not SameText(LLegacySkillFileName, LegacySkillFileName) and
+     not SameText(LLegacySkillFileName, TDAICodexRegistration.SkillFileName) then
+    RemoveManagedSkillFile(LLegacySkillFileName);
+end;
+
 procedure RemoveLegacyRegistration;
 var
   LLegacyConfigFileName: string;
-  LLegacySkillFileName: string;
 begin
   LLegacyConfigFileName := LegacyCodexConfigFileName;
   if not SameText(LLegacyConfigFileName, TDAICodexRegistration.CodexConfigFileName) then
     RemoveManagedConfigFile(LLegacyConfigFileName);
+  RemoveLegacySkillFiles;
+end;
 
-  LLegacySkillFileName := LegacySkillFileName;
-  if not SameText(LLegacySkillFileName, TDAICodexRegistration.SkillFileName) then
-    RemoveManagedSkillFile(LLegacySkillFileName);
+procedure ValidateLegacySkillFiles;
+var
+  LFileName: string;
+  LText: string;
+begin
+  for LFileName in [LegacySkillFileName, LegacyUserProfileSkillFileName] do
+    if (LFileName <> '') and not SameText(LFileName, TDAICodexRegistration.SkillFileName) then
+    begin
+      LText := ReadTextIfExists(LFileName);
+      if HasManagedSkill(LText) then
+        TDAIClientSafeFiles.ValidatePath(LFileName, True);
+    end;
+end;
+
+procedure ValidateLegacyRegistration;
+var
+  LFileName: string;
+  LText: string;
+begin
+  LFileName := LegacyCodexConfigFileName;
+  if (LFileName <> '') and not SameText(LFileName, TDAICodexRegistration.CodexConfigFileName) then
+  begin
+    LText := ReadTextIfExists(LFileName);
+    if RemoveManagedBlock(LText) <> LText then
+      TDAIClientSafeFiles.ValidatePath(LFileName, True);
+  end;
+  ValidateLegacySkillFiles;
 end;
 
 function TomlQuotedString(const AValue: string): string;
@@ -287,7 +333,7 @@ class function TDAICodexRegistration.BuildSkillContent: string;
 begin
   Result :=
     '---' + sLineBreak +
-    'name: delphi-ide' + sLineBreak +
+    'name: ' + CDAISkillDirectoryName + sLineBreak +
     'description: Arbeite über DAI mit der laufenden Delphi-IDE, ihren Projekten, Quelltexten, Editorpuffern, Formularen, Builds und dem Debugger.' + sLineBreak +
     '---' + sLineBreak + sLineBreak +
     CDAISkillMarker + sLineBreak +
@@ -406,14 +452,30 @@ begin
     raise EInvalidOperation.Create('Ein nicht von DAI verwalteter Delphi-Skill existiert bereits und wird nicht überschrieben.');
   TDAIClientSafeFiles.ValidatePath(LConfigFileName, True);
   TDAIClientSafeFiles.ValidatePath(SkillFileName, True);
+  ValidateLegacyRegistration;
   if (LConfig <> '') and not LConfig.EndsWith(sLineBreak) then
     LConfig := LConfig + sLineBreak;
   LConfig := LConfig + BuildCodexBlock;
 
   TDAIClientSafeFiles.WriteTextWithBackup(LConfigFileName, LConfig, LOriginalConfig, LConfigExists);
-  TDAIClientSafeFiles.WriteTextWithBackup(SkillFileName, BuildSkillContent, LOriginalSkill, LSkillExists);
+  MigrateSkillFiles;
 
   RemoveLegacyRegistration;
+end;
+
+class procedure TDAICodexRegistration.MigrateSkillFiles;
+var
+  LOriginalSkill: string;
+  LSkillExists: Boolean;
+begin
+  LSkillExists := TFile.Exists(SkillFileName);
+  LOriginalSkill := ReadTextIfExists(SkillFileName);
+  if LSkillExists and not HasManagedSkill(LOriginalSkill) then
+    raise EInvalidOperation.Create('Ein nicht von DAI verwalteter Delphi-Skill existiert bereits und wird nicht überschrieben.');
+  TDAIClientSafeFiles.ValidatePath(SkillFileName, True);
+  ValidateLegacySkillFiles;
+  TDAIClientSafeFiles.WriteTextWithBackup(SkillFileName, BuildSkillContent, LOriginalSkill, LSkillExists);
+  RemoveLegacySkillFiles;
 end;
 
 class function TDAICodexRegistration.SkillFileName: string;
@@ -428,6 +490,8 @@ var
   LLegacyConfigText: string;
   LLegacySkillFileName: string;
   LLegacySkillText: string;
+  LLegacyUserProfileSkillFileName: string;
+  LLegacyUserProfileSkillText: string;
   LSkill: string;
 begin
   LConfig := ReadTextIfExists(CodexConfigFileName);
@@ -436,6 +500,8 @@ begin
   LLegacySkillFileName := LegacySkillFileName;
   LLegacyConfigText := ReadTextIfExists(LLegacyConfigFileName);
   LLegacySkillText := ReadTextIfExists(LLegacySkillFileName);
+  LLegacyUserProfileSkillFileName := LegacyUserProfileSkillFileName;
+  LLegacyUserProfileSkillText := ReadTextIfExists(LLegacyUserProfileSkillFileName);
 
   Result := TJSONObject.Create;
   Result.AddPair('user_profile', UserProfileDirectory);
@@ -464,7 +530,10 @@ begin
       Result.AddPair('legacy_codex_entry_registered', TJSONBool.Create(False));
   end;
   Result.AddPair('legacy_skill_file', LLegacySkillFileName);
-  Result.AddPair('legacy_skill_registered', TJSONBool.Create(HasManagedSkill(LLegacySkillText)));
+  Result.AddPair('legacy_application_data_skill_registered', TJSONBool.Create(HasManagedSkill(LLegacySkillText)));
+  Result.AddPair('legacy_user_profile_skill_file', LLegacyUserProfileSkillFileName);
+  Result.AddPair('legacy_user_profile_skill_registered', TJSONBool.Create(HasManagedSkill(LLegacyUserProfileSkillText)));
+  Result.AddPair('legacy_skill_registered', TJSONBool.Create(HasManagedSkill(LLegacySkillText) or HasManagedSkill(LLegacyUserProfileSkillText)));
 end;
 
 class procedure TDAICodexRegistration.UnregisterFiles;

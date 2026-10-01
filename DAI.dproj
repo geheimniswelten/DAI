@@ -1,8 +1,8 @@
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <ProjectGuid>{E40E640E-DA11-4D13-A137-DA1000000001}</ProjectGuid>
         <MainSource>DAI.dpk</MainSource>
-        <ProjectVersion>20.4</ProjectVersion>
+        <ProjectVersion>20.5</ProjectVersion>
         <FrameworkType>None</FrameworkType>
         <Base>True</Base>
         <Config Condition="'$(Config)'==''">Debug</Config>
@@ -29,18 +29,6 @@
         <CfgParent>Base</CfgParent>
         <Base>true</Base>
     </PropertyGroup>
-    <PropertyGroup Condition="('$(Platform)'=='Win32' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win32)'!=''">
-        <Cfg_1_Win32>true</Cfg_1_Win32>
-        <CfgParent>Cfg_1</CfgParent>
-        <Cfg_1>true</Cfg_1>
-        <Base>true</Base>
-    </PropertyGroup>
-    <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win64)'!=''">
-        <Cfg_1_Win64>true</Cfg_1_Win64>
-        <CfgParent>Cfg_1</CfgParent>
-        <Cfg_1>true</Cfg_1>
-        <Base>true</Base>
-    </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Release' or '$(Cfg_2)'!=''">
         <Cfg_2>true</Cfg_2>
         <CfgParent>Base</CfgParent>
@@ -62,13 +50,6 @@
         <DCC_DcuOutput>.\Build\$(Platform)\$(Config)\Dcu</DCC_DcuOutput>
         <DCC_DcpOutput>.\Build\$(Platform)\$(Config)\Dcp</DCC_DcpOutput>
     </PropertyGroup>
-    <PropertyGroup Condition="'$(Base_Win32)'!='' or '$(Base_Win64)'!=''">
-        <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;Bde;$(DCC_Namespace)</DCC_Namespace>
-        <BT_BuildType>Debug</BT_BuildType>
-        <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
-        <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=1.2.4.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.2.4.0;Comments=</VerInfo_Keys>
-        <VerInfo_Locale>1033</VerInfo_Locale>
-    </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1)'!=''">
         <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
         <DCC_DebugDCUs>true</DCC_DebugDCUs>
@@ -78,9 +59,6 @@
         <DCC_RemoteDebug>true</DCC_RemoteDebug>
         <DCC_IntegerOverflowCheck>true</DCC_IntegerOverflowCheck>
         <DCC_RangeChecking>true</DCC_RangeChecking>
-    </PropertyGroup>
-    <PropertyGroup Condition="'$(Cfg_1_Win32)'!='' or '$(Cfg_1_Win64)'!=''">
-        <DCC_RemoteDebug>false</DCC_RemoteDebug>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_LocalDebugSymbols>false</DCC_LocalDebugSymbols>
@@ -92,11 +70,6 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
-        <DCCReference Include="Source\h5u.DAI.Clients.ConfigText.pas"/>
-        <DCCReference Include="Source\h5u.DAI.Clients.SafeFiles.pas"/>
-        <DCCReference Include="Source\h5u.DAI.Clients.Registration.pas"/>
-        <DCCReference Include="Source\h5u.DAI.OTA.Debugger.pas"/>
-        <DCCReference Include="Source\h5u.DAI.OTA.Designer.pas"/>
         <DCCReference Include="rtl.dcp"/>
         <DCCReference Include="vcl.dcp"/>
         <DCCReference Include="vclie.dcp"/>
@@ -104,6 +77,11 @@
         <DCCReference Include="IndySystem.dcp"/>
         <DCCReference Include="IndyCore.dcp"/>
         <DCCReference Include="IndyProtocols.dcp"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.Designer.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.Debugger.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Clients.Registration.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Clients.SafeFiles.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Clients.ConfigText.pas"/>
         <DCCReference Include="Source\h5u.DAI.Codex.Registration.pas"/>
         <DCCReference Include="Source\h5u.DAI.Consts.pas"/>
         <DCCReference Include="Source\h5u.DAI.IDE.Notifier.pas"/>
@@ -163,12 +141,8 @@
                 </Source>
             </Delphi.Personality>
             <Platforms>
-                <Platform value="Android">False</Platform>
-                <Platform value="Android64">False</Platform>
                 <Platform value="Win32">True</Platform>
                 <Platform value="Win64">True</Platform>
-                <Platform value="Win64x">False</Platform>
-                <Platform value="WinARM64EC">False</Platform>
             </Platforms>
         </BorlandProject>
         <ProjectFileVersion>12</ProjectFileVersion>

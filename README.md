@@ -361,7 +361,7 @@ Die Optionsseite zeigt den Status folgender Dateien über `FileExists` und die D
 
 ```text
 %USERPROFILE%\.codex\config.toml
-%USERPROFILE%\.agents\skills\delphi-ide\SKILL.md
+%USERPROFILE%\.agents\skills\dai-delphi-ide\SKILL.md
 ```
 
 Ohne `CODEX_HOME` verwendet DAI ausdrücklich `%USERPROFILE%`. `TPath.GetHomePath` zeigt unter Windows auf `%APPDATA%` und ist für diese benutzerspezifischen Codex-Pfade ungeeignet.
@@ -370,10 +370,17 @@ Beim nächsten Registrieren entfernt DAI ausschließlich eigene markierte Altinh
 Der persönliche Skill liegt unter `.agents\skills`; ein Verzeichnis `.skills` wird von DAI nicht verwendet. Der Skill enthält nur Arbeitsanweisungen. Port und Bearer-Token stehen ausschließlich im verwalteten Block der `.codex\config.toml`. Nach einer Änderung von Port oder Token ist erneut `Registrieren` auszuführen und Codex neu zu starten.
 
 „Registrieren“ ergänzt ausschließlich einen markierten DAI-Block und den verwalteten Skill. „Deregistrieren“ entfernt nur diese verwalteten Inhalte.
+
+Der verwaltete Skill heißt `dai-delphi-ide`, einschließlich seines Verzeichnis- und YAML-Namens. `SKILL.md` bleibt der vorgeschriebene Einstiegsdateiname.
+Registrieren migriert eigene ältere `delphi-ide\SKILL.md`-Dateien unter `%USERPROFILE%` und `%APPDATA%` nach erfolgreichem Schreiben des neuen Skills.
+Status und Deregistrierung erkennen beide alten Pfade. `MigrateSkillFiles` führt nur diese Skillmigration durch, ohne Einstellungen oder Clientkonfigurationen zu schreiben.
+Fremde Inhalte werden anhand fehlender DAI-Marker erhalten; ein fremdes neues Ziel führt vor Änderung der Clientkonfiguration zum Konflikt.
+Eigene Verwaltungsdateien heißen `<Clientkonfiguration>.dai-registration.json`; Sicherungen/temporäre Dateien enthalten `.dai-<GUID>.bak` bzw. `.tmp`.
+Vorgeschriebene gemeinsame Clientdateinamen wie `config.toml`, `settings.json`, `mcp.json` und `config.yaml` behalten ihren Namen.
 Ein bereits vorhandener, nicht markierter `[mcp_servers.dai]`-Abschnitt wird nicht überschrieben.
 
 Der erzeugte `SKILL.md` enthält gültige YAML-Metadaten (`name`, `description`), aktuelle Werkzeugnamen, Parameter, Hashkonfliktbehandlung und Zugriffsgrenzen.
-Ein vorhandener fremder `delphi-ide`-Skill wird nicht überschrieben. Die automatische Skill-Erkennung ist hier für Codex eingerichtet; andere Clients benötigen ihre eigene Skill-Installation.
+Ein vorhandener fremder `dai-delphi-ide`-Skill wird nicht überschrieben. Die automatische Skill-Erkennung ist hier für Codex eingerichtet; andere Clients benötigen ihre eigene Skill-Installation.
 
 ## Formdesigner und Debugger
 
