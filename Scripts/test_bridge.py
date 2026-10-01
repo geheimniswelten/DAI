@@ -1,4 +1,4 @@
-"""Exercise the compiled Delphi stdio bridge against an isolated loopback server."""
+﻿"""Exercise the compiled Delphi stdio bridge against an isolated loopback server."""
 from __future__ import annotations
 
 import argparse
@@ -16,10 +16,20 @@ def main() -> None:
                         'Build/Win32/Release/Bpl/DAI.McpBridge.exe')
     args = parser.parse_args()
     seen: list[dict] = []
+    deleted: list[str] = []
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
+
+        def do_DELETE(self):
+            assert self.headers['Authorization'] == 'Bearer bridge-test-token'
+            assert self.headers['Mcp-Session-Id'] == 'bridge-test-session'
+            assert self.headers['MCP-Protocol-Version'] == '2025-06-18'
+            deleted.append(self.path)
+            self.send_response(204)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
 
         def do_POST(self):
             request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
@@ -69,6 +79,7 @@ def main() -> None:
         assert output[1]['result'] == messages[2]['params'], output[1]
         assert output[2]['error']['code'] == -32000
         assert len(seen) == 4, seen
+        assert deleted == ['/mcp'], deleted
         assert 'bridge-test-token' not in proc.stdout + proc.stderr
     finally:
         server.shutdown()
@@ -81,7 +92,7 @@ def main() -> None:
     missing = subprocess.run([str(args.bridge), '--url', 'http://127.0.0.1:7331/mcp'],
                              capture_output=True, encoding='utf-8', env=env, timeout=5)
     assert missing.returncode != 0 and not missing.stdout
-    print('Delphi bridge tests passed: UTF-8, session/version, notifications, HTTP errors, endpoint/token validation.')
+    print('Delphi bridge tests passed: UTF-8, session/version, notifications, session DELETE at EOF, HTTP errors, endpoint/token validation.')
 
 
 if __name__ == '__main__':

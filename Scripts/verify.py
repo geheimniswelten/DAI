@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import json
@@ -292,6 +292,33 @@ def check_package_references(errors: list[str]) -> None:
             fail(errors, f"DAI.dpk referenziert {path.name} nicht korrekt")
     if "package DAI;" not in dpk:
         fail(errors, "Package heißt nicht DAI")
+
+
+def check_no_getit_dependencies(errors: list[str]) -> None:
+    """DAI uses its own MCP implementation and the Delphi/Indy standard packages."""
+    dpk, _ = strip_pascal_strings_and_comments(read_project_text(ROOT / "DAI.dpk"))
+    match = re.search(r"\brequires\s+(.*?);", dpk, flags=re.IGNORECASE | re.DOTALL)
+    expected = {"rtl", "vcl", "vclie", "designide", "indysystem", "indycore", "indyprotocols"}
+    actual = {name.strip().lower() for name in match.group(1).split(",")} if match else set()
+    if actual != expected:
+        fail(errors, "DAI.dpk: ausschließlich die dokumentierten Delphi-/Indy-Standardpakete sind erlaubt")
+
+    vendor = re.compile(r"^(?:mcpconnect|neon|logify|jose)(?:[0-9]|\.|$)|^d\.mcpserver(?:\.|$)|^sdm", re.IGNORECASE)
+    for path in sorted([*SOURCE.glob("*.pas"), ROOT / "DAI.McpBridge.dpr"]):
+        code, _ = strip_pascal_strings_and_comments(read_project_text(path))
+        for uses in re.finditer(r"\buses\s+(.*?);", code, flags=re.IGNORECASE | re.DOTALL):
+            for unit in uses.group(1).split(","):
+                name = unit.strip()
+                if vendor.match(name):
+                    fail(errors, f"{path.relative_to(ROOT)}: unerwünschte GetIt-Unit {name}")
+
+    tree = ET.parse(ROOT / "DAI.dproj")
+    for node in tree.iter():
+        tag = node.tag.rsplit("}", 1)[-1]
+        if tag in {"DCC_UnitSearchPath", "DCC_UsePackage"}:
+            value = node.text or ""
+            if "catalogrepository" in value.lower() or any(vendor.match(item.strip()) for item in value.split(";")):
+                fail(errors, f"DAI.dproj: unerwünschter GetIt-Bezug in {tag}")
 
 
 def check_dproj(errors: list[str]) -> None:
@@ -600,7 +627,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.0"
+    expected = "1.2.1"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
@@ -805,7 +832,7 @@ def deliverable_files() -> list[Path]:
     files = [p for folder in (SOURCE, ROOT / "Scripts") for p in folder.rglob("*")
              if p.is_file() and "__pycache__" not in p.parts and p.suffix.lower() != ".pyc"]
     names = ("DAI.dpk", "DAI.dproj", "DAI.McpBridge.dpr", "Build.ps1", "Test-MCP.ps1", ".gitignore",
-             "README.md", "CHANGELOG.md", "FINAL_VERIFICATION.md", "OPENTOOLSAPI_CODE_INSIGHT.md")
+             "README.md", "CHANGELOG.md", "FINAL_VERIFICATION.md", "GETIT_COMPARISON.txt", "OPENTOOLSAPI_CODE_INSIGHT.md")
     files.extend(ROOT / name for name in names if (ROOT / name).is_file())
     return files
 
@@ -830,6 +857,8 @@ def main() -> int:
     check_frame_resources(errors)
     check_package_references(errors)
     check_dproj(errors)
+    if not any("kein gültiges XML" in error for error in errors):
+        check_no_getit_dependencies(errors)
     check_tools(errors)
     check_old_names(errors)
     check_referenced_units(errors)

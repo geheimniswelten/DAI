@@ -12,6 +12,7 @@ uses
   System.Net.URLClient,
   System.SysUtils,
   h5u.DAI.MCP.Server,
+  h5u.DAI.MCP.Sessions,
   h5u.DAI.MCP.Tools,
   h5u.DAI.Settings;
 
@@ -23,6 +24,7 @@ var
   Client: THTTPClient;
   Server: TDAIMCPServer;
   CheckCount: Integer;
+  ClockTick: UInt64;
   SessionId: string;
   Response: IHTTPResponse;
 
@@ -69,6 +71,41 @@ begin
   finally
     Body.Free;
   end;
+end;
+
+function DeleteSession(const ASession: string; const AVersion: string = ''; const AAuthenticate: Boolean = True;
+  const AOrigin: string = ''): IHTTPResponse;
+var
+  Headers: TNetHeaders;
+begin
+  SetLength(Headers, 0);
+  if ASession <> '' then
+  begin
+    SetLength(Headers, 1);
+    Headers[0] := TNameValuePair.Create('Mcp-Session-Id', ASession);
+  end;
+  if AVersion <> '' then
+  begin
+    SetLength(Headers, Length(Headers) + 1);
+    Headers[High(Headers)] := TNameValuePair.Create('MCP-Protocol-Version', AVersion);
+  end;
+  if AAuthenticate then
+  begin
+    SetLength(Headers, Length(Headers) + 1);
+    Headers[High(Headers)] := TNameValuePair.Create('Authorization', 'Bearer isolated-test-token');
+  end;
+  if AOrigin <> '' then
+  begin
+    SetLength(Headers, Length(Headers) + 1);
+    Headers[High(Headers)] := TNameValuePair.Create('Origin', AOrigin);
+  end;
+  Result := Client.Delete('http://127.0.0.1:' + IntToStr(TDAISettings.Instance.Port) + '/mcp', nil, Headers);
+end;
+
+function InitializeSession: IHTTPResponse;
+begin
+  Result := Post('{"jsonrpc":"2.0","id":"capacity","method":"initialize","params":' +
+    '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"CapacityTest","version":"1"}}}');
 end;
 
 procedure RunChecks;
@@ -128,11 +165,64 @@ begin
   Check(Response.StatusCode = 200, 'allow exact loopback origin');
   Response := Post('{"jsonrpc":"2.0","id":9,"method":"ping"}', SessionId, '', '', '', '', False);
   Check(Response.StatusCode = 401, 'require bearer authentication');
+
+  Response := DeleteSession(SessionId, '1900-01-01');
+  Check(Response.StatusCode = 400, 'DELETE rejects unsupported protocol');
+  Response := DeleteSession(SessionId, '2025-11-25');
+  Check(Response.StatusCode = 400, 'DELETE rejects wrong negotiated protocol');
+  Response := DeleteSession(SessionId, '2026-07-28');
+  Check(Response.StatusCode = 405, 'modern stateless DELETE is unsupported');
+  Response := DeleteSession(SessionId, '', False);
+  Check(Response.StatusCode = 401, 'DELETE requires bearer');
+  Response := DeleteSession(SessionId, '', True, 'http://evil.example');
+  Check(Response.StatusCode = 403, 'DELETE validates Origin');
+  Response := Post('{"jsonrpc":"2.0","id":10,"method":"ping"}', SessionId);
+  Check(Response.StatusCode = 200, 'rejected DELETE preserves session');
+  Response := DeleteSession('unknown-session');
+  Check(Response.StatusCode = 404, 'DELETE rejects unknown session');
+  Response := DeleteSession('');
+  Check(Response.StatusCode = 400, 'DELETE rejects absent session');
+
+  Response := InitializeSession;
+  Check(Response.StatusCode = 200, 'second session');
+  Response := InitializeSession;
+  Check(Response.StatusCode = 200, 'third session');
+  Response := InitializeSession;
+  Check((Response.StatusCode = 503) and (Response.HeaderValue['Mcp-Session-Id'] = ''), 'capacity rejects new session');
+  Check(Pos('"id":"capacity"', Response.ContentAsString) > 0, 'capacity error retains request id');
+  Response := Post('{"jsonrpc":"2.0","id":11,"method":"ping"}', SessionId);
+  Check(Response.StatusCode = 200, 'capacity preserves established session');
+  Response := DeleteSession(SessionId, '2025-06-18');
+  Check((Response.StatusCode = 204) and (Response.ContentAsString = ''), 'DELETE terminates with empty 204');
+  Response := Post('{"jsonrpc":"2.0","id":12,"method":"ping"}', SessionId);
+  Check(Response.StatusCode = 404, 'deleted session cannot execute');
+  Response := InitializeSession;
+  Check(Response.StatusCode = 200, 'DELETE frees capacity');
+  SessionId := Response.HeaderValue['Mcp-Session-Id'];
+
+  ClockTick := CDAIMCPSessionIdleTimeoutMs div 2;
+  Response := Post('{"jsonrpc":"2.0","id":13,"method":"ping"}', SessionId);
+  Check(Response.StatusCode = 200, 'session activity refreshes timeout');
+  ClockTick := CDAIMCPSessionIdleTimeoutMs;
+  Response := InitializeSession;
+  Check(Response.StatusCode = 200, 'initialization reclaims other expired sessions');
+  Response := Post('{"jsonrpc":"2.0","id":14,"method":"ping"}', SessionId);
+  Check(Response.StatusCode = 200, 'recently active session survives other expirations');
+  ClockTick := 2 * CDAIMCPSessionIdleTimeoutMs;
+  Response := Post('{"jsonrpc":"2.0","id":15,"method":"ping"}', SessionId);
+  Check(Response.StatusCode = 404, 'idle timeout rejects expired session');
+  Response := Post('{"jsonrpc":"2.0","id":16,"method":"ping","params":{' + CModernMeta + '}}', '', '2026-07-28', 'ping');
+  Check(Response.StatusCode = 200, 'idle cleanup leaves modern stateless requests working');
 end;
 
 begin
   Client := THTTPClient.Create;
-  Server := TDAIMCPServer.Create;
+  ClockTick := 0;
+  Server := TDAIMCPServer.Create(CDAIMCPSessionIdleTimeoutMs, 3,
+    function: UInt64
+    begin
+      Result := ClockTick;
+    end);
   try
     try
       TDAISettings.Instance.Port := 18751;

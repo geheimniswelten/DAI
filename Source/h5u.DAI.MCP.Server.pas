@@ -3,28 +3,24 @@
 interface
 
 uses
-  System.Generics.Collections,
+  System.SysUtils,
+  h5u.DAI.MCP.Sessions,
   IdContext,
   IdCustomHTTPServer,
   IdHTTPServer;
 
 type
-  TDAIMCPSession = record
-    ClientName: string;
-    ProtocolVersion: string;
-  end;
-
   TDAIMCPServer = class sealed
   private
     FHTTPServer: TIdHTTPServer;
     FLastError: string;
-    FSessionLock: TObject;
-    FSessions: TDictionary<string, TDAIMCPSession>;
+    FSessions: TDAIMCPSessions;
     procedure HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
     procedure HandleParseAuthentication(AContext: TIdContext; const AAuthType, AAuthData: string; var VUsername, VPassword: string; var VHandled: Boolean);
+    procedure HandleDeleteSession(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
     procedure ResetAfterFailedStart;
   public
-    constructor Create;
+    constructor Create(AIdleTimeoutMs: UInt64 = CDAIMCPSessionIdleTimeoutMs; AMaximumSessions: Integer = CDAIMCPMaximumSessions; const AClock: TFunc<UInt64> = nil);
     destructor Destroy; override;
     function Start: Boolean;
     function Stop: Boolean;
@@ -38,7 +34,6 @@ implementation
 uses
   System.Classes,
   System.JSON,
-  System.SysUtils,
   System.RegularExpressions,
   IdException,
   IdSocketHandle,
@@ -156,12 +151,11 @@ begin
     Result := LValue.Value;
 end;
 
-constructor TDAIMCPServer.Create;
+constructor TDAIMCPServer.Create(AIdleTimeoutMs: UInt64; AMaximumSessions: Integer; const AClock: TFunc<UInt64>);
 begin
   inherited Create;
   FLastError := '';
-  FSessionLock := TObject.Create;
-  FSessions := TDictionary<string, TDAIMCPSession>.Create;
+  FSessions := TDAIMCPSessions.Create(AIdleTimeoutMs, AMaximumSessions, AClock);
   FHTTPServer := TIdHTTPServer.Create(nil);
   FHTTPServer.ServerSoftware := CDAIDisplayName + '/' + CDAIVersion;
   FHTTPServer.OnCommandGet := HandleCommand;
@@ -174,7 +168,6 @@ begin
   Stop;
   FHTTPServer.Free;
   FSessions.Free;
-  FSessionLock.Free;
   inherited Destroy;
 end;
 
@@ -186,6 +179,52 @@ begin
   VUsername := '';
   VPassword := Trim(AAuthData);
   VHandled := True;
+end;
+
+procedure TDAIMCPServer.HandleDeleteSession(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  LProtocolHeader: string;
+  LSession: TDAIMCPSession;
+  LSessionId: string;
+begin
+  LProtocolHeader := ARequestInfo.RawHeaders.Values['MCP-Protocol-Version'];
+  if LProtocolHeader = '2026-07-28' then
+  begin
+    AResponseInfo.ResponseNo := 405;
+    AResponseInfo.CustomHeaders.Values['Allow'] := 'POST';
+    AResponseInfo.ContentText := ErrorJson('Moderne MCP-Anfragen verwenden keine Transport-Sitzung.');
+    Exit;
+  end;
+  if (LProtocolHeader <> '') and (LProtocolHeader <> '2025-11-25') and (LProtocolHeader <> '2025-06-18') then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := UnsupportedVersionJson(nil, LProtocolHeader);
+    Exit;
+  end;
+  LSessionId := Trim(ARequestInfo.RawHeaders.Values['Mcp-Session-Id']);
+  if not FSessions.TryAcquire(LSessionId, LSession) then
+  begin
+    if LSessionId = '' then
+      AResponseInfo.ResponseNo := 400
+    else
+      AResponseInfo.ResponseNo := 404;
+    AResponseInfo.ContentText := ErrorJson('MCP-Sitzung fehlt oder ist abgelaufen.', -32600);
+    Exit;
+  end;
+  try
+    if (LProtocolHeader <> '') and (LProtocolHeader <> LSession.ProtocolVersion) then
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := ErrorJson('MCP-Protocol-Version stimmt nicht mit der Sitzung überein.', -32600);
+      Exit;
+    end;
+    FSessions.Remove(LSessionId);
+    AResponseInfo.ResponseNo := 204;
+    AResponseInfo.ContentText := '';
+    AResponseInfo.ContentLength := 0;
+  finally
+    FSessions.Release(LSessionId);
+  end;
 end;
 
 function TDAIMCPServer.Active: Boolean;
@@ -273,14 +312,21 @@ begin
     Exit;
   end;
 
-  if not SameText(ARequestInfo.Command, 'POST') then
+  if SameText(ARequestInfo.Command, 'DELETE') then
   begin
-    AResponseInfo.ResponseNo := 405;
-    AResponseInfo.CustomHeaders.Values['Allow'] := 'POST';
-    AResponseInfo.ContentText := ErrorJson('Für den MCP-Endpunkt ist ausschließlich POST erlaubt.');
+    HandleDeleteSession(ARequestInfo, AResponseInfo);
     Exit;
   end;
 
+  if not SameText(ARequestInfo.Command, 'POST') then
+  begin
+    AResponseInfo.ResponseNo := 405;
+    AResponseInfo.CustomHeaders.Values['Allow'] := 'POST, DELETE';
+    AResponseInfo.ContentText := ErrorJson('Für den MCP-Endpunkt sind POST und klassisches Session-DELETE erlaubt.');
+    Exit;
+  end;
+
+  LSessionFound := False;
   try
     LText := ReadRequestBody(ARequestInfo);
     LValue := TJSONObject.ParseJSONValue(LText);
@@ -340,12 +386,7 @@ begin
         end
         else
         begin
-          System.TMonitor.Enter(FSessionLock);
-          try
-            LSessionFound := FSessions.TryGetValue(LSessionId, LSession);
-          finally
-            System.TMonitor.Exit(FSessionLock);
-          end;
+          LSessionFound := FSessions.TryAcquire(LSessionId, LSession);
           if not LSessionFound then
           begin
             if LSessionId = '' then
@@ -371,13 +412,13 @@ begin
           if (LMethod = 'initialize') and Assigned(LResponseJson) and Assigned(LResponseJson.GetValue('result')) then
           begin
             LSession.ProtocolVersion := JsonString(JsonObject(LResponseJson, 'result'), 'protocolVersion');
-            System.TMonitor.Enter(FSessionLock);
-            try
-              if FSessions.Count >= 1024 then
-                FSessions.Clear;
-              FSessions.AddOrSetValue(LSessionId, LSession);
-            finally
-              System.TMonitor.Exit(FSessionLock);
+            if not FSessions.TryCreate(LSessionId, LSession) then
+            begin
+              AResponseInfo.ResponseNo := 503;
+              AResponseInfo.CustomHeaders.Values['Retry-After'] := '60';
+              AResponseInfo.ContentText := ErrorJson('Das Limit aktiver MCP-Sitzungen ist erreicht. Später erneut initialisieren.', -32000,
+                LMessage.GetValue('id'));
+              Exit;
             end;
           end;
           if (LMethod <> 'initialize') or (LSession.ProtocolVersion <> '') then
@@ -396,6 +437,8 @@ begin
         LResponseJson.Free;
       end;
     finally
+      if LSessionFound then
+        FSessions.Release(LSessionId);
       LValue.Free;
     end;
   except
@@ -475,12 +518,7 @@ begin
 
   try
     FHTTPServer.Active := False;
-    System.TMonitor.Enter(FSessionLock);
-    try
-      FSessions.Clear;
-    finally
-      System.TMonitor.Exit(FSessionLock);
-    end;
+    FSessions.Clear;
     TDAILog.Access('MCP-Server gestoppt.');
     Result := True;
   except

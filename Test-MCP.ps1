@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [int]$Port = 7331,
     [string]$Token = $env:DELPHI_IDE_MCP_TOKEN,
@@ -63,7 +63,7 @@ function Invoke-DAIMcp {
         if (-not $Payload.params.ContainsKey('_meta')) { $Payload.params._meta = @{} }
         $Payload.params._meta['io.modelcontextprotocol/protocolVersion'] = '2026-07-28'
         $Payload.params._meta['io.modelcontextprotocol/clientCapabilities'] = @{}
-        $Payload.params._meta['io.modelcontextprotocol/clientInfo'] = @{ name = 'DAI-Test'; version = '1.2.0' }
+        $Payload.params._meta['io.modelcontextprotocol/clientInfo'] = @{ name = 'DAI-Test'; version = '1.2.1' }
     } else {
         $requestHeaders['MCP-Protocol-Version'] = '2025-06-18'
     }
@@ -93,7 +93,7 @@ if ($Mode -eq 'Legacy') {
         capabilities    = @{}
         clientInfo      = @{
             name    = 'DAI-Test'
-            version = '1.2.0'
+            version = '1.2.1'
         }
     }
 }

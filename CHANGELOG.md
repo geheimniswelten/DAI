@@ -1,4 +1,11 @@
-# Änderungsprotokoll
+﻿# Änderungsprotokoll
+
+## 1.2.1
+
+- Eigene Delphi-Sitzungsverwaltung mit 30 Minuten Inaktivitätsfrist, monotoner Zeitmessung und gezieltem Aufräumen. Laufende Anfragen bleiben geschützt.
+- Das Limit von 1.024 Sitzungen weist neue Initialisierungen mit HTTP 503 ab, statt alle bestehenden Sitzungen zu löschen.
+- Klassische MCP-Sitzungen können mit authentifiziertem HTTP DELETE beendet werden; die native stdio-Brücke beendet ihre Sitzung beim Schließen der Eingabe.
+- Native Sessiontests und HTTP-Lebenszyklustests ergänzt; statische Prüfung schützt die dokumentierten Standardpakete vor zusätzlichen GetIt-Abhängigkeiten.
 
 ## 1.2.0
 

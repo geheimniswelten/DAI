@@ -48,6 +48,25 @@ begin
     raise EArgumentException.Create('Ungültiger DAI-Port.');
 end;
 
+procedure CloseSession(AClient: THTTPClient; const AUrl, AToken, ASession, AProtocolVersion: string);
+var
+  LHeaders: TNetHeaders;
+begin
+  if ASession = '' then
+    Exit;
+  try
+    AClient.ConnectionTimeout := 1000;
+    AClient.ResponseTimeout := 1000;
+    SetLength(LHeaders, 3);
+    LHeaders[0] := TNameValuePair.Create('Authorization', 'Bearer ' + AToken);
+    LHeaders[1] := TNameValuePair.Create('Mcp-Session-Id', ASession);
+    LHeaders[2] := TNameValuePair.Create('MCP-Protocol-Version', AProtocolVersion);
+    AClient.Delete(AUrl, nil, LHeaders);
+  except
+    // Closing stdin must also work when the IDE has already stopped.
+  end;
+end;
+
 procedure Run;
 var
   LClient: THTTPClient;
@@ -159,6 +178,7 @@ begin
       end;
     end;
   finally
+    CloseSession(LClient, LUrl, LToken, LSession, LProtocolVersion);
     LClient.Free;
   end;
 end;

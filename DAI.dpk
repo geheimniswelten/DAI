@@ -49,6 +49,7 @@ contains
   h5u.DAI.Log in 'Source\h5u.DAI.Log.pas',
   h5u.DAI.MCP.Protocol in 'Source\h5u.DAI.MCP.Protocol.pas',
   h5u.DAI.MCP.Server in 'Source\h5u.DAI.MCP.Server.pas',
+  h5u.DAI.MCP.Sessions in 'Source\h5u.DAI.MCP.Sessions.pas',
   h5u.DAI.MCP.Tools in 'Source\h5u.DAI.MCP.Tools.pas',
   h5u.DAI.Options.Frame in 'Source\h5u.DAI.Options.Frame.pas',
   h5u.DAI.Options.Page in 'Source\h5u.DAI.Options.Page.pas',

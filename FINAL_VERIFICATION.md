@@ -1,32 +1,29 @@
-# DAI 1.2.0 – Prüfbericht vom 1. Oktober 2026
+﻿# DAI 1.2.1 – Prüfbericht vom 1. Oktober 2026
 
-Das Projekt wurde direkt erweitert. Vorhandene Änderungen dienten als Ausgangspunkt; persönliche Chats, Archive und Projekt-Berechtigungen wurden nicht verändert.
+## Änderungen seit 1.2.0
 
-## Ergebnis
-
-- Registrierungen in Delphi für Codex, Claude Code, Claude Desktop (native Delphi-stdio-Brücke), Gemini CLI / Code Assist, Hermes, LM Studio und OpenClaw.
-- Eigent mit manuellem UI/API-Hinweis; Gemini Desktop mit Hinweis auf fehlenden verifizierten lokalen Anschluss.
-- Backups, private Windows-Rechte, atomare Dateien, JSON-/JSON5-/YAML-Erhalt und SHA-256-Besitzprüfung.
-- Skill-Metadaten, CODEX_HOME, Projektzuordnung und aktuelle Arbeitsanweisungen korrigiert.
-- Designerinspektion/-anzeige, ungespeicherte DFM/FMX-Ressourcen, Quellhaltepunkte und Debuggersteuerung ergänzt.
-- Projekt-/Editor-, Berechtigungs- und MCP-HTTP/JSON-RPC-Fehler behoben; jedes Projekt vor Gruppen-Build autorisieren.
-- MCPConnect ist ein zusätzlicher GetIt-Download zur Servererstellung. Kein MCP-Server-Service in den installierten ToolsAPI-Quellen gefunden; keine Migration in dieser Änderung.
+- Eigenständige Sessionverwaltung: 30 Minuten Inaktivität, monotone Zeitmessung, gezieltes Cleanup und Schutz laufender Anfragen.
+- Das Limit von 1.024 Sitzungen weist neue Initialisierungen mit HTTP 503 ab; bestehende Verbindungen bleiben erhalten.
+- Authentifiziertes DELETE beendet klassische MCP-Sitzungen mit HTTP 204. Die native Bridge versucht beim Schließen ihrer Eingabe ein Session-DELETE.
+- Package- und Unit-Prüfung gegen zusätzliche GetIt-Abhängigkeiten. Kein Fremdcode und keine SDK-Binärressource übernommen.
+- Registrierungen, Skill-Metadaten, OTA-Editor-/Projektzugriffe, Designerinspektion und Debuggerwerkzeuge aus 1.2.0 bleiben enthalten.
 
 ## Verifikation
 
-- Win32 Release: DAI.bpl und DAI.McpBridge.exe mit Delphi 37.0 erfolgreich gebaut.
-- 32 Pascal-Units und 49 MCP-Werkzeuge statisch geprüft, einschließlich Eingabeschemas, BOM/CRLF, Zeilenlängen und Package-Referenzen.
-- 98 native Registrierungs-/Parser-/Datei-Checks unter Win32 und 98 unter Win64 erfolgreich.
-- 25 native HTTP-/Protokoll-Checks unter Win32 und 25 unter Win64 erfolgreich.
-- Kompilierte stdio-Brücke gegen isolierten HTTP-Server erfolgreich geprüft; YAML-Fixture zusätzlich extern geparst.
-- git diff --check ohne Fehler; MANIFEST.sha256 auf ausgelieferte Dateien begrenzt.
+- Win32 Release: DAI.bpl und DAI.McpBridge.exe erfolgreich mit Delphi 37.0 gebaut.
+- Je 69 native Sessionprüfungen unter Win32/Win64, darunter acht Threads mit 8.000 parallelen Anfragezyklen.
+- Je 46 native HTTP-/Protokollprüfungen unter Win32/Win64, inklusive DELETE, Auth/Origin/Version, Kapazität und Ablauf.
+- Kompilierte Bridge erfolgreich gegen einen isolierten HTTP-Server geprüft, einschließlich EOF-DELETE und UTF-8.
+- Statische Prüfung: 33 Pascal-Units, 49 MCP-Werkzeuge, Schemas, BOM/CRLF, Zeilenlayout und Standardpaketgrenze.
+- PE-Importprüfung von Package/Bridge ohne zusätzliche GetIt-BPLs; nur mit Delphi gelieferte Pakete bzw. Windows-DLLs.
+- Zwei unabhängige Codeprüfungen ohne blockierende Befunde; git diff --check sauber und Manifest aktualisiert.
 
-Reproduzierbare Testbefehle stehen in README.md. Die älteren Prüfnotizen sind unter work/FINAL_VERIFICATION-vor-1.2.0.md erhalten.
+Die unveränderte Registrierungslogik hatte im vorherigen Stand 98 erfolgreiche native Checks pro Plattform. Diese Tests wurden in diesem Schritt nicht erneut ausgeführt.
 
-## Noch in der laufenden IDE prüfen
+## Praktische Grenzen
 
-Optionslayout, echte Clientverbindung nach Neuladen, Designer-/Editorzustände, Undo/Speichern, Projektgruppe und Debuggerschritte wurden nicht live ausgelöst.
-Das vollständige Package wurde hier nur für Win32 gebaut. Die Win64-Tests verwenden IDE-Stubs und ersetzen keinen 64-Bit-IDE-Test.
-Es wurden keine realen Clientkonfigurationen verändert und kein neues BPL in die laufende IDE geladen.
+Der vollständige Package-Build wurde weiterhin für Win32 ausgeführt. Die Win64-Protokolltests arbeiten mit IDE-Stubs und ersetzen keinen 64-Bit-IDE-Test.
+Das neue BPL wurde nicht in die laufende IDE geladen. Echte Clientkonfigurationen, GetIt-Installationen und Designer-/Debuggerzustände wurden nicht verändert.
+Die bekannten Compilerhinweise W1002 zum Windows-Flag und H2077 zum initialen YAML-Ergebniswert bleiben; keine Buildfehler.
 
-Der Compiler meldet W1002 zum Windows-spezifischen Reparse-Point-Flag und H2077 zum initialen YAML-Ergebniswert; keine Buildfehler.
+Ressourcen- und Prompt-Endpunkte sowie eine gemeinsame Toolregistry sind dokumentierte Ideen und noch nicht implementiert.

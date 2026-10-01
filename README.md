@@ -1,4 +1,4 @@
-# DAI – Delphi AI
+﻿# DAI – Delphi AI
 
 DAI ist ein Design-Time-Package für Delphi 13 / RAD Studio 13 (`BDS 37.0`). Es stellt lokal laufenden KI-Clients einen MCP-Server zur Verfügung und
 vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
@@ -39,6 +39,12 @@ der Optionen erneut gestartet werden.
 DAI unterstützt den klassischen MCP-Initialisierungsablauf und die moderne `server/discover`-Methode. Bei Codex-Anfragen wird `_meta.threadId` ausgewertet.
 Dadurch können Session-Freigaben nach Projekt und Codex-Chat getrennt werden. Fehlt die Chat-ID, verwendet DAI ersatzweise die MCP-Transport-Session.
 Fehlen beide Identitäten, wird „Für diese Session“ aus Sicherheitsgründen wie eine einmalige Freigabe behandelt.
+
+Klassische Transport-Sitzungen laufen nach 30 Minuten ohne Anfrage ab. Laufende Anfragen zählen als aktiv; das Zeitlimit beginnt erneut nach ihrer Antwort.
+DAI entfernt abgelaufene Sitzungen beim nächsten Sessionzugriff oder Initialisieren gezielt. Bei 1.024 aktiven Sitzungen erhalten neue Initialisierungen
+HTTP 503 mit `Retry-After: 60`; bestehende Sitzungen bleiben gültig. Authentifiziertes `DELETE /mcp` mit `Mcp-Session-Id` beendet eine klassische Sitzung
+mit HTTP 204. Abgelaufene oder beendete IDs erhalten HTTP 404; der Client muss neu initialisieren. Moderne Anfragen bleiben ohne Transport-Sitzung.
+Die native stdio-Brücke versucht beim Schließen ihrer Eingabe, die klassische HTTP-Sitzung zu beenden.
 
 ## Berechtigungen
 
@@ -297,16 +303,6 @@ DFM-/FMX-Inhalte können bei geladenem Designer auch dessen ungespeicherten Zust
 Starten/Beenden erfolgt über `project_run` und `project_stop`. Ein bereits laufender Debugger wird durch `project_run` nicht unbeabsichtigt neu gestartet.
 Haltepunkte gehören zur IDE-Bearbeitung, Debugger-Steuerung zur Ausführungsberechtigung; Status und Auflistungen zur Leseberechtigung.
 
-## MCPConnect in RAD Studio 13.2
-
-[Embarcadero beschreibt MCPConnect ausdrücklich als Bibliothek zur Erstellung eigener MCP-Server](https://www.embarcadero.com/de/products/rad-studio/whats-new-in-13-florence).
-Sie ist ein zusätzlicher GetIt-Download. In den hier installierten `source\ToolsAPI`-Quellen existiert kein MCP-Server-Service.
-`ToolsAPI.AI.pas` bietet KI-Provider-Schnittstellen (`IOTAAIPlugin`, `IOTAAIEngineService`) für Chat, Modelle und ähnliche Aufgaben.
-
-MCPConnect könnte Routing, Transport, Sessions und Schemagenerierung ersetzen; die DAI-IDE-Dienste und Berechtigungen müssten über Adapter erhalten bleiben.
-Das [offizielle Repository](https://github.com/delphi-blocks/MCPConnect) unterstützt HTTP und stdio; MCP `2026-07-28` befindet sich dort derzeit in einem Entwicklungszweig.
-Diese Änderung behält daher die kompilierbare DAI-Protokollschicht bei und fügt keine neue Bibliotheksabhängigkeit hinzu.
-
 ## Build
 
 PowerShell:
@@ -350,6 +346,8 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test-ClientRegistration.ps1 -Platform Win64
 .\Scripts\Test.Protocol.ps1 -Platform Win32
 .\Scripts\Test.Protocol.ps1 -Platform Win64
+.\Scripts\Test.Sessions.ps1 -Platform Win32
+.\Scripts\Test.Sessions.ps1 -Platform Win64
 python .\Scripts\test_bridge.py
 ```
 
