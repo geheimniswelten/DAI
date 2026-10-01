@@ -8,7 +8,7 @@ uses
 type
   TDAIProjectService = class sealed
   public
-    class function CreateProject(const AName: string; const ADirectory: string; const AKind: string): TJSONObject; static;
+    class function CreateProject(const AName: string; const ADirectory: string; const AKind: string; const ASave: Boolean = True): TJSONObject; static;
     class function OpenProject(const AFileName: string): TJSONObject; static;
     class function SaveProject(const AProjectNameOrPath: string): TJSONObject; static;
     class function RemoveProject(const AProjectNameOrPath: string): TJSONObject; static;
@@ -35,6 +35,52 @@ uses
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
   h5u.DAI.Types;
+
+procedure RequireWritablePath(const AFileName: string);
+var
+  LExtension, LProjectSidecar: string;
+begin
+  TDAIOTA.RequireNoReparseWritePath(AFileName);
+  if (Trim(AFileName) <> '') and TDAIOTA.IsReadOnlyReferenceFile(AFileName) then
+    raise EDAIAccessDenied.CreateFmt('Referenzverzeichnisse sind schreibgeschützt. Die Projektoperation darf diese Datei nicht ändern: %s', [AFileName]);
+  LExtension := TPath.GetExtension(AFileName);
+  if SameText(LExtension, '.dpr') or SameText(LExtension, '.dpk') then
+    LProjectSidecar := ChangeFileExt(AFileName, '.dproj')
+  else if SameText(LExtension, '.dproj') then
+    LProjectSidecar := AFileName
+  else
+    Exit;
+  // A project save can write these files even when they have no ModuleFileEditor.
+  TDAIOTA.RequireNoReparseWritePath(LProjectSidecar);
+  TDAIOTA.RequireNoReparseWritePath(LProjectSidecar + '.local');
+end;
+
+procedure RequireWritableModuleOnMainThread(const AModule: IOTAModule; const AModifiedOnly: Boolean = False);
+var
+  LEditor: IOTAEditor;
+  LIndex: Integer;
+begin
+  if not Assigned(AModule) then
+    Exit;
+  if not AModifiedOnly then
+    RequireWritablePath(AModule.FileName);
+  for LIndex := 0 to AModule.ModuleFileCount - 1 do
+  begin
+    LEditor := AModule.ModuleFileEditors[LIndex];
+    if Assigned(LEditor) then
+      if not AModifiedOnly or LEditor.Modified then
+        RequireWritablePath(LEditor.FileName);
+  end;
+end;
+
+procedure RequireWritableModule(const AModule: IOTAModule);
+begin
+  TDAIOTA.RunOnMainThread(
+    procedure
+    begin
+      RequireWritableModuleOnMainThread(AModule);
+    end);
+end;
 
 function ConfirmWorkspaceChangeOnMainThread(const ATitle: string; const AText: string): Boolean;
 var
@@ -171,6 +217,8 @@ begin
     begin
       if Supports(LModule, IOTAProject, LProject) or Supports(LModule, IOTAProjectGroup, LGroup) then
         raise EInvalidOperation.Create('Projektmodule und Projektgruppen können nicht mit file_close geschlossen werden.');
+      // CloseModule(False) can offer to save modified associated editors.
+      RequireWritableModuleOnMainThread(LModule, True);
       LClosed := LModule.CloseModule(False);
       if LClosed then
         LModule := nil;
@@ -194,7 +242,10 @@ begin
   if not Assigned(LProject) then
     raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
 
+  RequireWritableModule(LProject);
   LFileName := ResolveUnitFileName(LProject, AFileName);
+  RequireWritablePath(LFileName);
+  RequireWritablePath(ChangeFileExt(LFileName, '.dfm'));
   if TFile.Exists(LFileName) or TDAIOTA.IsFileOpenInEditor(LFileName) then
     raise EDAIFileAlreadyExists.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
   if TFile.Exists(ChangeFileExt(LFileName, '.dfm')) or TDAIOTA.IsFormLoadedForFile(LFileName) then
@@ -212,11 +263,18 @@ begin
     begin
       if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
         raise EInvalidOperation.Create('IOTAModuleServices ist nicht verfügbar.');
+      RequireWritableModuleOnMainThread(LProject);
+      RequireWritablePath(LFileName);
+      RequireWritablePath(ChangeFileExt(LFileName, '.dfm'));
       LCreatedModule := LModuleServices.CreateModule(
         TDAIModuleCreator.CreateForm(LProject, LFileName, AFormName, LAncestorName, False)
       );
-      if Assigned(LCreatedModule) and not LCreatedModule.Save(False, True) then
-        raise EInvalidOperation.Create('Die neue Form-Unit konnte nicht gespeichert werden.');
+      if Assigned(LCreatedModule) then
+      begin
+        RequireWritableModuleOnMainThread(LCreatedModule);
+        if not LCreatedModule.Save(False, True) then
+          raise EInvalidOperation.Create('Die neue Form-Unit konnte nicht gespeichert werden.');
+      end;
     end);
 
   Result := TJSONObject.Create;
@@ -226,17 +284,24 @@ begin
   Result.AddPair('ancestor', LAncestorName);
 end;
 
-class function TDAIProjectService.CreateProject(const AName: string; const ADirectory: string; const AKind: string): TJSONObject;
+class function TDAIProjectService.CreateProject(const AName: string; const ADirectory: string; const AKind: string; const ASave: Boolean): TJSONObject;
 var
   LActiveProject: IOTAProject;
+  LCreator: TDAIProjectCreator;
+  LCreatorInterface: IOTACreator;
   LCreatedModule: IOTAModule;
+  LCreatedProject: IOTAProject;
   LDirectory: string;
   LFileName: string;
   LGroup: IOTAProjectGroup;
   LKind: TDAIProjectKind;
+  LMainFormFileName: string;
+  LMainFormName: string;
+  LMainUnitFileName: string;
   LModuleServices: IOTAModuleServices;
   LName: string;
   LOpenProjects: string;
+  LProjectFileName: string;
 begin
   LName := Trim(AName);
   if LName = '' then
@@ -248,7 +313,11 @@ begin
   if LDirectory = '' then
     raise EArgumentException.Create('Ein Projektverzeichnis ist erforderlich.');
 
+  LFileName := TPath.Combine(LDirectory, LName + '.dpr');
+  // The target is protected even for an unsaved creator, before any confirmation or IDE mutation.
+  RequireWritablePath(LFileName);
   LGroup := TDAIOTA.MainProjectGroup;
+  RequireWritableModule(LGroup);
   LActiveProject := TDAIOTA.ActiveProject;
   if Assigned(LActiveProject) and not Assigned(LGroup) then
     raise EInvalidOperation.Create(
@@ -256,9 +325,8 @@ begin
       'Erstellen oder öffnen Sie zuerst manuell eine Projektgruppe.'
     );
 
-  LFileName := TPath.Combine(LDirectory, LName + '.dpr');
-
-  if TFile.Exists(LFileName) or TFile.Exists(ChangeFileExt(LFileName, '.dproj')) then
+  if TFile.Exists(LFileName) or TFile.Exists(ChangeFileExt(LFileName, '.dproj')) or
+    TDirectory.Exists(LFileName) or TDirectory.Exists(ChangeFileExt(LFileName, '.dproj')) then
     raise EDAIFileAlreadyExists.CreateFmt('Das Projekt existiert bereits: %s', [LFileName]);
 
   LOpenProjects := OpenProjectSummary;
@@ -277,26 +345,68 @@ begin
   else
     raise EArgumentException.Create('project_kind muss "console" oder "vcl" sein.');
 
-  ForceDirectories(LDirectory);
   LCreatedModule := nil;
+  LProjectFileName := '';
+  LMainUnitFileName := '';
+  LMainFormFileName := '';
+  LMainFormName := '';
   TDAIOTA.RunOnMainThread(
     procedure
     begin
       if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
         raise EInvalidOperation.Create('IOTAModuleServices ist nicht verfügbar.');
-      LGroup := LModuleServices.MainProjectGroup;
-      LCreatedModule := LModuleServices.CreateModule(TDAIProjectCreator.Create(LGroup, LFileName, LKind));
-      if Assigned(LCreatedModule) and not LCreatedModule.Save(False, True) then
-        raise EInvalidOperation.Create('Das neue Projekt konnte nicht gespeichert werden.');
+      if LModuleServices.MainProjectGroup <> LGroup then
+        raise EInvalidOperation.Create('Die Projektgruppe wurde während der Erstellungsanfrage geändert. Wiederholen Sie die Anfrage.');
+      if not Assigned(LGroup) and Assigned(LModuleServices.GetActiveProject) then
+        raise EInvalidOperation.Create('Inzwischen wurde ein einzelnes Projekt geöffnet. Die Projekterstellung wird zum Schutz dieses Projekts abgebrochen.');
+      if Assigned(TDAIOTA.FindModuleByFileName(LFileName)) or Assigned(TDAIOTA.FindModuleByFileName(ChangeFileExt(LFileName, '.dproj'))) then
+        raise EDAIFileAlreadyExists.CreateFmt('Das Projekt ist bereits als IDE-Modul geöffnet: %s', [LFileName]);
+      RequireWritablePath(LFileName);
+      RequireWritableModuleOnMainThread(LGroup);
+      if ASave and not ForceDirectories(LDirectory) then
+        raise EInvalidOperation.Create('Das neue Projektverzeichnis konnte nicht erstellt werden.');
+      LCreator := TDAIProjectCreator.Create(LGroup, LFileName, LKind, not ASave);
+      LCreatorInterface := LCreator;
+      RequireWritablePath(LCreator.MainUnitFileName);
+      if LCreator.MainUnitFileName <> '' then
+        RequireWritablePath(ChangeFileExt(LCreator.MainUnitFileName, '.dfm'));
+      LCreatedModule := LModuleServices.CreateModule(LCreatorInterface);
+      if not Supports(LCreatedModule, IOTAProject, LCreatedProject) then
+        raise EInvalidOperation.Create('Das neue Projekt konnte nicht als IDE-Projekt erstellt werden.');
+      RequireWritableModuleOnMainThread(LCreatedModule);
+      // The current IDE invokes the IOTAProjectCreator50 callback. The guarded
+      // call also handles a creator host that does not invoke it automatically.
+      LCreator.NewDefaultProjectModule(LCreatedProject);
+      if Assigned(LCreator.MainFormModule) then
+      begin
+        LMainUnitFileName := LCreator.MainFormModule.FileName;
+        LMainFormFileName := ChangeFileExt(LMainUnitFileName, '.dfm');
+        LMainFormName := LCreator.MainFormName;
+        RequireWritableModuleOnMainThread(LCreator.MainFormModule);
+        if ASave and not LCreator.MainFormModule.Save(False, True) then
+          raise EInvalidOperation.Create('Die neue VCL-Hauptform konnte nicht gespeichert werden.');
+      end;
+      if ASave then
+      begin
+        RequireWritableModuleOnMainThread(LCreatedModule);
+        if not LCreatedModule.Save(False, True) then
+          raise EInvalidOperation.Create('Das neue Projekt konnte nicht gespeichert werden.');
+      end;
+      LProjectFileName := LCreatedModule.FileName;
     end);
 
   Result := TJSONObject.Create;
   Result.AddPair('requested_file', LFileName);
-  if Assigned(LCreatedModule) then
-    Result.AddPair('project_file', LCreatedModule.FileName)
-  else
-    Result.AddPair('project_file', '');
+  Result.AddPair('project_file', LProjectFileName);
   Result.AddPair('created', TJSONBool.Create(Assigned(LCreatedModule)));
+  Result.AddPair('saved', TJSONBool.Create(ASave));
+  Result.AddPair('unnamed', TJSONBool.Create(not ASave));
+  if LMainUnitFileName <> '' then
+  begin
+    Result.AddPair('main_unit_file', LMainUnitFileName);
+    Result.AddPair('main_form_file', LMainFormFileName);
+    Result.AddPair('main_form_name', LMainFormName);
+  end;
 end;
 
 class function TDAIProjectService.CreateUnit(const AProjectNameOrPath: string; const AFileName: string; const ASource: string): TJSONObject;
@@ -310,7 +420,9 @@ begin
   if not Assigned(LProject) then
     raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
 
+  RequireWritableModule(LProject);
   LFileName := ResolveUnitFileName(LProject, AFileName);
+  RequireWritablePath(LFileName);
   if TFile.Exists(LFileName) or TDAIOTA.IsFileOpenInEditor(LFileName) then
     raise EDAIFileAlreadyExists.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
   if not TDAIOTA.IsPathWithin(LFileName, TPath.GetDirectoryName(TDAIOTA.ProjectFileName(LProject))) then
@@ -322,9 +434,15 @@ begin
     begin
       if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
         raise EInvalidOperation.Create('IOTAModuleServices ist nicht verfügbar.');
+      RequireWritableModuleOnMainThread(LProject);
+      RequireWritablePath(LFileName);
       LCreatedModule := LModuleServices.CreateModule(TDAIModuleCreator.CreateUnit(LProject, LFileName, ASource));
-      if Assigned(LCreatedModule) and not LCreatedModule.Save(False, True) then
-        raise EInvalidOperation.Create('Die neue Unit konnte nicht gespeichert werden.');
+      if Assigned(LCreatedModule) then
+      begin
+        RequireWritableModuleOnMainThread(LCreatedModule);
+        if not LCreatedModule.Save(False, True) then
+          raise EInvalidOperation.Create('Die neue Unit konnte nicht gespeichert werden.');
+      end;
     end);
 
   Result := TJSONObject.Create;
@@ -423,6 +541,7 @@ begin
   if not Assigned(LProject) then
     raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
 
+  RequireWritableModule(LProject);
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   if not TDAIOTA.ProjectContainsFile(LProject, LFileName) then
     raise EArgumentException.Create('Die Datei gehört nicht zum angegebenen Projekt.');
@@ -431,6 +550,7 @@ begin
   TDAIOTA.RunOnMainThread(
     procedure
     begin
+      RequireWritableModuleOnMainThread(LProject);
       LProject.RemoveFile(LFileName);
       LRemoved := not TDAIOTA.ProjectContainsFile(LProject, LFileName);
     end);
@@ -456,6 +576,8 @@ begin
   LGroup := TDAIOTA.MainProjectGroup;
   if not Assigned(LGroup) then
     raise EInvalidOperation.Create('Ein einzelnes Projekt ohne Projektgruppe kann nicht aus einer Projektgruppe entfernt werden.');
+  RequireWritableModule(LGroup);
+  RequireWritableModule(LProject);
 
   if not ConfirmWorkspaceChange(
     'Projekt aus Projektgruppe entfernen',
@@ -468,6 +590,8 @@ begin
   TDAIOTA.RunOnMainThread(
     procedure
     begin
+      RequireWritableModuleOnMainThread(LGroup);
+      RequireWritableModuleOnMainThread(LProject);
       LGroup.RemoveProject(LProject);
       LRemoved := not Assigned(TDAIOTA.ProjectByNameOrPath(LProjectFileName));
       if LRemoved then
@@ -492,6 +616,7 @@ begin
   TDAIOTA.RunOnMainThread(
     procedure
     begin
+      RequireWritableModuleOnMainThread(LProject);
       LSaved := LProject.Save(False, True);
     end);
 

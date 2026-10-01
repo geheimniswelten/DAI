@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import json
@@ -12,6 +12,9 @@ SOURCE = ROOT / "Source"
 MAX_LINE_LENGTH = 180
 
 REQUIRED_TOOLS = {
+    "source_search",
+    "ide_windows_list",
+    "debugger_windows_list",
     "form_designer_inspect",
     "form_show_designer",
     "debugger_status",
@@ -335,7 +338,16 @@ def check_dproj(errors: list[str]) -> None:
         reference = f'Source\\{path.name}'
         if reference.lower() not in text.lower():
             fail(errors, f"DAI.dproj referenziert {path.name} nicht")
-    del tree
+    ns = {"msbuild": "http://schemas.microsoft.com/developer/msbuild/2003"}
+    target = tree.find("msbuild:PropertyGroup/msbuild:TargetedPlatforms", ns)
+    if target is None or target.text != "3":
+        fail(errors, "DAI.dproj: TargetedPlatforms muss Win32 und Win64 enthalten (3)")
+    for platform in ("Win32", "Win64"):
+        node = tree.find(f".//msbuild:Platforms/msbuild:Platform[@value='{platform}']", ns)
+        if node is None or (node.text or "").lower() != "true":
+            fail(errors, f"DAI.dproj: {platform} muss für die passende IDE aktiviert sein")
+        if tree.find(f".//msbuild:Base_{platform}", ns) is None:
+            fail(errors, f"DAI.dproj: Base_{platform}-Konfiguration fehlt")
 
 
 def check_tools(errors: list[str]) -> None:
@@ -627,7 +639,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.1"
+    expected = "1.2.3"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
@@ -721,7 +733,8 @@ def check_bearer_authentication_and_registration_paths(errors: list[str]) -> Non
 def check_duplicate_implementations(errors: list[str]) -> None:
     pattern = re.compile(
         r"(?ims)^\s*((?:class\s+)?(?:function|procedure|constructor|destructor)\s+"
-        r"[A-Za-z0-9_.]+\s*(?:\([^;]*?\))?(?:\s*:\s*[^;]+)?\s*;)"
+        r"[A-Za-z0-9_.]+\s*(?:\([^)]*\))?(?:\s*:\s*[^;\n]+)?\s*;)"
+        r"(?=\s*(?:var|const|type|begin|asm)\b)"
     )
     for path in SOURCE.glob("*.pas"):
         content = read_project_text(path)

@@ -21,6 +21,9 @@ uses
   System.Math,
   System.SysUtils,
   ToolsAPI,
+  Winapi.Windows,
+  h5u.DAI.Consts,
+  h5u.DAI.Runtime,
   h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
   h5u.DAI.Log,
@@ -31,8 +34,11 @@ uses
   h5u.DAI.OTA.Files,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.OTA.Projects,
+  h5u.DAI.OTA.Search,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
+  h5u.DAI.Source.Search,
+  h5u.DAI.Windows.Inspection,
   h5u.DAI.UI;
 
 function JsonObjectFromText(const AText: string): TJSONObject;
@@ -156,6 +162,13 @@ begin
   Result.AddPair('name', 'DAI');
   Result.AddPair('display_name', 'Delphi AI');
   Result.AddPair('enabled', TJSONBool.Create(TDAISettings.Instance.Enabled));
+  Result.AddPair('active', TJSONBool.Create(TDAIRuntime.ServerActive));
+  Result.AddPair('ide_architecture', CDAIIDEArchitecture);
+  Result.AddPair('ide_process_id', TJSONNumber.Create(Int64(GetCurrentProcessId)));
+  Result.AddPair('ide_executable', GetModuleName(0));
+  Result.AddPair('package_file', GetModuleName(FindHInstance(@ToolStatus)));
+  Result.AddPair('package_registry_key', 'HKEY_CURRENT_USER\' + TPath.GetDirectoryName(TDAISettings.Instance.RegistryRoot).TrimLeft(['\']) + '\' +
+    CDAIKnownPackagesKey);
   Result.AddPair('port', TJSONNumber.Create(TDAISettings.Instance.Port));
   Result.AddPair('active_project', TDAIOTA.ActiveProjectFileName);
   Result.AddPair('thread_id', AContext.ThreadId);
@@ -216,8 +229,12 @@ var
   LContext: TDAIRequestContext;
   LExpandedFileName: string;
   LFileName: string;
+  LInitiallyAuthorizedProjectKey: string;
   LProjectObject: IOTAProject;
   LProject: string;
+  LSearchOptions: TDAISourceSearchOptions;
+  LSearchPlan: TDAISourceSearchPlan;
+  LSearchProjectKey: string;
   LUsedEditorBuffer: Boolean;
   LWithDebugger: Boolean;
 begin
@@ -228,6 +245,39 @@ begin
   begin
     RequirePermission(pcReadAccess, 'Status der Delphi-IDE lesen', '', LContext);
     Exit(ToolStatus(LContext));
+  end;
+
+  if SameText(AName, 'ide_windows_list') or SameText(AName, 'debugger_windows_list') then
+  begin
+    RequirePermission(pcReadAccess, 'Fenster und Controls der IDE oder des Debuggerprozesses lesen', '', LContext);
+    if SameText(AName, 'ide_windows_list') then
+      Exit(TDAIWindowService.IDEWindows(ArgumentBoolean(AArguments, 'include_children', True),
+        ArgumentInteger(AArguments, 'maximum_windows', 100), ArgumentInteger(AArguments, 'maximum_controls', 500),
+        ArgumentInteger(AArguments, 'timeout_ms', 2000)));
+    Exit(TDAIWindowService.DebuggerWindows(ArgumentBoolean(AArguments, 'include_children', True),
+      ArgumentInteger(AArguments, 'maximum_windows', 100), ArgumentInteger(AArguments, 'maximum_controls', 500),
+      ArgumentInteger(AArguments, 'timeout_ms', 2000)));
+  end;
+
+  if SameText(AName, 'source_search') then
+  begin
+    LSearchOptions.FilePatterns := ArgumentStringArray(AArguments, 'file_patterns');
+    LSearchOptions.CaseSensitive := ArgumentBoolean(AArguments, 'case_sensitive', False);
+    LSearchOptions.WholeWord := ArgumentBoolean(AArguments, 'whole_word', False);
+    LSearchOptions.MaximumResults := ArgumentInteger(AArguments, 'maximum_results', 200);
+    LSearchOptions.MaximumFiles := ArgumentInteger(AArguments, 'maximum_files', 10000);
+    LSearchOptions.TimeoutMs := ArgumentInteger(AArguments, 'timeout_ms', 5000);
+    LSearchPlan := TDAISourceSearchService.Prepare(ArgumentString(AArguments, 'scope', 'all'), ArgumentString(AArguments, 'project'),
+      ArgumentString(AArguments, 'directory'), LSearchOptions.TimeoutMs);
+    RequirePermission(pcReadAccess, 'Quelltexte in ausgewählten Projekt- und Referenzpfaden durchsuchen', ArgumentString(AArguments, 'directory'), LContext);
+    LInitiallyAuthorizedProjectKey := LContext.ProjectKey;
+    for LSearchProjectKey in LSearchPlan.ProjectKeys do
+    begin
+      LContext.ProjectKey := LSearchProjectKey;
+      if not SameText(LContext.ProjectKey, LInitiallyAuthorizedProjectKey) then
+        RequirePermission(pcReadAccess, 'Projektquelltexte durchsuchen', LContext.ProjectKey, LContext);
+    end;
+    Exit(TDAISourceSearchService.SearchPrepared(ArgumentString(AArguments, 'query'), LSearchPlan, LSearchOptions));
   end;
 
   if SameText(AName, 'open_files_list') then
@@ -410,7 +460,8 @@ begin
       TDAIProjectService.CreateProject(
         ArgumentString(AArguments, 'name'),
         ArgumentString(AArguments, 'directory'),
-        ArgumentString(AArguments, 'project_kind', 'console')
+        ArgumentString(AArguments, 'project_kind', 'console'),
+        ArgumentBoolean(AArguments, 'save', True)
       )
     );
   end;
@@ -741,6 +792,21 @@ begin
   );
   AddTool(Result, 'reference_roots_list', 'Listet schreibgeschützte Delphi-, Demo-, GetIt- und zusätzliche Referenzpfade.',
     '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'source_search', 'Sucht wörtlichen Text in Projekt, Projektgruppe und ReadOnly-Referenzen; aktuelle Editorpuffer haben Vorrang.',
+    '{"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":256},' +
+    '"scope":{"type":"string","enum":["project","group","references","all"],"default":"all"},"project":{"type":"string"},' +
+    '"directory":{"type":"string"},"file_patterns":{"type":"array","items":{"type":"string","minLength":1,"maxLength":256},"maxItems":100},' +
+    '"case_sensitive":{"type":"boolean"},"whole_word":{"type":"boolean"},"maximum_results":{"type":"integer","minimum":1,"maximum":1000},' +
+    '"maximum_files":{"type":"integer","minimum":1,"maximum":100000},"timeout_ms":{"type":"integer","minimum":1,"maximum":30000}},' +
+    '"required":["query"],"additionalProperties":false}', True);
+  AddTool(Result, 'ide_windows_list', 'Liest VCL- und native Fenster der IDE; liest DAI-Berechtigungsdialoge und Eingabefeldtexte nicht aus.',
+    '{"type":"object","properties":{"include_children":{"type":"boolean"},"maximum_windows":{"type":"integer","minimum":1,"maximum":100},' +
+    '"maximum_controls":{"type":"integer","minimum":1,"maximum":500},"timeout_ms":{"type":"integer","minimum":1,"maximum":2000}},' +
+    '"additionalProperties":false}', True);
+  AddTool(Result, 'debugger_windows_list', 'Liest native Fenster des aktuellen Debuggerprozesses ohne ihn fortzusetzen; angehaltene Fenstertexte können fehlen.',
+    '{"type":"object","properties":{"include_children":{"type":"boolean"},"maximum_windows":{"type":"integer","minimum":1,"maximum":100},' +
+    '"maximum_controls":{"type":"integer","minimum":1,"maximum":500},"timeout_ms":{"type":"integer","minimum":1,"maximum":2000}},' +
+    '"additionalProperties":false}', True);
   AddTool(
     Result,
     'reference_files_list',
@@ -815,8 +881,9 @@ begin
   AddTool(
     Result,
     'project_create',
-    'Erstellt ein Console- oder VCL-Projekt in der aktuellen Projektgruppe.',
-    '{"type":"object","properties":{"name":{"type":"string"},"directory":{"type":"string"},"project_kind":{"type":"string","enum":["console","vcl"]}},' +
+    'Erstellt Console- oder VCL-Projekt, bei VCL mit Hauptformular. save=false erzeugt ungespeicherte OTA-Module.',
+    '{"type":"object","properties":{"name":{"type":"string"},"directory":{"type":"string"},"project_kind":{"type":"string","enum":["console","vcl"]},' +
+    '"save":{"type":"boolean","default":true}},' +
     '"required":["name","directory"],"additionalProperties":false}',
     False
   );

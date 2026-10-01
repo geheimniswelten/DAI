@@ -1,4 +1,25 @@
-﻿# Änderungsprotokoll
+# Änderungsprotokoll
+
+## 1.2.3
+
+- Native ReadOnly-Quelltextsuche in Projekt, Projektgruppe, Delphi-/ToolsAPI-/Samples-/GetIt-Referenzen mit Zeile, Spalte, Editorpuffervorrang und Grenzen.
+- Referenzpfade mit explizitem ToolsAPI-Eintrag und aufgelösten BDS-/GetIt-/Samples-Aliasen; Schreibschutz gilt auch für im Editor geöffnete Referenzdateien.
+- Schreibschutz-Vorprüfungen für Projekt-/Gruppenspeichern, Entfernen und IDE-Builds einschließlich Begleitdateien, Abhängigkeiten und Reparse-Schreibpfaden.
+- Dateimuster der Quellsuche verwenden einen begrenzten eigenen Globmatcher für `*` und `?`, ohne System.Masks-Backtracking.
+- Generierter IDE-Skill erklärt Quellsuche, tatsächliche Deklarationen, ReadOnly-Grenzen und Projektanlage über die OTA.
+- project_create unterstützt save=false; VCL-Projekte erhalten ihr Hauptformular über den Projektcallback der IDE.
+- Lesende IDE-/Debuggee-Fensterinspektion über WinAPI und VCL-Metadaten, ohne Anlegen von Handles oder Debuggee-Fortsetzung.
+- Editor-Readback akzeptiert genau ein von der IDE ergänztes CRLF; Rückgabehash und Zeilenenden stammen aus dem tatsächlichen Puffer.
+- Native Regressionstests für Quellsuche, Pfadaliasauflösung, Editor-Readback und Fensterinspektion; Package-Builds für Win32 und Win64.
+
+## 1.2.2
+
+- Win32 und Win64 im Package-Projekt aktiviert; vollständiger Release-Build für beide Delphi-IDE-Architekturen. Build prüft PE-Architektur und DLL-/EXE-Typ.
+- Eigene Delphi-Sperre für genau einen aktiven MCP-Server je Windowsbenutzer, unabhängig von IDE-Architektur, Delphi-Version und Port. Die erste erfolgreiche Serverinstanz übernimmt.
+- Stoppen und Prozessende geben die Sperre frei; fehlgeschlagener Start erst nach abgeschlossener Bereinigung. Keine automatische Übernahme durch wartende IDEs.
+- Manuelle Start-/Stop-Schaltflächen in den DAI-Optionen, ohne gespeicherte Einstellungen zu ändern. ide_status meldet IDE-Architektur, Prozess, EXE, BPL und passenden Package-Schlüssel.
+- Autostart gilt nur beim IDE-Start; Übernehmen der Optionen bewahrt manuelles Starten/Stoppen. Portänderungen am laufenden Server behalten die Instanzsperre während des Neustarts.
+- Native Instanztests einschließlich getrennten Win32-/Win64-Prozessen und Prozessabbruch; HTTP-Tests prüfen Übernahme und Freigabe nach Bindfehlern.
 
 ## 1.2.1
 

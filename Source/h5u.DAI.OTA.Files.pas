@@ -312,22 +312,38 @@ end;
 
 class function TDAIFileService.ReferenceRoots: TJSONArray;
 var
+  LAlias: string;
   LDirectory: string;
 begin
   Result := TJSONArray.Create;
   for LDirectory in TDAISettings.Instance.ReadOnlyRootDirectories do
+  begin
+    LAlias := '';
+    if TDAIOTA.SameFile(LDirectory, TDAISettings.Instance.DelphiSourceDirectory) then
+      LAlias := '%BDS%\source'
+    else if TDAIOTA.SameFile(LDirectory, TDAISettings.Instance.ToolsAPIDirectory) then
+      LAlias := '%BDS%\source\ToolsAPI'
+    else if TDAIOTA.SameFile(LDirectory, TDAISettings.Instance.SamplesDirectory) then
+      LAlias := '%BDS%\Samples'
+    else if TDAIOTA.SameFile(LDirectory, TDAISettings.Instance.CatalogRepositoryAllUsersDirectory) then
+      LAlias := '%BDSCatalogRepositoryAllUsers%'
+    else if TDAIOTA.SameFile(LDirectory, TDAISettings.Instance.CatalogRepositoryDirectory) then
+      LAlias := '%BDSCatalogRepository%';
     Result.AddElement(
       TJSONObject.Create
         .AddPair('directory', LDirectory)
+        .AddPair('alias', LAlias)
         .AddPair('exists', TJSONBool.Create(TDirectory.Exists(LDirectory)))
         .AddPair('read_only', TJSONBool.Create(True))
     );
+  end;
 end;
 
 class function TDAIFileService.WriteFile(const AFileName: string; const AContent: string; const AExpectedSha256: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean):
   TJSONObject;
 var
   LActionServices: IOTAActionServices;
+  LActualContent: string;
   LBytes: TBytes;
   LCurrentContent: string;
   LCurrentFormat: TDAITextFileFormat;
@@ -337,6 +353,7 @@ var
   LHasCurrentContent: Boolean;
   LOriginalEncoding: string;
   LOriginalLineEnding: string;
+  LProjectSidecar: string;
   LFormat: TDAITextFileFormat;
   LSourceEditor: IOTASourceEditor;
   LWrittenContent: string;
@@ -347,6 +364,18 @@ begin
   LOriginalEncoding := '';
   LOriginalLineEnding := '';
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
+  TDAIOTA.RequireNoReparseWritePath(LFileName);
+  if SameText(TPath.GetExtension(LFileName), '.dpr') or SameText(TPath.GetExtension(LFileName), '.dpk') then
+    LProjectSidecar := ChangeFileExt(LFileName, '.dproj')
+  else if SameText(TPath.GetExtension(LFileName), '.dproj') then
+    LProjectSidecar := LFileName
+  else
+    LProjectSidecar := '';
+  if LProjectSidecar <> '' then
+  begin
+    TDAIOTA.RequireNoReparseWritePath(LProjectSidecar);
+    TDAIOTA.RequireNoReparseWritePath(LProjectSidecar + '.local');
+  end;
 
   if TDAIOTA.IsReadOnlyReferenceFile(LFileName) then
     raise EDAIAccessDenied.Create('Delphi-Sourcen, Demos, GetIt-Pakete und zusätzliche Referenzverzeichnisse sind schreibgeschützt.');
@@ -378,7 +407,6 @@ begin
 
     AUsedEditorBuffer := True;
     LFormat.EncodingKind := tekIDEBuffer;
-    LFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LWrittenContent);
     TDAIOTA.RunOnMainThread(
       procedure
       begin
@@ -388,15 +416,18 @@ begin
             raise EInvalidOperation.Create('Der Formulartext wurde in einen Textpuffer übertragen. Lesen Sie den aktuellen IDE-Textpuffer erneut.');
           raise EInvalidOperation.Create('Der Editorpuffer wurde während der Schreibanforderung geändert. Lesen Sie die Datei erneut.');
         end;
-        if not TDAIOTA.ReplaceEditorText(LSourceEditor, LWrittenContent) then
+        if not TDAIOTA.ReplaceEditorText(LSourceEditor, LWrittenContent, LActualContent) then
           raise EInvalidOperation.Create('Der Editorpuffer konnte nicht ersetzt werden.');
+        LWrittenContent := LActualContent;
         if ASave then
         begin
           if not Supports(BorlandIDEServices, IOTAActionServices, LActionServices) then
             raise EInvalidOperation.Create('Der Editorpuffer wurde geändert; IOTAActionServices zum Speichern ist nicht verfügbar.');
           if not LActionServices.SaveFile(LFileName) then
             raise EInvalidOperation.Create('Der Editorpuffer wurde geändert, konnte aber nicht gespeichert werden.');
+          LWrittenContent := TDAIOTA.ReadEditorText(LSourceEditor);
         end;
+        LFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LWrittenContent);
       end);
   end
   else

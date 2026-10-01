@@ -15,6 +15,8 @@ type
   private
     FServerEnabledCheckBox: TCheckBox;
     FServerStatusLabel: TLabel;
+    FStartServerButton: TButton;
+    FStopServerButton: TButton;
     FLoggingCheckBox: TCheckBox;
     FPortEdit: TEdit;
     FTokenEdit: TEdit;
@@ -36,6 +38,8 @@ type
     procedure AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
     procedure PopulatePermissionCombo(const AComboBox: TComboBox);
     procedure ScopeChanged(Sender: TObject);
+    procedure StartServerClicked(Sender: TObject);
+    procedure StopServerClicked(Sender: TObject);
     procedure GenerateTokenClicked(Sender: TObject);
     procedure ClientChanged(Sender: TObject);
     function SelectedClient: string;
@@ -119,8 +123,8 @@ begin
   FServerEnabledCheckBox.Parent := Self;
   FServerEnabledCheckBox.Left := 24;
   FServerEnabledCheckBox.Top := LTop;
-  FServerEnabledCheckBox.Caption := 'Lokalen MCP-Server aktivieren';
-  FServerEnabledCheckBox.Width := 300;
+  FServerEnabledCheckBox.Caption := 'MCP-Server beim IDE-Start automatisch starten';
+  FServerEnabledCheckBox.Width := 540;
   Inc(LTop, 32);
 
   NewLabel(Self, 'Port', 24, LTop + 4);
@@ -158,6 +162,23 @@ begin
   FServerStatusLabel.Width := 760;
   FServerStatusLabel.Height := 72;
   Inc(LTop, 76);
+
+  FStartServerButton := TButton.Create(Self);
+  FStartServerButton.Parent := Self;
+  FStartServerButton.SetBounds(24, LTop, 160, 28);
+  FStartServerButton.Caption := 'Server starten';
+  FStartServerButton.Hint := 'Startet in dieser IDE mit den zuletzt übernommenen Servereinstellungen.';
+  FStartServerButton.ShowHint := True;
+  FStartServerButton.OnClick := StartServerClicked;
+
+  FStopServerButton := TButton.Create(Self);
+  FStopServerButton.Parent := Self;
+  FStopServerButton.SetBounds(196, LTop, 160, 28);
+  FStopServerButton.Caption := 'Server stoppen';
+  FStopServerButton.Hint := 'Stoppt den Server dieser IDE. Danach kann eine andere IDE ihn manuell starten.';
+  FStopServerButton.ShowHint := True;
+  FStopServerButton.OnClick := StopServerClicked;
+  Inc(LTop, 40);
 
   FLoggingCheckBox := TCheckBox.Create(Self);
   FLoggingCheckBox.Parent := Self;
@@ -307,6 +328,20 @@ begin
   Height := LTop;
 end;
 
+procedure TDAIOptionsFrame.StartServerClicked(Sender: TObject);
+begin
+  if not TDAIRuntime.StartServer then
+    TaskMessageDlg('DAI', TDAIRuntime.LastServerError, mtInformation, [mbOK], 0);
+  RefreshServerStatus;
+end;
+
+procedure TDAIOptionsFrame.StopServerClicked(Sender: TObject);
+begin
+  if not TDAIRuntime.StopServer then
+    TaskMessageDlg('DAI', TDAIRuntime.LastServerError, mtWarning, [mbOK], 0);
+  RefreshServerStatus;
+end;
+
 procedure TDAIOptionsFrame.GenerateTokenClicked(Sender: TObject);
 begin
   FTokenEdit.Text := TDAISettings.Instance.GenerateToken;
@@ -397,15 +432,20 @@ procedure TDAIOptionsFrame.RefreshServerStatus;
 var
   LError: string;
 begin
-  if not TDAISettings.Instance.Enabled then
-    FServerStatusLabel.Caption := 'Status: deaktiviert.'
-  else if TDAIRuntime.ServerActive then
+  FStartServerButton.Enabled := not TDAIRuntime.ServerActive;
+  FStopServerButton.Enabled := TDAIRuntime.ServerActive;
+  if TDAIRuntime.ServerActive then
     FServerStatusLabel.Caption := Format('Status: aktiv auf http://%s:%d%s', [CDAIDefaultBindAddress, TDAISettings.Instance.Port, CDAIMcpPath])
   else
   begin
     LError := Trim(TDAIRuntime.LastServerError);
     if LError = '' then
-      FServerStatusLabel.Caption := 'Status: aktiviert, aber nicht gestartet.'
+    begin
+      if TDAISettings.Instance.Enabled then
+        FServerStatusLabel.Caption := 'Status: gestoppt; bereit zum Starten in dieser IDE.'
+      else
+        FServerStatusLabel.Caption := 'Status: gestoppt; automatischer Start deaktiviert.';
+    end
     else
       FServerStatusLabel.Caption := 'Status: nicht aktiv. ' + LError;
   end;

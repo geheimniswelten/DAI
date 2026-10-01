@@ -11,6 +11,8 @@ type
     class procedure Start; static;
     class function ApplySettings: Boolean; static;
     class procedure Stop; static;
+    class function StartServer: Boolean; static;
+    class function StopServer: Boolean; static;
     class function ServerActive: Boolean; static;
     class function LastServerError: string; static;
   end;
@@ -47,6 +49,46 @@ begin
   end;
 end;
 
+class function TDAIRuntime.StartServer: Boolean;
+begin
+  FLastServerError := '';
+  try
+    if not Assigned(FServer) then
+      FServer := TDAIMCPServer.Create;
+    Result := TDAIMCPServer(FServer).Start;
+    FLastServerError := TDAIMCPServer(FServer).LastError;
+  except
+    on E: Exception do
+    begin
+      FLastServerError := 'Der MCP-Server konnte nicht gestartet werden: ' + E.Message;
+      TDAILog.Error(FLastServerError);
+      Result := False;
+    end;
+  end;
+end;
+
+class function TDAIRuntime.StopServer: Boolean;
+begin
+  FLastServerError := '';
+  try
+    if Assigned(FServer) then
+      Result := TDAIMCPServer(FServer).Stop
+    else
+      Result := True;
+    if Assigned(FServer) then
+      FLastServerError := TDAIMCPServer(FServer).LastError;
+    if Result then
+      TDAIPermissionManager.Instance.ClearAllSessions;
+  except
+    on E: Exception do
+    begin
+      FLastServerError := 'Der MCP-Server konnte nicht gestoppt werden: ' + E.Message;
+      TDAILog.Error(FLastServerError);
+      Result := False;
+    end;
+  end;
+end;
+
 class function TDAIRuntime.LastServerError: string;
 begin
   Result := FLastServerError;
@@ -62,7 +104,8 @@ begin
   FLastServerError := '';
   try
     TDAISettings.Instance.Load;
-    ApplySettings;
+    if TDAISettings.Instance.Enabled then
+      StartServer;
   except
     on E: Exception do
     begin

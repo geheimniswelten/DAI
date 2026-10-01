@@ -3,9 +3,16 @@
 interface
 
 const
+  {$IFDEF WIN64}
+  CDAIIDEArchitecture = 'Win64';
+  CDAIKnownPackagesKey = 'Known Packages x64';
+  {$ELSE}
+  CDAIIDEArchitecture = 'Win32';
+  CDAIKnownPackagesKey = 'Known Packages';
+  {$ENDIF}
   CDAIName = 'DAI';
   CDAIDisplayName = 'Delphi AI';
-  CDAIVersion = '1.2.1';
+  CDAIVersion = '1.2.3';
   CDAIDefaultPort = 7331;
   CDAIDefaultBindAddress = '127.0.0.1';
   CDAIMcpPath = '/mcp';

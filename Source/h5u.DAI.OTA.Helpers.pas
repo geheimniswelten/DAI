@@ -27,11 +27,13 @@ type
     class function IsFormLoadedForFile(const AFileName: string): Boolean; static;
     class function ReadEditorText(const ASourceEditor: IOTASourceEditor): string; static;
     class function ReadFormText(const AFileName: string; const AMaximumBytes: Integer; out AText: string): Boolean; static;
-    class function ReplaceEditorText(const ASourceEditor: IOTASourceEditor; const AText: string): Boolean; static;
+    class function ReplaceEditorText(const ASourceEditor: IOTASourceEditor; const AText: string): Boolean; overload; static;
+    class function ReplaceEditorText(const ASourceEditor: IOTASourceEditor; const AText: string; out AActualText: string): Boolean; overload; static;
     class function NormalizeFileName(const AFileName: string): string; static;
     class function SameFile(const ALeft: string; const ARight: string): Boolean; static;
     class function IsPathWithin(const AFileName: string; const ARootDirectory: string): Boolean; static;
     class function IsReadOnlyReferenceFile(const AFileName: string): Boolean; static;
+    class procedure RequireNoReparseWritePath(const APath: string); static;
     class function IsWorkspaceFile(const AFileName: string): Boolean; static;
     class function WorkspaceRoots: TArray<string>; static;
   end;
@@ -43,7 +45,9 @@ uses
   System.IOUtils,
   System.SysUtils,
   Winapi.Windows,
-  h5u.DAI.Settings;
+  h5u.DAI.Settings,
+  h5u.DAI.Text.Encoding,
+  h5u.DAI.Types;
 
 const
   CEditReaderChunkSize = 8192;
@@ -269,6 +273,36 @@ begin
       Exit(True);
 end;
 
+class procedure TDAIOTA.RequireNoReparseWritePath(const APath: string);
+var
+  LAttributes, LError: DWORD;
+  LCurrent, LParent: string;
+begin
+  if Trim(APath) = '' then
+    Exit;
+  LCurrent := NormalizeFileName(APath);
+  while LCurrent <> '' do
+  begin
+    LAttributes := GetFileAttributesW(PWideChar(LCurrent));
+    if LAttributes <> INVALID_FILE_ATTRIBUTES then
+    begin
+      if (LAttributes and FILE_ATTRIBUTE_REPARSE_POINT) <> 0 then
+        raise EDAIAccessDenied.CreateFmt('Schreibzugriffe über Verknüpfungen oder Reparse-Punkte sind nicht zulässig: %s', [LCurrent]);
+    end
+    else
+    begin
+      LError := GetLastError;
+      if (LError <> ERROR_FILE_NOT_FOUND) and (LError <> ERROR_PATH_NOT_FOUND) then
+        raise EDAIAccessDenied.CreateFmt('Der Schreibpfad konnte nicht sicher geprüft werden (Windows-Fehler %d): %s', [LError, LCurrent]);
+    end;
+    // Nonexistent children still require checking every existing ancestor, including a junction above them.
+    LParent := TPath.GetDirectoryName(LCurrent);
+    if SameText(LParent, LCurrent) then
+      Break;
+    LCurrent := LParent;
+  end;
+end;
+
 class function TDAIOTA.IsWorkspaceFile(const AFileName: string): Boolean;
 var
   LProject: IOTAProject;
@@ -306,7 +340,9 @@ class function TDAIOTA.NormalizeFileName(const AFileName: string): string;
 begin
   if Trim(AFileName) = '' then
     Exit('');
-  Result := ExcludeTrailingPathDelimiter(TPath.GetFullPath(AFileName));
+  Result := TPath.GetFullPath(AFileName);
+  if not SameText(Result, TPath.GetPathRoot(Result)) then
+    Result := ExcludeTrailingPathDelimiter(Result);
 end;
 
 class function TDAIOTA.ProjectByNameOrPath(const ANameOrPath: string): IOTAProject;
@@ -576,13 +612,21 @@ end;
 
 class function TDAIOTA.ReplaceEditorText(const ASourceEditor: IOTASourceEditor; const AText: string): Boolean;
 var
+  LActualText: string;
+begin
+  Result := ReplaceEditorText(ASourceEditor, AText, LActualText);
+end;
+
+class function TDAIOTA.ReplaceEditorText(const ASourceEditor: IOTASourceEditor; const AText: string; out AActualText: string): Boolean;
+var
   LCurrentBytes: TBytes;
   LCurrentText: string;
   LNewText: UTF8String;
   LWriter: IOTAEditWriter;
 begin
   Result := False;
-  if not Assigned(ASourceEditor) then
+  AActualText := '';
+  if not Assigned(ASourceEditor) or (Pos(#0, AText) <> 0) then
     Exit;
 
   LCurrentText := ReadEditorText(ASourceEditor);
@@ -597,7 +641,8 @@ begin
   LNewText := UTF8Encode(AText);
   LWriter.Insert(PAnsiChar(LNewText));
   LWriter := nil;
-  Result := ReadEditorText(ASourceEditor) = AText;
+  AActualText := ReadEditorText(ASourceEditor);
+  Result := TDAITextEncoding.EditorWriteMatches(AText, AActualText);
 end;
 
 class procedure TDAIOTA.RunOnMainThread(const AAction: TThreadProcedure);

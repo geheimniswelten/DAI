@@ -14,7 +14,8 @@ type
   TDAIModuleCreator = class sealed
   public
     class function CreateUnit(const AProject: IOTAProject; const AFileName: string; const ASource: string): IOTACreator; static;
-    class function CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string; const AMainForm: Boolean):
+    class function CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string;
+      const AMainForm: Boolean; const AUnnamed: Boolean = False):
       IOTACreator; static;
   end;
 
@@ -22,11 +23,21 @@ type
     IOTAProjectCreator190)
   private
     FFileName: string;
+    FCreatingDefaultModule: Boolean;
     FKind: TDAIProjectKind;
+    FMainFormModule: IOTAModule;
+    FMainFormName: string;
+    FMainUnitFileName: string;
     FOwner: IOTAModule;
     FProjectName: string;
+    FUnnamed: Boolean;
+    procedure ChooseMainFormNames;
   public
-    constructor Create(const AOwner: IOTAProjectGroup; const AFileName: string; const AKind: TDAIProjectKind);
+    constructor Create(const AOwner: IOTAProjectGroup; const AFileName: string; const AKind: TDAIProjectKind; const AUnnamed: Boolean = False);
+
+    property MainFormModule: IOTAModule read FMainFormModule;
+    property MainFormName: string read FMainFormName;
+    property MainUnitFileName: string read FMainUnitFileName;
 
     function GetCreatorType: string;
     function GetExisting: Boolean;
@@ -88,6 +99,7 @@ type
     FOwner: IOTAModule;
     FSource: string;
     FUnitName: string;
+    FUnnamed: Boolean;
     function EffectiveAncestorName(const AAncestorIdent: string): string;
     function EffectiveFormName(const AFormIdent: string): string;
     function FormClassName(const AFormIdent: string): string;
@@ -96,7 +108,8 @@ type
     function BuildFormResource(const AFormIdent: string): string;
   public
     constructor CreateUnit(const AProject: IOTAProject; const AFileName: string; const ASource: string);
-    constructor CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string; const AMainForm: Boolean);
+    constructor CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string;
+      const AMainForm: Boolean; const AUnnamed: Boolean);
 
     function GetCreatorType: string;
     function GetExisting: Boolean;
@@ -162,10 +175,11 @@ end;
 
 { TDAIModuleCreator }
 
-class function TDAIModuleCreator.CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string; const AMainForm: Boolean):
+class function TDAIModuleCreator.CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string;
+  const AMainForm: Boolean; const AUnnamed: Boolean):
   IOTACreator;
 begin
-  Result := TDAIModuleCreatorImpl.CreateForm(AProject, AFileName, AFormName, AAncestorName, AMainForm);
+  Result := TDAIModuleCreatorImpl.CreateForm(AProject, AFileName, AFormName, AAncestorName, AMainForm, AUnnamed);
 end;
 
 class function TDAIModuleCreator.CreateUnit(const AProject: IOTAProject; const AFileName: string; const ASource: string): IOTACreator;
@@ -175,7 +189,8 @@ end;
 
 { TDAIModuleCreatorImpl }
 
-constructor TDAIModuleCreatorImpl.CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string; const AMainForm: Boolean);
+constructor TDAIModuleCreatorImpl.CreateForm(const AProject: IOTAProject; const AFileName: string; const AFormName: string; const AAncestorName: string;
+  const AMainForm: Boolean; const AUnnamed: Boolean);
 begin
   inherited Create;
   FAncestorName := NormalizeIdentifier(AAncestorName, 'TForm');
@@ -185,6 +200,7 @@ begin
   FMainForm := AMainForm;
   FOwner := AProject;
   FUnitName := NormalizeIdentifier(TPath.GetFileNameWithoutExtension(FFileName), 'Unit1');
+  FUnnamed := AUnnamed;
 end;
 
 constructor TDAIModuleCreatorImpl.CreateUnit(const AProject: IOTAProject; const AFileName: string; const ASource: string);
@@ -250,10 +266,8 @@ var
   LFormName: string;
 begin
   LFormName := EffectiveFormName(AFormIdent);
-  if LFormName.StartsWith('T', True) then
-    Result := LFormName
-  else
-    Result := 'T' + LFormName;
+  // FormIdent is the component instance name, including when it starts with T.
+  Result := 'T' + LFormName;
 end;
 
 procedure TDAIModuleCreatorImpl.FormCreated(const FormEditor: IOTAFormEditor);
@@ -326,7 +340,7 @@ end;
 
 function TDAIModuleCreatorImpl.GetUnnamed: Boolean;
 begin
-  Result := False;
+  Result := FUnnamed;
 end;
 
 function TDAIModuleCreatorImpl.NewFormFile(const FormIdent, AncestorIdent: string): IOTAFile;
@@ -339,6 +353,8 @@ end;
 
 function TDAIModuleCreatorImpl.NewImplSource(const ModuleIdent, FormIdent, AncestorIdent: string): IOTAFile;
 begin
+  if Trim(ModuleIdent) <> '' then
+    FUnitName := ModuleIdent;
   if FKind = mckForm then
     Result := TDAIStringFile.Create(BuildFormSource(FormIdent, AncestorIdent))
   else if FSource <> '' then
@@ -354,13 +370,67 @@ end;
 
 { TDAIProjectCreator }
 
-constructor TDAIProjectCreator.Create(const AOwner: IOTAProjectGroup; const AFileName: string; const AKind: TDAIProjectKind);
+constructor TDAIProjectCreator.Create(const AOwner: IOTAProjectGroup; const AFileName: string; const AKind: TDAIProjectKind; const AUnnamed: Boolean);
 begin
   inherited Create;
   FFileName := TPath.GetFullPath(AFileName);
   FKind := AKind;
   FOwner := AOwner;
   FProjectName := NormalizeIdentifier(TPath.GetFileNameWithoutExtension(FFileName), 'Project1');
+  FUnnamed := AUnnamed;
+  if FKind = pkVCL then
+    ChooseMainFormNames;
+end;
+
+procedure TDAIProjectCreator.ChooseMainFormNames;
+var
+  LAvailable: Boolean;
+  LBase: string;
+  LDirectory: string;
+  LFileName: string;
+  LIndex: Integer;
+  LModule: IOTAModule;
+  LModuleServices: IOTAModuleServices;
+  LNumber: Integer;
+  LSuffix: string;
+  LUnitName: string;
+begin
+  LBase := FProjectName + 'Main';
+  LDirectory := TPath.GetDirectoryName(FFileName);
+  Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices);
+  for LNumber := 1 to 10000 do
+  begin
+    if LNumber = 1 then
+      LSuffix := ''
+    else
+      LSuffix := IntToStr(LNumber);
+    LUnitName := LBase + 'Unit' + LSuffix;
+    FMainFormName := LBase + 'Form' + LSuffix;
+    FMainUnitFileName := TPath.Combine(LDirectory, LUnitName + '.pas');
+    LAvailable := True;
+    for LFileName in [FMainUnitFileName, ChangeFileExt(FMainUnitFileName, '.dfm'), ChangeFileExt(FMainUnitFileName, '.fmx')] do
+      if TFile.Exists(LFileName) or TDirectory.Exists(LFileName) then
+      begin
+        LAvailable := False;
+        Break;
+      end;
+    if LAvailable and Assigned(LModuleServices) then
+    begin
+      LAvailable := not Assigned(LModuleServices.FindFormModule(FMainFormName));
+      for LIndex := 0 to LModuleServices.ModuleCount - 1 do
+      begin
+        LModule := LModuleServices.Modules[LIndex];
+        if Assigned(LModule) and SameText(TPath.GetFileNameWithoutExtension(LModule.FileName), LUnitName) then
+        begin
+          LAvailable := False;
+          Break;
+        end;
+      end;
+    end;
+    if LAvailable then
+      Exit;
+  end;
+  raise EInvalidOperation.Create('Es konnte kein freier Name für die neue VCL-Hauptform gefunden werden.');
 end;
 
 function TDAIProjectCreator.GetCreatorType: string;
@@ -431,7 +501,7 @@ end;
 
 function TDAIProjectCreator.GetUnnamed: Boolean;
 begin
-  Result := False;
+  Result := FUnnamed;
 end;
 
 procedure TDAIProjectCreator.NewDefaultModule;
@@ -439,7 +509,38 @@ begin
 end;
 
 procedure TDAIProjectCreator.NewDefaultProjectModule(const Project: IOTAProject);
+var
+  LFormEditor: IOTAFormEditor;
+  LIndex: Integer;
+  LModuleServices: IOTAModuleServices;
+  LRoot: IOTAComponent;
 begin
+  if (FKind <> pkVCL) or FCreatingDefaultModule or Assigned(FMainFormModule) then
+    Exit;
+  if not Assigned(Project) then
+    raise EArgumentException.Create('Für die VCL-Hauptform fehlt das neue Owner-Projekt.');
+  if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
+    raise EInvalidOperation.Create('IOTAModuleServices ist nicht verfügbar.');
+  FCreatingDefaultModule := True;
+  try
+    // MainForm=True lets the IDE insert uses and Application.CreateForm exactly
+    // as it does for its native VCL application wizard. Never re-fetch ActiveProject.
+    FMainFormModule := LModuleServices.CreateModule(
+      TDAIModuleCreator.CreateForm(Project, FMainUnitFileName, FMainFormName, 'TForm', True, FUnnamed));
+    if not Assigned(FMainFormModule) then
+      raise EInvalidOperation.Create('Die VCL-Hauptform konnte nicht als IDE-Modul erstellt werden.');
+    for LIndex := 0 to FMainFormModule.ModuleFileCount - 1 do
+      if Supports(FMainFormModule.ModuleFileEditors[LIndex], IOTAFormEditor, LFormEditor) then
+      begin
+        LRoot := LFormEditor.GetRootComponent;
+        // VCL TComponent.Name is UnicodeString, as required by GetPropValue.
+        if Assigned(LRoot) then
+          LRoot.GetPropValueByName('Name', FMainFormName);
+        Break;
+      end;
+  finally
+    FCreatingDefaultModule := False;
+  end;
 end;
 
 function TDAIProjectCreator.NewOptionSource(const ProjectName: string): IOTAFile;
@@ -453,14 +554,18 @@ end;
 
 function TDAIProjectCreator.NewProjectSource(const ProjectName: string): IOTAFile;
 var
+  LProjectName: string;
   LSource: string;
 begin
+  LProjectName := ProjectName;
+  if Trim(LProjectName) = '' then
+    LProjectName := FProjectName;
   if FKind = pkVCL then
-    LSource := 'program ' + FProjectName + ';' + sLineBreak + sLineBreak + 'uses' + sLineBreak + '  Vcl.Forms;' + sLineBreak + sLineBreak + 'begin' +
+    LSource := 'program ' + LProjectName + ';' + sLineBreak + sLineBreak + 'uses' + sLineBreak + '  Vcl.Forms;' + sLineBreak + sLineBreak + 'begin' +
       sLineBreak + '  Application.Initialize;' + sLineBreak + '  Application.MainFormOnTaskbar := True;' + sLineBreak + '  Application.Run;' + sLineBreak +
       'end.' + sLineBreak
   else
-    LSource := 'program ' + FProjectName + ';' + sLineBreak + sLineBreak + '{$APPTYPE CONSOLE}' + sLineBreak + sLineBreak + 'begin' + sLineBreak + 'end.' +
+    LSource := 'program ' + LProjectName + ';' + sLineBreak + sLineBreak + '{$APPTYPE CONSOLE}' + sLineBreak + sLineBreak + 'begin' + sLineBreak + 'end.' +
       sLineBreak;
   Result := TDAIStringFile.Create(LSource);
 end;

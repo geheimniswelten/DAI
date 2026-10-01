@@ -1,4 +1,4 @@
-﻿# DAI – Delphi AI
+# DAI – Delphi AI
 
 DAI ist ein Design-Time-Package für Delphi 13 / RAD Studio 13 (`BDS 37.0`). Es stellt lokal laufenden KI-Clients einen MCP-Server zur Verfügung und
 vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
@@ -21,7 +21,7 @@ Der Server lauscht ausschließlich auf `127.0.0.1`, standardmäßig unter:
 http://127.0.0.1:7331/mcp
 ```
 
-Der Zugriff ist mit einem Bearer-Token geschützt. Aktivierung, Port, Token, Logging, zusätzliche Referenzverzeichnisse und Berechtigungen werden unter
+Der Zugriff ist mit einem Bearer-Token geschützt. Autostart, Port, Token, Logging, zusätzliche Referenzverzeichnisse und Berechtigungen werden unter
 `Tools → Options → Third Party → DAI` verwaltet. Der Options-Frame zeigt neben dem frei änderbaren Port den Standardwert `7331`.
 
 DAI registriert `Bearer` über Indys `OnParseAuthentication`. Dadurch erreicht der Authorization-Header den MCP-Handler, der den Token prüft und bei einem falschen Wert kontrolliert HTTP 401 zurückgibt.
@@ -33,8 +33,8 @@ werden. Bei einer vorhandenen Codex-Registrierung ist danach `Registrieren` aufz
 Kann der konfigurierte Port nicht gebunden werden, bleibt das Design-Time-Package geladen. DAI wechselt den Port nicht automatisch, weil Codex sonst
 unbemerkt mit einer anderen IDE-Instanz verbunden werden könnte. Über die Windows-TCP-Tabelle werden PID und Prozessname des vorhandenen Listeners ermittelt
 und im IDE-Meldungsfenster sowie auf der DAI-Optionsseite angezeigt. Gehört der Listener zur aktuellen `bds.exe`, kann die TCP-Tabelle nicht zusätzlich
-bestimmen, welches BPL oder IDE-Plugin innerhalb dieses Prozesses den Socket geöffnet hat. Nach Auswahl eines freien Ports kann der Server durch Übernehmen
-der Optionen erneut gestartet werden.
+bestimmen, welches BPL oder IDE-Plugin innerhalb dieses Prozesses den Socket geöffnet hat. Nach Auswahl eines freien Ports die Optionen übernehmen und
+anschließend mit „Server starten“ erneut starten.
 
 DAI unterstützt den klassischen MCP-Initialisierungsablauf und die moderne `server/discover`-Methode. Bei Codex-Anfragen wird `_meta.threadId` ausgewertet.
 Dadurch können Session-Freigaben nach Projekt und Codex-Chat getrennt werden. Fehlt die Chat-ID, verwendet DAI ersatzweise die MCP-Transport-Session.
@@ -45,6 +45,24 @@ DAI entfernt abgelaufene Sitzungen beim nächsten Sessionzugriff oder Initialisi
 HTTP 503 mit `Retry-After: 60`; bestehende Sitzungen bleiben gültig. Authentifiziertes `DELETE /mcp` mit `Mcp-Session-Id` beendet eine klassische Sitzung
 mit HTTP 204. Abgelaufene oder beendete IDs erhalten HTTP 404; der Client muss neu initialisieren. Moderne Anfragen bleiben ohne Transport-Sitzung.
 Die native stdio-Brücke versucht beim Schließen ihrer Eingabe, die klassische HTTP-Sitzung zu beenden.
+
+## Eine aktive IDE und manueller Wechsel
+
+Je Windowsbenutzer darf genau ein DAI-MCP-Server laufen. Die erste IDE, in der der Server erfolgreich startet, übernimmt. Andere IDE-Instanzen bleiben
+geladen und melden, dass DAI bereits in einer anderen IDE aktiv ist. Dies gilt auch zwischen Win32 und Win64, bei anderen Ports und über Delphi-Versionen
+hinweg, sofern die dort geladenen DAI-Packages diese Instanzsperre verwenden. Die Sperre enthält weder Port noch Architektur noch BDS-Versionsnummer.
+
+Die Umsetzung liegt vollständig in Delphi: Ein globales benanntes Windows-Kernelobjekt mit Benutzer-SID wird während der Serverlaufzeit gehalten.
+Ein normaler Stop gibt es nach vollständiger Listenerbereinigung frei; beim Prozessende schließt Windows die Handles. Wartende IDEs übernehmen nicht automatisch.
+
+Zum Wechseln unter `Tools → Options → Third Party → DAI` in der aktiven IDE **Server stoppen**, danach in der gewünschten IDE **Server starten** wählen.
+Die Schaltflächen verändern weder die gespeicherte Autostart-Einstellung noch die Clientregistrierungen und verwenden die zuletzt übernommenen Servereinstellungen.
+**MCP-Server beim IDE-Start automatisch starten** gilt nur beim Start der IDE bzw. beim Laden des Packages. Das Übernehmen der Optionen bewahrt den manuellen
+Laufzustand. Bei einem laufenden Server wird nur eine Portänderung mit einem Neustart des Listeners angewendet; dabei bleibt die Instanzsperre gehalten.
+
+Win32 und Win64 verwenden bei gleichem BDS-Benutzerprofil weiterhin dieselben DAI-Einstellungen für Port und Token. Andere Delphi-Versionen bzw. eigene
+IDE-Profile können andere Einstellungen besitzen. Nach einem Wechsel müssen die Clientregistrierungen zum Port, Token und Bridge-Pfad der neuen aktiven IDE passen.
+`ide_status` zeigt dazu `active`, `ide_architecture`, `ide_process_id`, `ide_executable`, `package_file` und `package_registry_key`.
 
 ## Berechtigungen
 
@@ -106,6 +124,55 @@ wird. Ist kein DFM-Textpuffer verfügbar, wird der Schreibvorgang abgelehnt; bei
 
 `file_read` liefert zusätzlich `encoding` und `line_ending`. `file_write` meldet außerdem die ursprüngliche und die nach dem Schreibvorgang verwendete
 Codierung sowie die ursprüngliche und resultierende Art des Zeilenumbruchs.
+
+## Quelldateien und Referenzen finden
+
+`source_search` sucht wörtlichen Text, etwa `IOTADebuggerServices` oder `TButton`, mit Datei, Zeile, Spalte und Ausschnitt als Ergebnis.
+`scope` wählt `project`, `group`, `references` oder `all` (Standard); `project`, `directory` und `file_patterns` grenzen die Suche ein.
+Aktuelle Editor- und Designerpuffer haben Vorrang vor Dateien auf dem Datenträger. Die Standardmuster sind `*.pas`, `*.inc`, `*.dpr` und `*.dpk`.
+Dateimuster verwenden ausschließlich `*` und `?` auf dem Dateinamen, höchstens 100 Muster mit jeweils 256 Zeichen; Zeichenklassen werden abgelehnt.
+Mit `whole_word` lässt sich ein vollständiger Bezeichner suchen, mit `case_sensitive` die Groß-/Kleinschreibung beachten.
+
+Standardmäßig endet die Suche nach 200 Treffern, 10.000 Dateien oder 5 Sekunden; die Obergrenzen liegen bei 1.000 Treffern, 100.000 Dateien und
+30 Sekunden. Dateien über 2 MiB, binäre Inhalte und Reparse-Verknüpfungen werden übersprungen. `truncated`, `limit_reason`, `files_skipped`
+und `snapshot_files_skipped` zeigen Grenzen und ausgelassene Dateien an. Eine begrenzte Suche bestätigt nicht die Abwesenheit eines Symbols.
+Die Sammlung der IDE-Metadaten wird separat als `preparation_ms` ausgewiesen; deren bestehende OTA-Hauptthreadaufrufe können auf eine beschäftigte IDE warten.
+Trefferausschnitte ersetzen nicht das Lesen der tatsächlichen Deklaration mit `file_read` beziehungsweise `reference_file_read`.
+
+`reference_roots_list` zeigt die tatsächlichen Pfade und ihre Aliase. Sämtliche Referenzverzeichnisse sind ReadOnly, auch wenn sie gleichzeitig
+in einer Projektgruppe oder im Editor geöffnet sind. `file_write` und die Projekt-/Unit-Ersteller lehnen dort Änderungen ab.
+Speichern und Entfernen prüfen außerdem Projekt-, Gruppen- und Begleitdateien, einschließlich `.dproj` und `.dproj.local`.
+IDE-Builds prüfen geänderte Editorpuffer, Projektabhängigkeiten und Ausgabeziele vor dem Start. Schreibpfade über Reparse-Verknüpfungen
+werden auch dann abgelehnt, wenn erst eine neue Datei unterhalb einer Junction entstehen würde.
+
+Diese Regeln kontrollieren die DAI-Datei-/Projektoperationen. Ausdrücklich freigegebene Compilerargumente und benutzerdefinierte Buildskripte
+laufen ohne Dateisystem-Sandbox; ihre eigenen Dateioperationen kann DAI damit nicht vollständig beschränken.
+
+| Alias | Referenzquelle |
+| --- | --- |
+| `%BDS%\source` | Delphi-/VCL-/FMX-Quellen der laufenden IDE |
+| `%BDS%\source\ToolsAPI` | OpenToolsAPI |
+| `%BDS%\Samples` | Öffentlicher Samplesordner der IDE-Version |
+| `%BDSCatalogRepositoryAllUsers%` | GetIt für alle Benutzer |
+| `%BDSCatalogRepository%` | GetIt im Benutzerprofil |
+
+Die GetIt-Aliase verwenden die Umgebungsvariable, soweit vorhanden, sonst den zur IDE-Version passenden Ordner unter `%PUBLIC%` beziehungsweise
+`%USERPROFILE%`. GetIt-Pakete werden dadurch weder eingebunden noch als DAI-Abhängigkeit benötigt.
+
+`project_create` unterstützt `save:false`. Ein VCL-Projekt entsteht dann über die OTA mit Hauptformular und ungespeicherten Projekt-/Unit-/DFM-Puffern.
+DAI legt dabei keine Verzeichnisse an und ruft keine Speicherfunktion auf. Ohne `save` gilt weiterhin `true`; spätere IDE-Builds beachten Delphis eigene
+Option zum automatischen Speichern. Die tatsächliche Projektdatei und Hauptformpfade stehen in der Antwort.
+
+## IDE- und Anwendungsfenster lesen
+
+`ide_windows_list` liest native Fenster der IDE einschließlich MessageBox und TaskDialog sowie verfügbare VCL-Form-/Controlmetadaten.
+`debugger_windows_list` verwendet die Windows-Prozess-ID des aktuellen OTA-Debuggerprozesses und liest dessen native Fenster.
+Die ToolsAPI liefert keinen allgemeinen Katalog der Fenster des Debuggees; dafür verwendet DAI die WinAPI.
+
+Die Werkzeuge lesen ausschließlich: kein Klick, Schließen, keine Steuernachrichten und kein Fortsetzen des Debuggees. Eigene DAI-Berechtigungsdialoge
+und Eingabefeldtexte werden ausgelassen. Grenzen sind 100 Fenster, 500 Controls und 2 Sekunden; `text_status` und `truncated` zeigen fehlende
+Texte oder abgebrochene Abfragen. Ein angehaltener oder nicht antwortender Prozess kann seine Controltexte nicht liefern.
+VCL-Handles werden nur ausgelesen, wenn sie bereits angelegt sind; DAI erzeugt für die Inspektion keine neuen Fensterhandles.
 
 ## Code Insight und Delphi-LSP
 
@@ -308,7 +375,7 @@ Haltepunkte gehören zur IDE-Bearbeitung, Debugger-Steuerung zur Ausführungsber
 PowerShell:
 
 ```powershell
-.\Build.ps1 -Configuration Release -Platform Win32
+.\Build.ps1 -Configuration Release -Platform Both
 ```
 
 Mit explizitem BDS-Verzeichnis:
@@ -325,9 +392,36 @@ Erwartete Ausgaben:
 ```text
 Build\Win32\Release\Bpl\DAI.bpl
 Build\Win32\Release\Bpl\DAI.McpBridge.exe
+Build\Win64\Release\Bpl\DAI.bpl
+Build\Win64\Release\Bpl\DAI.McpBridge.exe
 ```
 
-Das mitgelieferte DPROJ ist entsprechend dem vom Benutzer korrigierten Projektstand zunächst für Win32 aktiviert. Für die 64-Bit-IDE kann Win64 im Projektmanager als Zielplattform ergänzt und anschließend mit `-Platform Win64` gebaut werden.
+Win32 und Win64 sind im DPROJ aktiviert. Mit `-Platform Win32` oder `-Platform Win64` kann auch nur eine Architektur gebaut werden.
+`Build.ps1` prüft nach jedem Build PE-Signatur, Zielarchitektur und DLL-/EXE-Typ der Ausgaben.
+
+## Installation in der 32- und 64-Bit-IDE
+
+Das Design-Time-Package muss zur Architektur der **IDE** passen. Die Zielplattform eines geöffneten Anwendungsprojekts ist dafür nicht maßgeblich.
+
+| IDE | Programm relativ zu `%BDS%` | Package relativ zum DAI-Projekt | Package-Schlüssel unter dem BDS-Benutzerprofil |
+| --- | --- | --- | --- |
+| 32 Bit | `bin\bds.exe` | `Build\Win32\Release\Bpl\DAI.bpl` | `Known Packages` |
+| 64 Bit | `bin64\bds.exe` | `Build\Win64\Release\Bpl\DAI.bpl` | `Known Packages x64` |
+
+Bei der vorliegenden Installation lauten die Schlüssel:
+
+```text
+HKEY_CURRENT_USER\Software\Embarcadero\BDS\37.0\Known Packages
+HKEY_CURRENT_USER\Software\Embarcadero\BDS\37.0\Known Packages x64
+```
+
+In der jeweiligen IDE über `Component → Install Packages → Add` das passende BPL auswählen. Die native Bridge aus demselben Buildverzeichnis neben dem BPL belassen.
+Die Package-Zuordnung erfolgt über die verschiedenen Schlüsselnamen; ein Wechsel der Registry-View allein ersetzt sie nicht. DAI verändert diese Schlüssel nicht selbst.
+Beide vollständigen Package-Builds wurden mit Delphi 13 / BDS 37.0 geprüft. Packages für andere Delphi-Versionen müssen mit deren passender Toolchain gebaut werden;
+deren API-Kompatibilität ist hier nicht verifiziert. Die globale Instanzsperre selbst ist versionsunabhängig.
+
+Referenzen: [64-Bit-IDE](https://docwiki.embarcadero.com/RADStudio/Florence/en/64-bit_IDE),
+[Package-Installation](https://docwiki.embarcadero.com/RADStudio/Florence/en/InstallIDEPackage).
 
 ## Verbindungstest
 
@@ -348,9 +442,17 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.Protocol.ps1 -Platform Win64
 .\Scripts\Test.Sessions.ps1 -Platform Win32
 .\Scripts\Test.Sessions.ps1 -Platform Win64
+.\Scripts\Test.Instance.ps1 -Platform Both
+.\Scripts\Test.SourceSearch.ps1 -Platform Both
+.\Scripts\Test.SearchService.ps1 -Platform Both
+.\Scripts\Test.SourcePaths.ps1 -Platform Both -StrictSeparators
+.\Scripts\Test.EditorWrite.ps1 -Platform Both
+.\Scripts\Test.Windows.ps1 -Platform Both
+.\Scripts\Test.ReadOnlyPolicy.ps1 -Platform Both
 python .\Scripts\test_bridge.py
 ```
 
+Die Instanztests verwenden eigene zufällige Objektnamen und prüfen auch getrennte Win32-/Win64-Prozesse sowie Prozessabbruch.
 Dabei werden keine tatsächlichen Client-Konfigurationen verändert und keine Designer-/Debuggeraktionen in der laufenden IDE ausgelöst.
 
 ## Statische Prüfung

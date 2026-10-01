@@ -32,6 +32,7 @@ uses
   ToolsAPI,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Process,
+  h5u.DAI.Settings,
   h5u.DAI.Types;
 
 type
@@ -96,13 +97,158 @@ begin
   Result := TPath.GetFullPath(Result);
 end;
 
+procedure RequireWritableBuildFile(const AFileName: string);
+var
+  LExtension, LProjectSidecar: string;
+begin
+  TDAIOTA.RequireNoReparseWritePath(AFileName);
+  if TDAIOTA.IsReadOnlyReferenceFile(AFileName) then
+    raise EDAIAccessDenied.CreateFmt('Referenzverzeichnisse sind schreibgeschützt. Dieser IDE-Build darf die Datei nicht ändern: %s', [AFileName]);
+  LExtension := TPath.GetExtension(AFileName);
+  if SameText(LExtension, '.dpr') or SameText(LExtension, '.dpk') then
+    LProjectSidecar := ChangeFileExt(AFileName, '.dproj')
+  else if SameText(LExtension, '.dproj') then
+    LProjectSidecar := AFileName
+  else
+    Exit;
+  TDAIOTA.RequireNoReparseWritePath(LProjectSidecar);
+  TDAIOTA.RequireNoReparseWritePath(LProjectSidecar + '.local');
+end;
+
+procedure RequireWritableBuildProject(const AProject: IOTAProject);
+var
+  LConfiguration: IOTABuildConfiguration;
+  LConfigurations: IOTAProjectOptionsConfigurations;
+  LEditor: IOTAEditor;
+  LIndex: Integer;
+  LCommonDirectory, LOption, LPath, LProjectDirectory, LUserDirectory: string;
+begin
+  if not Assigned(AProject) then
+    Exit;
+  RequireWritableBuildFile(AProject.FileName);
+  for LIndex := 0 to AProject.ModuleFileCount - 1 do
+  begin
+    LEditor := AProject.ModuleFileEditors[LIndex];
+    if Assigned(LEditor) then
+      RequireWritableBuildFile(LEditor.FileName);
+  end;
+  RequireWritableBuildFile(ResolveTargetExecutable(AProject));
+  if not Supports(AProject.ProjectOptions, IOTAProjectOptionsConfigurations, LConfigurations) then
+    Exit;
+  LConfiguration := LConfigurations.ActiveConfiguration;
+  if not Assigned(LConfiguration) then
+    Exit;
+  if Trim(AProject.CurrentPlatform) <> '' then
+    if Assigned(LConfiguration.PlatformConfiguration[AProject.CurrentPlatform]) then
+      LConfiguration := LConfiguration.PlatformConfiguration[AProject.CurrentPlatform];
+  LProjectDirectory := TPath.GetDirectoryName(TDAIOTA.ProjectFileName(AProject));
+  LCommonDirectory := GetEnvironmentVariable('BDSCOMMONDIR');
+  if LCommonDirectory = '' then
+    LCommonDirectory := TPath.GetDirectoryName(TDAISettings.Instance.CatalogRepositoryAllUsersDirectory);
+  LUserDirectory := GetEnvironmentVariable('BDSUSERDIR');
+  if LUserDirectory = '' then
+    LUserDirectory := TPath.GetDirectoryName(TDAISettings.Instance.CatalogRepositoryDirectory);
+  for LOption in ['DCC_ExeOutput', 'DCC_DcuOutput', 'DCC_BplOutput', 'DCC_DcpOutput'] do
+  begin
+    LPath := Trim(LConfiguration.GetValue(LOption));
+    if LPath = '' then
+      Continue;
+    LPath := StringReplace(LPath, '$(PROJECTDIR)', LProjectDirectory, [rfReplaceAll, rfIgnoreCase]);
+    LPath := StringReplace(LPath, '$(MSBuildProjectDirectory)', LProjectDirectory, [rfReplaceAll, rfIgnoreCase]);
+    LPath := StringReplace(LPath, '$(Platform)', AProject.CurrentPlatform, [rfReplaceAll, rfIgnoreCase]);
+    LPath := StringReplace(LPath, '$(Config)', AProject.CurrentConfiguration, [rfReplaceAll, rfIgnoreCase]);
+    LPath := StringReplace(LPath, '$(Configuration)', AProject.CurrentConfiguration, [rfReplaceAll, rfIgnoreCase]);
+    LPath := StringReplace(LPath, '$(MSBuildProjectName)', TPath.GetFileNameWithoutExtension(AProject.FileName), [rfReplaceAll, rfIgnoreCase]);
+    LPath := StringReplace(LPath, '$(BDS)', '%BDS%', [rfReplaceAll, rfIgnoreCase]);
+    LPath := StringReplace(LPath, '$(BDSCOMMONDIR)', LCommonDirectory, [rfReplaceAll, rfIgnoreCase]);
+    LPath := StringReplace(LPath, '$(BDSUSERDIR)', LUserDirectory, [rfReplaceAll, rfIgnoreCase]);
+    // Unresolved custom MSBuild expressions cannot be classified safely as an output directory.
+    if LPath.Contains('$(') or LPath.Contains('@(') then
+      raise EInvalidOperation.CreateFmt('Der IDE-Build-Ausgabepfad für %s enthält nicht auflösbare Makros: %s', [LOption, LPath]);
+    if not TPath.IsPathRooted(LPath) and not LPath.Contains('%') then
+      LPath := TPath.Combine(LProjectDirectory, LPath);
+    LPath := TDAISettings.Instance.ExpandPath(LPath);
+    RequireWritableBuildFile(TPath.Combine(LPath, 'dai-output-policy-check.tmp'));
+  end;
+end;
+
+procedure RequireWritableBuildClosure(const AProject: IOTAProject);
+var
+  LDependencies: IOTAProjectDependenciesList;
+  LDependency: IOTAProject;
+  LGroup: IOTAProjectGroup;
+  LIndex, LProjectIndex: Integer;
+  LProjects: TList<IOTAProject>;
+  LServices: IOTAProjectGroupProjectDependencies;
+begin
+  if not Assigned(AProject) then
+    Exit;
+  LGroup := TDAIOTA.MainProjectGroup;
+  LProjects := TList<IOTAProject>.Create;
+  try
+    LProjects.Add(AProject);
+    Supports(LGroup, IOTAProjectGroupProjectDependencies, LServices);
+    LProjectIndex := 0;
+    while LProjectIndex < LProjects.Count do
+    begin
+      RequireWritableBuildProject(LProjects[LProjectIndex]);
+      if Assigned(LServices) then
+      begin
+        LDependencies := LServices.GetProjectDependencies(LProjects[LProjectIndex]);
+        if Assigned(LDependencies) then
+          for LIndex := 0 to LDependencies.ProjectCount - 1 do
+          begin
+            LDependency := LDependencies.Projects[LIndex];
+            if Assigned(LDependency) and (LProjects.IndexOf(LDependency) < 0) then
+            begin
+              if LProjects.Count >= 1000 then
+                raise EInvalidOperation.Create('Die Projektabhängigkeiten überschreiten das Prüflimit von 1000 Projekten.');
+              LProjects.Add(LDependency);
+            end;
+          end;
+      end;
+      Inc(LProjectIndex);
+    end;
+  finally
+    LProjects.Free;
+  end;
+end;
+
+procedure RequireWritableModifiedEditors;
+var
+  LEditor: IOTAEditor;
+  LEditorIndex, LModuleIndex: Integer;
+  LModule: IOTAModule;
+  LServices: IOTAModuleServices;
+begin
+  // The IDE can save dirty buffers and stream forms while compiling, including editors outside the target project.
+  if not Supports(BorlandIDEServices, IOTAModuleServices, LServices) then
+    Exit;
+  for LModuleIndex := 0 to LServices.ModuleCount - 1 do
+  begin
+    LModule := LServices.Modules[LModuleIndex];
+    if not Assigned(LModule) then
+      Continue;
+    for LEditorIndex := 0 to LModule.ModuleFileCount - 1 do
+    begin
+      LEditor := LModule.ModuleFileEditors[LEditorIndex];
+      if Assigned(LEditor) then
+        if LEditor.Modified then
+          RequireWritableBuildFile(LEditor.FileName);
+    end;
+  end;
+end;
+
 procedure SelectProject(const AProject: IOTAProject);
 var
   LGroup: IOTAProjectGroup;
 begin
   LGroup := TDAIOTA.MainProjectGroup;
   if Assigned(LGroup) then
+  begin
+    RequireWritableBuildFile(LGroup.FileName);
     LGroup.ActiveProject := AProject;
+  end;
 end;
 
 function CompileOneProject(const AProject: IOTAProject; const AFullBuild: Boolean; const AClearMessages: Boolean): Boolean;
@@ -112,6 +258,9 @@ begin
   Result := False;
   if not Assigned(AProject) or not Assigned(AProject.ProjectBuilder) then
     Exit;
+
+  RequireWritableBuildClosure(AProject);
+  RequireWritableModifiedEditors;
 
   if AFullBuild then
     LMode := cmOTABuild
@@ -152,6 +301,8 @@ begin
   TDAIOTA.RunOnMainThread(
     procedure
     begin
+      RequireWritableBuildClosure(LProject);
+      RequireWritableModifiedEditors;
       SelectProject(LProject);
       LSucceeded := CompileOneProject(LProject, AFullBuild, AClearMessages);
     end);
@@ -169,13 +320,25 @@ var
   LItem: TJSONObject;
   LItems: TJSONArray;
   LProject: IOTAProject;
+  LProjects: TArray<IOTAProject>;
   LSucceeded: Boolean;
 begin
+  LProjects := TDAIOTA.Projects;
+  // Reject the whole group before the first project selection or build creates any outputs.
+  TDAIOTA.RunOnMainThread(
+    procedure
+    var
+      LPreflightProject: IOTAProject;
+    begin
+      for LPreflightProject in LProjects do
+        RequireWritableBuildClosure(LPreflightProject);
+      RequireWritableModifiedEditors;
+    end);
   LItems := TJSONArray.Create;
   try
     LAllSucceeded := True;
     LClearMessages := AClearMessages;
-    for LProject in TDAIOTA.Projects do
+    for LProject in LProjects do
     begin
       LSucceeded := False;
       TDAIOTA.RunOnMainThread(
@@ -246,6 +409,9 @@ begin
     TDAIOTA.RunOnMainThread(
       procedure
       begin
+        // The IDE Run action may save modified files and automatically rebuild an out-of-date project.
+        RequireWritableBuildClosure(LProject);
+        RequireWritableModifiedEditors;
         if Supports(BorlandIDEServices, IOTADebuggerServices, LDebugger) and Assigned(LDebugger.CurrentProcess) and
           not (LDebugger.CurrentProcess.ProcessState in [psNothing, psTerminated, psNoProcess]) then
           raise EInvalidOperation.Create('Ein Debuggerprozess ist bereits aktiv. Verwenden Sie debugger_control zum Fortsetzen oder project_stop.');

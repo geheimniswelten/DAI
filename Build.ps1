@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
@@ -11,6 +11,48 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+function Assert-TargetBinary {
+    param([string]$Path, [string]$TargetPlatform, [bool]$IsPackage)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Build-Ausgabe fehlt: $Path"
+    }
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+                                   [System.IO.FileShare]::Read)
+    $reader = [System.IO.BinaryReader]::new($stream)
+    try {
+        if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5A4D) {
+            throw "Kein gültiges Windows-Binary: $Path"
+        }
+        $stream.Position = 0x3C
+        $peOffset = [long]$reader.ReadUInt32()
+        if ($peOffset -lt 64 -or $peOffset + 26 -gt $stream.Length) {
+            throw "Ungültiger PE-Header: $Path"
+        }
+        $stream.Position = $peOffset
+        if ($reader.ReadUInt32() -ne 0x00004550) {
+            throw "Ungültige PE-Signatur: $Path"
+        }
+        $machine = $reader.ReadUInt16()
+        $expectedMachine = if ($TargetPlatform -eq 'Win64') { 0x8664 } else { 0x014C }
+        $stream.Position = $peOffset + 22
+        $characteristics = $reader.ReadUInt16()
+        $magic = $reader.ReadUInt16()
+        $expectedMagic = if ($TargetPlatform -eq 'Win64') { 0x020B } else { 0x010B }
+        if ($machine -ne $expectedMachine -or $magic -ne $expectedMagic) {
+            throw "Build-Ausgabe hat die falsche Architektur für ${TargetPlatform}: $Path"
+        }
+        if (($IsPackage -and ($characteristics -band 0x2000) -eq 0) -or
+            (-not $IsPackage -and ($characteristics -band 0x2000) -ne 0)) {
+            throw "Build-Ausgabe hat den falschen DLL-/EXE-Typ: $Path"
+        }
+    }
+    finally {
+        $reader.Dispose()
+        $stream.Dispose()
+    }
+}
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectFile = Join-Path $projectRoot 'DAI.dproj'
@@ -69,6 +111,10 @@ foreach ($currentPlatform in $platforms) {
     if ($LASTEXITCODE -ne 0) {
         throw "Der Delphi-MCP-Bridge-Build für $currentPlatform ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
     }
+
+    Assert-TargetBinary -Path (Join-Path $bridgeOutput 'DAI.bpl') -TargetPlatform $currentPlatform -IsPackage $true
+    Assert-TargetBinary -Path (Join-Path $bridgeOutput 'DAI.McpBridge.exe') -TargetPlatform $currentPlatform -IsPackage $false
+    Write-Host "Package und Bridge als $currentPlatform geprüft."
 }
 
 Write-Host 'DAI wurde erfolgreich gebaut.'

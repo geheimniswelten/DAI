@@ -1,0 +1,572 @@
+﻿program TestSourceSearch;
+
+{$APPTYPE CONSOLE}
+
+uses
+  System.Generics.Collections,
+  System.Diagnostics,
+  System.IOUtils,
+  System.JSON,
+  System.SysUtils,
+  Winapi.Windows,
+  h5u.DAI.Source.Search;
+
+var
+  CheckCount: Integer;
+  FixtureRoot: string;
+
+procedure Check(ACondition: Boolean; const ADescription: string);
+begin
+  Inc(CheckCount);
+  if not ACondition then
+    raise Exception.Create('FAIL: ' + ADescription);
+end;
+
+function EmptyOptions: TDAISourceSearchOptions;
+begin
+  Result := Default(TDAISourceSearchOptions);
+end;
+
+function Matches(const AResult: TJSONObject): TJSONArray;
+begin
+  Result := AResult.GetValue<TJSONArray>('matches');
+end;
+
+function Hit(const AResult: TJSONObject; AIndex: Integer = 0): TJSONObject;
+begin
+  Result := Matches(AResult).Items[AIndex] as TJSONObject;
+end;
+
+function SnapshotResult(const AContent, AQuery: string; const AOptions: TDAISourceSearchOptions): TJSONObject;
+var
+  LSnapshots: TDictionary<string, TDAISourceSnapshot>;
+  LSnapshot: TDAISourceSnapshot;
+begin
+  LSnapshots := TDictionary<string, TDAISourceSnapshot>.Create;
+  try
+    LSnapshot.Content := AContent;
+    LSnapshot.Source := 'editor_buffer';
+    LSnapshots.Add(TPath.Combine(FixtureRoot, 'Editor.pas'), LSnapshot);
+    Result := TDAISourceSearch.Search(AQuery, nil, nil, nil, LSnapshots, AOptions);
+  finally
+    LSnapshots.Free;
+  end;
+end;
+
+procedure ExpectInvalidQuery(const AQuery: string);
+var
+  LResult: TJSONObject;
+  LRejected: Boolean;
+begin
+  LResult := nil;
+  LRejected := False;
+  try
+    try
+      LResult := TDAISourceSearch.Search(AQuery, nil, nil, nil, nil, EmptyOptions);
+    except
+      on E: EArgumentException do
+        LRejected := True;
+    end;
+  finally
+    LResult.Free;
+  end;
+  Check(LRejected, 'Invalid query rejected');
+end;
+
+procedure ExpectInvalidPatterns(const APatterns: TArray<string>);
+var
+  LRejected: Boolean;
+  LOptions: TDAISourceSearchOptions;
+  LResult: TJSONObject;
+begin
+  LRejected := False;
+  try
+    TDAISourceSearch.MatchesFilePatterns('File.pas', APatterns);
+  except
+    on E: EArgumentException do
+      LRejected := True;
+  end;
+  Check(LRejected, 'Public pattern check rejects unsupported/oversized patterns before any early match');
+  LOptions := EmptyOptions;
+  LOptions.FilePatterns := APatterns;
+  LRejected := False;
+  LResult := nil;
+  try
+    try
+      LResult := TDAISourceSearch.Search('needle', nil, nil, nil, nil, LOptions);
+    except
+      on E: EArgumentException do
+        LRejected := True;
+    end;
+  finally
+    LResult.Free;
+  end;
+  Check(LRejected, 'Search rejects invalid patterns even without any files');
+end;
+
+procedure TestBoundedGlobs;
+var
+  LOptions: TDAISourceSearchOptions;
+  LResult: TJSONObject;
+  LSnapshots: TDictionary<string, TDAISourceSnapshot>;
+  LSnapshot: TDAISourceSnapshot;
+  LPatterns: TArray<string>;
+  LPattern: string;
+  LClock: TStopwatch;
+  I: Integer;
+begin
+  Check(TDAISourceSearch.MatchesFilePatterns('C:\Folder\AbC.PAS', TArray<string>.Create('a?c.pas')), 'Filename-only case-insensitive ? wildcard');
+  Check(TDAISourceSearch.MatchesFilePatterns('abc.pas', TArray<string>.Create('*a*b*c*.pas')), 'Several stars match');
+  Check(TDAISourceSearch.MatchesFilePatterns('abc.pas', TArray<string>.Create('***.pas')), 'Consecutive stars');
+  Check(not TDAISourceSearch.MatchesFilePatterns('abc.pas', TArray<string>.Create('*a*b*c*.inc')), 'Star suffix must match');
+  Check(not TDAISourceSearch.MatchesFilePatterns('abc.pas', TArray<string>.Create('a?c')), 'Pattern matches the whole filename');
+  Check(TDAISourceSearch.MatchesFilePatterns('Grüße.PAS', TArray<string>.Create('GRÜßE.pas')), 'Unicode filename case folding');
+  Check(TDAISourceSearch.MatchesFilePatterns(#$D83D#$DE00 + '.pas', TArray<string>.Create('?.pas')), '? consumes one supplementary Unicode character');
+  Check(TDAISourceSearch.MatchesFilePatterns(#$D801#$DC28 + '.pas', TArray<string>.Create(#$D801#$DC28 + '.PAS')), 'Supplementary filename literal and extension folding');
+  Check(TDAISourceSearch.MatchesFilePatterns(StringOfChar('a', 255), TArray<string>.Create('*' + StringOfChar('a', 255))), '256-character pattern accepted');
+  Check(not TDAISourceSearch.MatchesFilePatterns(StringOfChar('a', 256), nil), 'Filename component bounded to 255 UTF-16 characters');
+  SetLength(LPatterns, 100);
+  for I := 0 to High(LPatterns) do
+    LPatterns[I] := '*.pas';
+  Check(TDAISourceSearch.MatchesFilePatterns('File.pas', LPatterns), '100 patterns accepted');
+  SetLength(LPatterns, 101);
+  LPatterns[100] := '*.pas';
+  ExpectInvalidPatterns(LPatterns);
+  ExpectInvalidPatterns(TArray<string>.Create('*.pas', ''));
+  ExpectInvalidPatterns(TArray<string>.Create('*.pas', StringOfChar('a', 257)));
+  ExpectInvalidPatterns(TArray<string>.Create('*.pas', '[abc].pas'));
+  ExpectInvalidPatterns(TArray<string>.Create('*.pas', 'abc].pas'));
+  ExpectInvalidPatterns(TArray<string>.Create('*.pas', '*' + #0));
+  ExpectInvalidPatterns(TArray<string>.Create('*.pas', '*' + #10));
+  ExpectInvalidPatterns(TArray<string>.Create('*.pas', '*' + #13));
+  ExpectInvalidPatterns(TArray<string>.Create('*.pas', 'Folder\*.pas'));
+  ExpectInvalidPatterns(TArray<string>.Create('*.pas', 'Folder/*.pas'));
+
+  LPattern := '';
+  for I := 1 to 30 do
+    LPattern := LPattern + '*a';
+  LPattern := LPattern + 'b';
+  LClock := TStopwatch.StartNew;
+  Check(not TDAISourceSearch.MatchesFilePatterns(StringOfChar('a', 120) + '.pas', TArray<string>.Create(LPattern)), 'Former exponential-backtracking mask fails normally');
+  Check(LClock.ElapsedMilliseconds < 1000, 'Former ReDoS case completes within bounded time');
+
+  LOptions := EmptyOptions;
+  LOptions.TimeoutMs := 1;
+  SetLength(LOptions.FilePatterns, 100);
+  for I := 0 to High(LOptions.FilePatterns) do
+    LOptions.FilePatterns[I] := '*' + StringOfChar('a', 119) + 'b';
+  LSnapshots := TDictionary<string, TDAISourceSnapshot>.Create;
+  try
+    LSnapshot.Content := 'needle';
+    LSnapshot.Source := 'editor_buffer';
+    for I := 1 to 30 do
+      LSnapshots.Add(TPath.Combine(FixtureRoot, StringOfChar('a', 240) + IntToStr(I) + '.pas'), LSnapshot);
+    LClock := TStopwatch.StartNew;
+    LResult := TDAISourceSearch.Search('needle', nil, nil, nil, LSnapshots, LOptions);
+    try
+      Check(LResult.GetValue<Boolean>('truncated'), 'Budget covers unsuccessful glob matching');
+      Check(LResult.GetValue<string>('limit_reason') = 'timeout', 'Glob timeout reason');
+      Check(LClock.ElapsedMilliseconds < 1000, 'Glob matching stops cooperatively within bounded time');
+    finally
+      LResult.Free;
+    end;
+  finally
+    LSnapshots.Free;
+  end;
+end;
+
+procedure TestLiteralAndCoordinates;
+var
+  LResult: TJSONObject;
+  LOptions: TDAISourceSearchOptions;
+begin
+  LOptions := EmptyOptions;
+  LResult := SnapshotResult('first' + #13#10 + 'α Grüße 漢字 ' + #$D83D#$DE00 + #10 + 'third' + #13 + 'fourth', '漢字', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Unicode literal found');
+    Check(Hit(LResult).GetValue<Integer>('line') = 2, 'CRLF is one line break');
+    Check(Hit(LResult).GetValue<Integer>('column') = 9, 'Unicode column is one-based UTF-16 position');
+    Check(Hit(LResult).GetValue<string>('excerpt') = 'α Grüße 漢字 ' + #$D83D#$DE00, 'Unicode excerpt');
+    Check(Hit(LResult).GetValue<Integer>('excerpt_column') = 1, 'Full excerpt begins at column one');
+    Check(not Hit(LResult).GetValue<Boolean>('excerpt_truncated'), 'Short excerpt complete');
+    Check(Hit(LResult).GetValue<string>('source') = 'editor_buffer', 'Snapshot source retained');
+    Check(not LResult.GetValue<Boolean>('truncated'), 'Complete search not truncated');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('first' + #13#10 + 'second' + #10 + 'third' + #13 + 'fourth', 'fourth', LOptions);
+  try
+    Check(Hit(LResult).GetValue<Integer>('line') = 4, 'Mixed CRLF/LF/CR line counting');
+    Check(Hit(LResult).GetValue<Integer>('column') = 1, 'First character column');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('aaa', 'aa', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Overlapping literal occurrences');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('a.b aXb', 'a.b', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Query is literal rather than a regex');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('  ', ' ', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Whitespace is a valid literal query');
+  finally
+    LResult.Free;
+  end;
+end;
+
+procedure TestCaseAndWholeWord;
+var
+  LResult: TJSONObject;
+  LOptions: TDAISourceSearchOptions;
+begin
+  LOptions := EmptyOptions;
+  LResult := SnapshotResult('Grüße GRÜßE Grüße', 'grüße', LOptions);
+  try
+    Check(Matches(LResult).Count = 3, 'Ordinal Unicode case-insensitive matching');
+  finally
+    LResult.Free;
+  end;
+  LOptions.CaseSensitive := True;
+  LResult := SnapshotResult('TButton tbutton TButton', 'TButton', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Case-sensitive matching');
+  finally
+    LResult.Free;
+  end;
+  LOptions.WholeWord := True;
+  LResult := SnapshotResult('TButton TButtonX _TButton TButton_ αTButton TButton漢 TButton' + #$0301 + ' (TButton)', 'TButton', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Whole word excludes letters, Unicode, underscores and combining marks');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult(#$D801#$DC00 + 'TButton TButton' + #$D801#$DC00 + ' TButton', 'TButton', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Supplementary Unicode letters form whole-word boundaries');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('X' + #$D83D#$DE00 + 'Y', #$D83D#$DE00, EmptyOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Supplementary Unicode literal matches');
+    Check(Hit(LResult).GetValue<Integer>('column') = 2, 'Supplementary query column');
+  finally
+    LResult.Free;
+  end;
+end;
+
+procedure TestExcerptsAndLimits;
+var
+  LResult: TJSONObject;
+  LOptions: TDAISourceSearchOptions;
+begin
+  LResult := SnapshotResult(StringOfChar('x', 500) + 'needle' + StringOfChar('x', 500), 'needle', EmptyOptions);
+  try
+    Check(Hit(LResult).GetValue<Integer>('column') = 501, 'Long-line actual match column');
+    Check(Hit(LResult).GetValue<Integer>('excerpt_column') = 421, 'Excerpt offset disclosed');
+    Check(Length(Hit(LResult).GetValue<string>('excerpt')) <= 240, 'Excerpt bounded');
+    Check(Hit(LResult).GetValue<Boolean>('excerpt_truncated'), 'Excerpt truncation disclosed');
+  finally
+    LResult.Free;
+  end;
+  LOptions := EmptyOptions;
+  LOptions.MaximumResults := 2;
+  LResult := SnapshotResult('needle needle needle', 'needle', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Result limit');
+    Check(LResult.GetValue<Boolean>('truncated'), 'Result limit truncation');
+    Check(LResult.GetValue<string>('limit_reason') = 'maximum_results', 'Result limit reason');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult(StringOfChar('a', 250), 'a', EmptyOptions);
+  try
+    Check(Matches(LResult).Count = 200, 'Default result limit');
+  finally
+    LResult.Free;
+  end;
+  LOptions.MaximumResults := 5000;
+  LResult := SnapshotResult(StringOfChar('a', 1200), 'a', LOptions);
+  try
+    Check(Matches(LResult).Count = 1000, 'Result cap');
+  finally
+    LResult.Free;
+  end;
+  LOptions := EmptyOptions;
+  LOptions.TimeoutMs := 1;
+  LResult := SnapshotResult(StringOfChar('x', 2 * 1024 * 1024), 'absent', LOptions);
+  try
+    Check(LResult.GetValue<Boolean>('truncated'), 'Timeout interrupts a long single line');
+    Check(LResult.GetValue<string>('limit_reason') = 'timeout', 'Timeout reason');
+    Check(LResult.GetValue<Integer>('elapsed_ms') < 1000, 'Timeout checked inside content scan');
+  finally
+    LResult.Free;
+  end;
+end;
+
+procedure WriteFixture(const AFileName, AContent: string; const AEncoding: TEncoding);
+begin
+  ForceDirectories(TPath.GetDirectoryName(AFileName));
+  TFile.WriteAllText(AFileName, AContent, AEncoding);
+end;
+
+procedure TestDiskSnapshotsAndPatterns;
+var
+  LProject: string;
+  LNested: string;
+  LFirst: string;
+  LSecond: string;
+  LResult: TJSONObject;
+  LOptions: TDAISourceSearchOptions;
+  LSnapshots: TDictionary<string, TDAISourceSnapshot>;
+  LSnapshot: TDAISourceSnapshot;
+  LMissing: TArray<string>;
+  I: Integer;
+begin
+  Check(TDAISourceSearch.MatchesFilePatterns('Unit.PAS', nil), 'Default patterns case-insensitive');
+  Check(TDAISourceSearch.MatchesFilePatterns('Package.dpk', nil), 'Default package pattern');
+  Check(TDAISourceSearch.MatchesFilePatterns('Program.dpr', nil), 'Default program pattern');
+  Check(TDAISourceSearch.MatchesFilePatterns('Include.inc', nil), 'Default include pattern');
+  Check(not TDAISourceSearch.MatchesFilePatterns('Notes.txt', nil), 'Default non-source excluded');
+  Check(TDAISourceSearch.MatchesFilePatterns('Notes.txt', TArray<string>.Create('*.txt')), 'Explicit patterns');
+  LProject := TPath.Combine(FixtureRoot, 'Project');
+  LNested := TPath.Combine(LProject, 'Nested');
+  LFirst := TPath.Combine(LNested, 'First.pas');
+  LSecond := TPath.Combine(LProject, 'Second.inc');
+  WriteFixture(LFirst, 'disk stale TButton', TEncoding.UTF8);
+  WriteFixture(LSecond, 'disk IOTADebuggerServices', TEncoding.Unicode);
+  WriteFixture(TPath.Combine(LProject, 'Notes.txt'), 'IOTADebuggerServices', TEncoding.UTF8);
+  LSnapshots := TDictionary<string, TDAISourceSnapshot>.Create;
+  try
+    LSnapshot.Content := 'buffer fresh IOTADebuggerServices';
+    LSnapshot.Source := 'designer_buffer';
+    LSnapshots.Add(UpperCase(LFirst), LSnapshot);
+    LResult := TDAISourceSearch.Search('IOTADebuggerServices', TArray<string>.Create(LProject, LNested),
+      TArray<string>.Create(LFirst, LowerCase(LFirst)), TArray<string>.Create(LNested), LSnapshots, EmptyOptions);
+    try
+      Check(Matches(LResult).Count = 2, 'Explicit/snapshot/root paths deduplicated with buffer priority');
+      Check(Hit(LResult).GetValue<string>('source') = 'designer_buffer', 'Explicit snapshot searched before disk');
+      Check(Hit(LResult).GetValue<string>('root') = LNested, 'Longest matching root');
+      Check(Hit(LResult).GetValue<Boolean>('read_only_reference'), 'Read-only reference classification');
+      Check(Hit(LResult, 1).GetValue<string>('source') = 'disk', 'Disk source classification');
+      Check(not Hit(LResult, 1).GetValue<Boolean>('read_only_reference'), 'Sibling is outside nested reference root');
+      Check(LResult.GetValue<Integer>('files_scanned') = 2, 'Files scanned counts unique source candidates');
+    finally
+      LResult.Free;
+    end;
+    LResult := TDAISourceSearch.Search('TButton', TArray<string>.Create(LProject), nil, nil, LSnapshots, EmptyOptions);
+    try
+      Check(Matches(LResult).Count = 0, 'Disk content hidden by authoritative buffer');
+    finally
+      LResult.Free;
+    end;
+    LSnapshot.Content := #0;
+    LSnapshot.Source := 'unavailable';
+    LSnapshots.AddOrSetValue(UpperCase(LFirst), LSnapshot);
+    LResult := TDAISourceSearch.Search('TButton', nil, TArray<string>.Create(LFirst), nil, LSnapshots, EmptyOptions);
+    try
+      Check(Matches(LResult).Count = 0, 'Unavailable snapshot never falls back to stale disk');
+      Check(LResult.GetValue<Integer>('files_skipped') = 1, 'Unavailable snapshot counted as skipped');
+    finally
+      LResult.Free;
+    end;
+    LSnapshot.Content := StringOfChar('x', 2 * 1024 * 1024 + 1);
+    LSnapshots.AddOrSetValue(UpperCase(LFirst), LSnapshot);
+    LResult := TDAISourceSearch.Search('TButton', nil, TArray<string>.Create(LFirst), nil, LSnapshots, EmptyOptions);
+    try
+      Check(Matches(LResult).Count = 0, 'Oversized snapshot never falls back to stale disk');
+      Check(LResult.GetValue<Integer>('files_skipped') = 1, 'Oversized snapshot counted as skipped');
+    finally
+      LResult.Free;
+    end;
+  finally
+    LSnapshots.Free;
+  end;
+  LResult := TDAISourceSearch.Search('TButton', nil, TArray<string>.Create(LFirst), nil, nil, EmptyOptions);
+  try
+    Check(Hit(LResult).GetValue<string>('root') = LNested, 'Explicit external filename root is its directory');
+  finally
+    LResult.Free;
+  end;
+  LOptions := EmptyOptions;
+  LOptions.MaximumFiles := 1;
+  LResult := TDAISourceSearch.Search('disk', nil, TArray<string>.Create(LFirst, LSecond), nil, nil, LOptions);
+  try
+    Check(LResult.GetValue<Integer>('files_scanned') = 1, 'File limit');
+    Check(LResult.GetValue<string>('limit_reason') = 'maximum_files', 'File limit reason');
+    Check(LResult.GetValue<Boolean>('truncated'), 'File limit truncation');
+  finally
+    LResult.Free;
+  end;
+  SetLength(LMissing, 30);
+  for I := 0 to High(LMissing) do
+    LMissing[I] := TPath.Combine(FixtureRoot, 'Missing' + IntToStr(I) + '.pas');
+  LResult := TDAISourceSearch.Search('absent', nil, LMissing, nil, nil, EmptyOptions);
+  try
+    Check(LResult.GetValue<TJSONArray>('errors').Count = 20, 'Errors bounded');
+    Check(LResult.GetValue<Boolean>('errors_truncated'), 'Error truncation disclosed');
+    Check(LResult.GetValue<Integer>('files_skipped') = 30, 'Failed files counted');
+  finally
+    LResult.Free;
+  end;
+end;
+
+procedure TestBinaryAndEncoding;
+var
+  LBinary: string;
+  LLarge: string;
+  LAnsi: string;
+  LResult: TJSONObject;
+begin
+  LBinary := TPath.Combine(FixtureRoot, 'Binary.pas');
+  LLarge := TPath.Combine(FixtureRoot, 'Large.pas');
+  LAnsi := TPath.Combine(FixtureRoot, 'Ansi.pas');
+  WriteFixture(LBinary, 'needle' + #0 + 'needle', TEncoding.UTF8);
+  WriteFixture(LLarge, 'needle' + StringOfChar('x', 2 * 1024 * 1024), TEncoding.UTF8);
+  WriteFixture(LAnsi, 'Grüße needle', TEncoding.ANSI);
+  LResult := TDAISourceSearch.Search('needle', nil, TArray<string>.Create(LBinary, LLarge, LAnsi), nil, nil, EmptyOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Binary and oversized disk files skipped');
+    Check(LResult.GetValue<Integer>('files_skipped') = 2, 'Binary and size skip count');
+    Check(Hit(LResult).GetValue<string>('excerpt') = 'Grüße needle', 'Existing Delphi ANSI codepage policy retained');
+  finally
+    LResult.Free;
+  end;
+end;
+
+procedure CreateJunction(const ALinkDirectory, ATargetDirectory: string);
+const
+  CSetReparsePoint = $000900A4;
+  CMountPointTag = $A0000003;
+var
+  LHandle: THandle;
+  LSubstitute: string;
+  LPrint: string;
+  LBytes: TBytes;
+  LSubstituteBytes: TBytes;
+  LPrintBytes: TBytes;
+  LReturned: DWORD;
+begin
+  ForceDirectories(ALinkDirectory);
+  LSubstitute := '\??\' + ATargetDirectory;
+  LPrint := ATargetDirectory;
+  LSubstituteBytes := TEncoding.Unicode.GetBytes(LSubstitute);
+  LPrintBytes := TEncoding.Unicode.GetBytes(LPrint);
+  SetLength(LBytes, 16 + Length(LSubstituteBytes) + 2 + Length(LPrintBytes) + 2);
+  PDWORD(@LBytes[0])^ := CMountPointTag;
+  PWord(@LBytes[4])^ := Length(LBytes) - 8;
+  PWord(@LBytes[8])^ := 0;
+  PWord(@LBytes[10])^ := Length(LSubstituteBytes);
+  PWord(@LBytes[12])^ := Length(LSubstituteBytes) + 2;
+  PWord(@LBytes[14])^ := Length(LPrintBytes);
+  Move(LSubstituteBytes[0], LBytes[16], Length(LSubstituteBytes));
+  Move(LPrintBytes[0], LBytes[18 + Length(LSubstituteBytes)], Length(LPrintBytes));
+  LHandle := CreateFile(PChar(ALinkDirectory), GENERIC_WRITE, FILE_SHARE_READ or FILE_SHARE_WRITE or FILE_SHARE_DELETE, nil,
+    OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT or FILE_FLAG_BACKUP_SEMANTICS, 0);
+  if LHandle = INVALID_HANDLE_VALUE then
+    RaiseLastOSError;
+  try
+    if not DeviceIoControl(LHandle, CSetReparsePoint, @LBytes[0], Length(LBytes), nil, 0, LReturned, nil) then
+      RaiseLastOSError;
+  finally
+    CloseHandle(LHandle);
+  end;
+end;
+
+procedure TestReparsePaths;
+var
+  LTarget: string;
+  LLink: string;
+  LLinkedFile: string;
+  LResult: TJSONObject;
+  LSnapshots: TDictionary<string, TDAISourceSnapshot>;
+  LSnapshot: TDAISourceSnapshot;
+begin
+  LTarget := TPath.Combine(FixtureRoot, 'JunctionTarget');
+  LLink := TPath.Combine(FixtureRoot, 'Junction');
+  WriteFixture(TPath.Combine(LTarget, 'Linked.pas'), 'needle on disk', TEncoding.UTF8);
+  CreateJunction(LLink, LTarget);
+  try
+    LLinkedFile := TPath.Combine(LLink, 'Linked.pas');
+    LResult := TDAISourceSearch.Search('needle', TArray<string>.Create(LLink), nil, nil, nil, EmptyOptions);
+    try
+      Check(Matches(LResult).Count = 0, 'Reparse root not traversed');
+      Check(LResult.GetValue<TJSONArray>('errors').Count = 1, 'Reparse root reported');
+    finally
+      LResult.Free;
+    end;
+    LResult := TDAISourceSearch.Search('needle', nil, TArray<string>.Create(LLinkedFile), nil, nil, EmptyOptions);
+    try
+      Check(Matches(LResult).Count = 0, 'Explicit disk file under reparse parent blocked');
+      Check(LResult.GetValue<Integer>('files_skipped') = 1, 'Reparse explicit file counted');
+    finally
+      LResult.Free;
+    end;
+    LSnapshots := TDictionary<string, TDAISourceSnapshot>.Create;
+    try
+      LSnapshot.Content := 'needle in trusted IDE buffer';
+      LSnapshot.Source := 'editor_buffer';
+      LSnapshots.Add(LLinkedFile, LSnapshot);
+      LResult := TDAISourceSearch.Search('needle', nil, TArray<string>.Create(LLinkedFile), nil, LSnapshots, EmptyOptions);
+      try
+        Check(Matches(LResult).Count = 1, 'IDE snapshot allowed without disk traversal through junction');
+        Check(Hit(LResult).GetValue<string>('source') = 'editor_buffer', 'Trusted snapshot source');
+      finally
+        LResult.Free;
+      end;
+    finally
+      LSnapshots.Free;
+    end;
+  finally
+    // Remove the link itself before recursive cleanup, leaving its target intact.
+    if not RemoveDirectory(PChar(LLink)) then
+      RaiseLastOSError;
+  end;
+end;
+
+procedure RunChecks;
+var
+  LGuid: TGUID;
+begin
+  CreateGUID(LGuid);
+  FixtureRoot := TPath.Combine(TPath.GetTempPath, 'DAISourceSearch-' + GUIDToString(LGuid));
+  ForceDirectories(FixtureRoot);
+  try
+    ExpectInvalidQuery('');
+    ExpectInvalidQuery(StringOfChar('x', 257));
+    ExpectInvalidQuery('a' + #0);
+    ExpectInvalidQuery('a' + #10);
+    ExpectInvalidQuery('a' + #13);
+    TestBoundedGlobs;
+    TestLiteralAndCoordinates;
+    TestCaseAndWholeWord;
+    TestExcerptsAndLimits;
+    TestDiskSnapshotsAndPatterns;
+    TestBinaryAndEncoding;
+    TestReparsePaths;
+  finally
+    // The only recursive removal target is the unique fixture directory created above.
+    Check(TPath.GetDirectoryName(FixtureRoot) = ExcludeTrailingPathDelimiter(TPath.GetTempPath), 'Cleanup stays inside temp');
+    TDirectory.Delete(FixtureRoot, True);
+  end;
+end;
+
+begin
+  try
+    RunChecks;
+    Writeln('PASS: ', CheckCount, ' native source-search checks.');
+  except
+    on E: Exception do
+    begin
+      Writeln(E.ClassName, ': ', E.Message);
+      ExitCode := 1;
+    end;
+  end;
+end.

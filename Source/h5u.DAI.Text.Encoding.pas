@@ -54,6 +54,7 @@ type
     class function ApplyLineEnding(const AText: string; const ALineEndingKind: TDAILineEndingKind): string; static;
     class function DetectLineEnding(const AText: string): TDAILineEndingKind; static;
     class function EncodingName(const AEncodingKind: TDAITextEncodingKind): string; static;
+    class function EditorWriteMatches(const ARequestedText, AActualText: string): Boolean; static;
     class function LineEndingName(const ALineEndingKind: TDAILineEndingKind): string; static;
     class function PrepareText(const AFileName, AText: string; const APreferredLineEndingKind: TDAILineEndingKind): string; static;
     class function PrepareWrite(const AFileName: string; const AText: string; out AWrittenText: string; out AFormat: TDAITextFileFormat): TBytes; static;
@@ -73,6 +74,15 @@ end;
 class function TDAITextEncoding.ByteIsContinuation(const AValue: Byte): Boolean;
 begin
   Result := (AValue and $C0) = $80;
+end;
+
+class function TDAITextEncoding.EditorWriteMatches(const ARequestedText, AActualText: string): Boolean;
+begin
+  // OTA inserts a zero-terminated UTF-8 string and can append one final CRLF.
+  // Do not trim: existing final empty lines and every requested character matter.
+  if Pos(#0, ARequestedText) <> 0 then
+    Exit(False);
+  Result := (AActualText = ARequestedText) or (AActualText = ARequestedText + #13#10);
 end;
 
 class function TDAITextEncoding.CanEncodeWithSystemANSI(const AText: string): Boolean;

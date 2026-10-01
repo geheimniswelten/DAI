@@ -25,13 +25,44 @@ uses
   System.SysUtils,
   System.UITypes,
   Vcl.Dialogs,
-  Vcl.Forms;
+  Vcl.Forms,
+  Winapi.Windows,
+  h5u.DAI.Windows.Inspection;
+
+type
+  TPermissionWindowObserver = class
+  private
+    FHandle: HWND;
+  public
+    destructor Destroy; override;
+    procedure DialogCreated(ASender: TObject);
+    procedure DialogDestroyed(ASender: TObject);
+  end;
+
 const
   mrDAINever = 1101;
   mrDAIDeny = 1102;
   mrDAIOnce = 1103;
   mrDAISession = 1104;
   mrDAIAlways = 1105;
+
+destructor TPermissionWindowObserver.Destroy;
+begin
+  TDAIWindowService.UnregisterPermissionWindow(FHandle);
+  inherited;
+end;
+
+procedure TPermissionWindowObserver.DialogCreated(ASender: TObject);
+begin
+  FHandle := TTaskDialog(ASender).Handle;
+  TDAIWindowService.RegisterPermissionWindow(FHandle);
+end;
+
+procedure TPermissionWindowObserver.DialogDestroyed(ASender: TObject);
+begin
+  TDAIWindowService.UnregisterPermissionWindow(FHandle);
+  FHandle := 0;
+end;
 
 procedure AddCommandButton(const ADialog: TTaskDialog; const ACaption: string; const AHint: string; const AModalResult: TModalResult; const ADefault: Boolean = False);
 var
@@ -68,12 +99,17 @@ class function TDAIPermissionDialog.Ask(const ACategory: TDAIPermissionCategory;
   TDAIPermissionPromptResult;
 var
   LDialog: TTaskDialog;
+  LObserver: TPermissionWindowObserver;
 begin
   Result.Level := plDeny;
   Result.ApplyToLowerLevels := False;
 
   LDialog := TTaskDialog.Create(nil);
+  LObserver := nil;
   try
+    LObserver := TPermissionWindowObserver.Create;
+    LDialog.OnDialogCreated := LObserver.DialogCreated;
+    LDialog.OnDialogDestroyed := LObserver.DialogDestroyed;
     LDialog.Caption := 'DAI';
     LDialog.Title := 'Zugriff durch Delphi AI';
     LDialog.Text := BuildDialogText(ACategory, AOperation, AResource, AContext);
@@ -134,7 +170,11 @@ begin
 
     Result.ApplyToLowerLevels := tfVerificationFlagChecked in LDialog.Flags;
   finally
-    LDialog.Free;
+    try
+      LDialog.Free;
+    finally
+      LObserver.Free;
+    end;
   end;
 end;
 

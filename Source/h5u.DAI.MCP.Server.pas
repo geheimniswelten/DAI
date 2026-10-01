@@ -3,24 +3,41 @@
 interface
 
 uses
+  System.Classes,
   System.SysUtils,
+  h5u.DAI.MCP.Instance,
   h5u.DAI.MCP.Sessions,
   IdContext,
   IdCustomHTTPServer,
   IdHTTPServer;
 
 type
+  TDAIHTTPServer = class(TIdHTTPServer)
+  private
+    FShutdownPending: Boolean;
+  protected
+    procedure Startup; override;
+    procedure Shutdown; override;
+  public
+    property ShutdownPending: Boolean read FShutdownPending;
+  end;
+
   TDAIMCPServer = class sealed
   private
-    FHTTPServer: TIdHTTPServer;
+    FHTTPServer: TDAIHTTPServer;
+    FInstanceLease: TDAIMCPInstanceLease;
+    FStateLock: TObject;
     FLastError: string;
     FSessions: TDAIMCPSessions;
     procedure HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
     procedure HandleParseAuthentication(AContext: TIdContext; const AAuthType, AAuthData: string; var VUsername, VPassword: string; var VHandled: Boolean);
     procedure HandleDeleteSession(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
     procedure ResetAfterFailedStart;
+    function StartUnlocked: Boolean;
+    function StopUnlocked(const AReleaseOwnership: Boolean = True): Boolean;
   public
-    constructor Create(AIdleTimeoutMs: UInt64 = CDAIMCPSessionIdleTimeoutMs; AMaximumSessions: Integer = CDAIMCPMaximumSessions; const AClock: TFunc<UInt64> = nil);
+    constructor Create(AIdleTimeoutMs: UInt64 = CDAIMCPSessionIdleTimeoutMs; AMaximumSessions: Integer = CDAIMCPMaximumSessions;
+      const AClock: TFunc<UInt64> = nil; const AInstanceName: string = '');
     destructor Destroy; override;
     function Start: Boolean;
     function Stop: Boolean;
@@ -32,7 +49,6 @@ type
 implementation
 
 uses
-  System.Classes,
   System.JSON,
   System.RegularExpressions,
   IdException,
@@ -42,6 +58,19 @@ uses
   h5u.DAI.MCP.Protocol,
   h5u.DAI.Settings,
   h5u.DAI.WinAPI.TCP;
+
+procedure TDAIHTTPServer.Startup;
+begin
+  FShutdownPending := True;
+  inherited;
+end;
+
+procedure TDAIHTTPServer.Shutdown;
+begin
+  inherited;
+  // Indy clears Active before Shutdown; only successful cleanup releases ownership.
+  FShutdownPending := False;
+end;
 
 function NewSessionId: string;
 var
@@ -151,12 +180,14 @@ begin
     Result := LValue.Value;
 end;
 
-constructor TDAIMCPServer.Create(AIdleTimeoutMs: UInt64; AMaximumSessions: Integer; const AClock: TFunc<UInt64>);
+constructor TDAIMCPServer.Create(AIdleTimeoutMs: UInt64; AMaximumSessions: Integer; const AClock: TFunc<UInt64>; const AInstanceName: string);
 begin
   inherited Create;
   FLastError := '';
+  FStateLock := TObject.Create;
+  FInstanceLease := TDAIMCPInstanceLease.Create(AInstanceName);
   FSessions := TDAIMCPSessions.Create(AIdleTimeoutMs, AMaximumSessions, AClock);
-  FHTTPServer := TIdHTTPServer.Create(nil);
+  FHTTPServer := TDAIHTTPServer.Create(nil);
   FHTTPServer.ServerSoftware := CDAIDisplayName + '/' + CDAIVersion;
   FHTTPServer.OnCommandGet := HandleCommand;
   FHTTPServer.OnCommandOther := HandleCommand;
@@ -167,6 +198,8 @@ destructor TDAIMCPServer.Destroy;
 begin
   Stop;
   FHTTPServer.Free;
+  FInstanceLease.Free;
+  FStateLock.Free;
   FSessions.Free;
   inherited Destroy;
 end;
@@ -234,14 +267,20 @@ end;
 
 function TDAIMCPServer.ApplySettings: Boolean;
 begin
-  if not Stop then
-    Exit(False);
-
-  FLastError := '';
-  if not TDAISettings.Instance.Enabled then
-    Exit(True);
-
-  Result := Start;
+  System.TMonitor.Enter(FStateLock);
+  try
+    // Autostart is evaluated once by Runtime.Start. Preserve manual Start/Stop here.
+    if not Active then
+      Exit(not FHTTPServer.ShutdownPending);
+    if (FHTTPServer.Bindings.Count > 0) and (FHTTPServer.Bindings[0].Port = TDAISettings.Instance.Port) then
+      Exit(True);
+    // Rebinding the owner's endpoint retains the lease throughout the restart.
+    if not StopUnlocked(False) then
+      Exit(False);
+    Result := StartUnlocked;
+  finally
+    System.TMonitor.Exit(FStateLock);
+  end;
 end;
 
 procedure TDAIMCPServer.HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
@@ -458,15 +497,27 @@ begin
       FHTTPServer.Active := False;
   except
   end;
-
+  if Assigned(FHTTPServer) and FHTTPServer.ShutdownPending then
+    Exit;
   try
     if Assigned(FHTTPServer) then
       FHTTPServer.Bindings.Clear;
   except
   end;
+  FInstanceLease.Release;
 end;
 
 function TDAIMCPServer.Start: Boolean;
+begin
+  System.TMonitor.Enter(FStateLock);
+  try
+    Result := StartUnlocked;
+  finally
+    System.TMonitor.Exit(FStateLock);
+  end;
+end;
+
+function TDAIMCPServer.StartUnlocked: Boolean;
 var
   LBinding: TIdSocketHandle;
   LOwnerDescription: string;
@@ -479,6 +530,17 @@ begin
   end;
 
   FLastError := '';
+  if FHTTPServer.ShutdownPending then
+  begin
+    FLastError := 'Der vorherige Server konnte nicht vollständig beendet werden. Diese IDE neu starten.';
+    Exit(False);
+  end;
+  if not FInstanceLease.TryAcquire then
+  begin
+    FLastError := FInstanceLease.LastError;
+    TDAILog.Access(FLastError);
+    Exit(False);
+  end;
   LPort := TDAISettings.Instance.Port;
   try
     FHTTPServer.Bindings.Clear;
@@ -513,12 +575,30 @@ end;
 
 function TDAIMCPServer.Stop: Boolean;
 begin
-  if not Assigned(FHTTPServer) or not FHTTPServer.Active then
-    Exit(True);
+  System.TMonitor.Enter(FStateLock);
+  try
+    Result := StopUnlocked;
+  finally
+    System.TMonitor.Exit(FStateLock);
+  end;
+end;
 
+function TDAIMCPServer.StopUnlocked(const AReleaseOwnership: Boolean): Boolean;
+begin
+  if not Assigned(FHTTPServer) then
+  begin
+    if AReleaseOwnership and Assigned(FInstanceLease) then
+      FInstanceLease.Release;
+    Exit(True);
+  end;
   try
     FHTTPServer.Active := False;
+    if FHTTPServer.ShutdownPending then
+      raise EInvalidOperation.Create('Die vorherige Serverbereinigung ist nicht abgeschlossen. Diese IDE neu starten.');
     FSessions.Clear;
+    if AReleaseOwnership then
+      FInstanceLease.Release;
+    FLastError := '';
     TDAILog.Access('MCP-Server gestoppt.');
     Result := True;
   except

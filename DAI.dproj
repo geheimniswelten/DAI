@@ -8,7 +8,7 @@
         <Config Condition="'$(Config)'==''">Debug</Config>
         <Platform Condition="'$(Platform)'==''">Win32</Platform>
         <ProjectName Condition="'$(ProjectName)'==''">DAI</ProjectName>
-        <TargetedPlatforms>1</TargetedPlatforms>
+        <TargetedPlatforms>3</TargetedPlatforms>
         <AppType>Package</AppType>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
@@ -19,6 +19,11 @@
         <CfgParent>Base</CfgParent>
         <Base>true</Base>
     </PropertyGroup>
+    <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Base)'=='true') or '$(Base_Win64)'!=''">
+        <Base_Win64>true</Base_Win64>
+        <CfgParent>Base</CfgParent>
+        <Base>true</Base>
+    </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Debug' or '$(Cfg_1)'!=''">
         <Cfg_1>true</Cfg_1>
         <CfgParent>Base</CfgParent>
@@ -26,6 +31,12 @@
     </PropertyGroup>
     <PropertyGroup Condition="('$(Platform)'=='Win32' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win32)'!=''">
         <Cfg_1_Win32>true</Cfg_1_Win32>
+        <CfgParent>Cfg_1</CfgParent>
+        <Cfg_1>true</Cfg_1>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win64)'!=''">
+        <Cfg_1_Win64>true</Cfg_1_Win64>
         <CfgParent>Cfg_1</CfgParent>
         <Cfg_1>true</Cfg_1>
         <Base>true</Base>
@@ -51,11 +62,11 @@
         <DCC_DcuOutput>.\Build\$(Platform)\$(Config)\Dcu</DCC_DcuOutput>
         <DCC_DcpOutput>.\Build\$(Platform)\$(Config)\Dcp</DCC_DcpOutput>
     </PropertyGroup>
-    <PropertyGroup Condition="'$(Base_Win32)'!=''">
+    <PropertyGroup Condition="'$(Base_Win32)'!='' or '$(Base_Win64)'!=''">
         <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;Bde;$(DCC_Namespace)</DCC_Namespace>
         <BT_BuildType>Debug</BT_BuildType>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
-        <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=1.2.1.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.2.1.0;Comments=</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=1.2.3.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.2.3.0;Comments=</VerInfo_Keys>
         <VerInfo_Locale>1033</VerInfo_Locale>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1)'!=''">
@@ -68,7 +79,7 @@
         <DCC_IntegerOverflowCheck>true</DCC_IntegerOverflowCheck>
         <DCC_RangeChecking>true</DCC_RangeChecking>
     </PropertyGroup>
-    <PropertyGroup Condition="'$(Cfg_1_Win32)'!=''">
+    <PropertyGroup Condition="'$(Cfg_1_Win32)'!='' or '$(Cfg_1_Win64)'!=''">
         <DCC_RemoteDebug>false</DCC_RemoteDebug>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
@@ -98,6 +109,7 @@
         <DCCReference Include="Source\h5u.DAI.IDE.Notifier.pas"/>
         <DCCReference Include="Source\h5u.DAI.Log.pas"/>
         <DCCReference Include="Source\h5u.DAI.MCP.Protocol.pas"/>
+        <DCCReference Include="Source\h5u.DAI.MCP.Instance.pas"/>
         <DCCReference Include="Source\h5u.DAI.MCP.Server.pas"/>
         <DCCReference Include="Source\h5u.DAI.MCP.Sessions.pas"/>
         <DCCReference Include="Source\h5u.DAI.MCP.Tools.pas"/>
@@ -113,6 +125,9 @@
         <DCCReference Include="Source\h5u.DAI.OTA.Helpers.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Creators.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Projects.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.Search.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Source.Search.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Windows.Inspection.pas"/>
         <DCCReference Include="Source\h5u.DAI.Permissions.Dialog.pas"/>
         <DCCReference Include="Source\h5u.DAI.Permissions.Manager.pas"/>
         <DCCReference Include="Source\h5u.DAI.Permissions.Store.pas"/>
@@ -150,7 +165,7 @@
                 <Platform value="Android">False</Platform>
                 <Platform value="Android64">False</Platform>
                 <Platform value="Win32">True</Platform>
-                <Platform value="Win64">False</Platform>
+                <Platform value="Win64">True</Platform>
                 <Platform value="Win64x">False</Platform>
                 <Platform value="WinARM64EC">False</Platform>
             </Platforms>

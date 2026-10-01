@@ -11,6 +11,7 @@ uses
   System.Net.HttpClient,
   System.Net.URLClient,
   System.SysUtils,
+  IdHTTPServer,
   h5u.DAI.MCP.Server,
   h5u.DAI.MCP.Sessions,
   h5u.DAI.MCP.Tools,
@@ -26,6 +27,8 @@ var
   CheckCount: Integer;
   ClockTick: UInt64;
   SessionId: string;
+  InstanceName: string;
+  InstanceGuid: TGUID;
   Response: IHTTPResponse;
 
 procedure Check(ACondition: Boolean; const ADescription: string);
@@ -215,14 +218,72 @@ begin
   Check(Response.StatusCode = 200, 'idle cleanup leaves modern stateless requests working');
 end;
 
+procedure RunInstanceChecks;
+var
+  Other: TDAIMCPServer;
+  Blocker: TIdHTTPServer;
+  OriginalPort: Integer;
 begin
+  OriginalPort := TDAISettings.Instance.Port;
+  Other := TDAIMCPServer.Create(CDAIMCPSessionIdleTimeoutMs, 3, nil, InstanceName);
+  Blocker := TIdHTTPServer.Create(nil);
+  try
+    TDAISettings.Instance.Port := OriginalPort + 20;
+    Check(not Other.Start and not Other.Active, 'another instance cannot start even on another port');
+    Check(Other.LastError <> '', 'waiting instance explains ownership');
+    Check(Other.Stop, 'stopping waiting instance is harmless');
+    TDAISettings.Instance.Port := OriginalPort;
+    Response := Post('{"jsonrpc":"2.0","id":17,"method":"ping","params":{' + CModernMeta + '}}', '', '2026-07-28', 'ping');
+    Check(Response.StatusCode = 200, 'waiting instance does not stop current owner');
+    Check(Server.Stop, 'owner stops and releases lease');
+    TDAISettings.Instance.Port := OriginalPort + 20;
+    Check(Other.Start, 'manual takeover after owner stops');
+    TDAISettings.Instance.Port := OriginalPort;
+    Check(not Server.Start, 'previous owner cannot start while new owner serves another port');
+    Check(Other.Stop, 'new owner can release ownership');
+    Check(Server.Start, 'previous owner can reacquire');
+    Check(Server.Start, 'repeated start stays idempotent');
+    TDAISettings.Instance.Enabled := False;
+    Check(Server.ApplySettings and Server.Active, 'disabling autostart preserves manually running server');
+    TDAISettings.Instance.Port := OriginalPort + 40;
+    Check(Server.ApplySettings and Server.Active, 'owner rebinds after port change');
+    Response := Post('{"jsonrpc":"2.0","id":18,"method":"ping","params":{' + CModernMeta + '}}', '', '2026-07-28', 'ping');
+    Check(Response.StatusCode = 200, 'rebound endpoint responds');
+    TDAISettings.Instance.Port := OriginalPort + 20;
+    Check(not Other.Start, 'reconfigure retains ownership');
+    TDAISettings.Instance.Port := OriginalPort;
+    Check(Server.ApplySettings and Server.Active, 'owner rebinds to original port');
+
+    Check(Server.Stop, 'stop before failed-bind test');
+    TDAISettings.Instance.Enabled := True;
+    Check(Server.ApplySettings and not Server.Active, 'apply with autostart enabled preserves manual stop');
+    Blocker.Bindings.Add.IP := '127.0.0.1';
+    Blocker.Bindings[0].Port := OriginalPort;
+    Blocker.Active := True;
+    Check(not Server.Start, 'occupied port rejects startup');
+    TDAISettings.Instance.Port := OriginalPort + 20;
+    Check(Other.Start, 'failed bind releases ownership after cleanup');
+    Check(Other.Stop, 'stop takeover after failed bind');
+    Blocker.Active := False;
+    TDAISettings.Instance.Port := OriginalPort;
+    Check(Server.Start, 'successful restart after bind failure');
+  finally
+    Other.Free;
+    Blocker.Free;
+    TDAISettings.Instance.Port := OriginalPort;
+  end;
+end;
+
+begin
+  CreateGUID(InstanceGuid);
+  InstanceName := 'Local\DAI.ProtocolTests.' + GUIDToString(InstanceGuid);
   Client := THTTPClient.Create;
   ClockTick := 0;
   Server := TDAIMCPServer.Create(CDAIMCPSessionIdleTimeoutMs, 3,
     function: UInt64
     begin
       Result := ClockTick;
-    end);
+    end, InstanceName);
   try
     try
       TDAISettings.Instance.Port := 18751;
@@ -233,6 +294,7 @@ begin
           raise Exception.Create(Server.LastError);
       end;
       RunChecks;
+      RunInstanceChecks;
       Writeln('PASS: ', CheckCount, ' isolated native MCP HTTP checks');
     except
       on E: Exception do

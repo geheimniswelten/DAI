@@ -29,6 +29,7 @@ type
     function ExpandPath(const APath: string): string;
     function LocalizedProjectsDirectoryHint: string;
     function DelphiSourceDirectory: string;
+    function ToolsAPIDirectory: string;
     function CatalogRepositoryDirectory: string;
     function CatalogRepositoryAllUsersDirectory: string;
     function SamplesDirectory: string;
@@ -46,6 +47,7 @@ implementation
 uses
   System.IOUtils,
   System.Math,
+  System.StrUtils,
   System.SysUtils,
   System.Win.Registry,
   Winapi.Windows,
@@ -114,15 +116,31 @@ end;
 
 function TDAISettings.ExpandPath(const APath: string): string;
 var
+  LCatalog: string;
+  LCatalogAllUsers: string;
+  LSamples: string;
   LValue: string;
 begin
   LValue := Trim(APath);
   if LValue = '' then
     Exit('');
 
+  LValue := StringReplace(LValue, '/', '\', [rfReplaceAll]);
+  LSamples := '%PUBLIC%\Documents\Embarcadero\Studio\' + StudioVersion + '\Samples';
+  if SameText(LValue, '%BDS%\Samples') or StartsText('%BDS%\Samples\', LValue) then
+    LValue := LSamples + Copy(LValue, Length('%BDS%\Samples') + 1, MaxInt);
+  LCatalog := GetEnvironmentVariable('BDSCatalogRepository');
+  if LCatalog = '' then
+    LCatalog := '%USERPROFILE%\Documents\Embarcadero\Studio\' + StudioVersion + '\CatalogRepository';
+  LCatalogAllUsers := GetEnvironmentVariable('BDSCatalogRepositoryAllUsers');
+  if LCatalogAllUsers = '' then
+    LCatalogAllUsers := '%PUBLIC%\Documents\Embarcadero\Studio\' + StudioVersion + '\CatalogRepository';
+  LValue := StringReplace(LValue, '%BDSCatalogRepositoryAllUsers%', LCatalogAllUsers, [rfReplaceAll, rfIgnoreCase]);
+  LValue := StringReplace(LValue, '%BDSCatalogRepository%', LCatalog, [rfReplaceAll, rfIgnoreCase]);
   LValue := StringReplace(LValue, '%BDS%', ReadRootDirectory, [rfReplaceAll, rfIgnoreCase]);
   Result := TPath.GetFullPath(ExpandEnvironmentStringsToString(LValue));
-  Result := ExcludeTrailingPathDelimiter(Result);
+  if not SameText(Result, TPath.GetPathRoot(Result)) then
+    Result := ExcludeTrailingPathDelimiter(Result);
 end;
 
 function TDAISettings.GenerateToken: string;
@@ -217,6 +235,7 @@ var
 begin
   LItems := [
     DelphiSourceDirectory,
+    ToolsAPIDirectory,
     CatalogRepositoryDirectory,
     CatalogRepositoryAllUsersDirectory,
     SamplesDirectory
@@ -241,6 +260,11 @@ end;
 function TDAISettings.SamplesDirectory: string;
 begin
   Result := ExpandPath('%PUBLIC%\Documents\Embarcadero\Studio\' + StudioVersion + '\Samples');
+end;
+
+function TDAISettings.ToolsAPIDirectory: string;
+begin
+  Result := TPath.Combine(DelphiSourceDirectory, 'ToolsAPI');
 end;
 
 
