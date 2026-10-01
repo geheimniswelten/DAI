@@ -372,7 +372,7 @@ begin
     - Projekte verwalten: `project_create`, `project_open`, `project_save`, `project_remove`, `unit_create`, `form_unit_create`, `project_file_remove`.
     - `project_create` verwendet standardmäßig `save: true`; `save: false` erzeugt ein ungespeichertes IDE-Projekt, bei VCL einschließlich Hauptformular.
     - Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.
-    - Neue `.pas`-Dateien werden als UTF-8 mit BOM angelegt; vorhandene Codierung und Zeilenenden werden nach Möglichkeit erhalten.
+    - `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.
 
     ## Units, Typen und Funktionen finden
 
@@ -395,6 +395,9 @@ begin
 
     - `form_designer_inspect` liest den Designer; `form_show_designer` öffnet/zeigt ihn, `form_show_as_text` öffnet den DFM-Textmodus.
     - DFM mit `file_read` lesen und `file_write` bearbeiten; Delphi entscheidet beim Speichern über die Codierung. Designerobjekte nicht frei erfinden.
+    - Formulartext kann Unicode-Stringzeichen als `#nnn` normalisieren; den zurückgegebenen Hash und anschließend den Designerwert prüfen.
+    - Für den DFM-Textmodus muss die zugehörige PAS-Unit gespeichert und unverändert sein; sonst verhindert DAI den Wechsel zum Schutz des Puffers.
+    - Bei gewünschtem Speichern `project_save` nutzen; `save: false` speichert nie stillschweigend die PAS-Unit. Danach den Designer anzeigen und prüfen.
     - `code_definition` verwendet `line` ab 1 und `character` ab 0; `code_hover` verwendet `line` und `column` jeweils ab 1.
     - `code_insight_status` und `file_diagnostics` zeigen die verfügbaren IDE-Dienste und ihre Ergebnisse; nicht jeder Provider bietet alles an.
     - Nach Änderungen `file_diagnostics` für die geladene Datei lesen; Error Insight meldet Fehler, Warnungen und Hinweise zum IDE-Zustand.
@@ -404,6 +407,10 @@ begin
     - `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; `debugger_windows_list` liest Fenster des Debuggerprozesses.
     - Beide Fensterwerkzeuge sind ReadOnly. DAI-Berechtigungsdialoge und Texte aus Eingabefeldern werden ausgelassen; keine Fensteraktionen ableiten.
     - Bei angehaltenem Debuggee können Controltexte fehlen; beachte `text_status`, Zeitlimit und `truncated`, ohne die Anwendung dafür fortzusetzen.
+    - `ide_dialog_inspect` liest den aktiven sichtbaren modalen VCL-Dialog und liefert `snapshot_token` sowie die tatsächlichen Buttonnamen.
+    - `ide_dialog_click` nutzt `snapshot_token` und `button_name`; `ide_dialog_close` setzt mit demselben Token das gewünschte `modal_result` an der Form.
+    - Dialogaktionen brauchen IDE-Bearbeitungs- und Ausführungsrechte. Tokens verfallen nach 30 Sekunden; bei geändertem Dialog erneut auslesen.
+    - DAI-Zugriffsfreigaben und WinAPI-Dialoge lassen sich damit nicht bedienen. Buttonnamen und Ergebniswerte aus dem aktuellen Dialog übernehmen.
 
     ## Builds und Zugriffsgrenzen
 

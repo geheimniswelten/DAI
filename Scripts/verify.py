@@ -14,6 +14,9 @@ MAX_LINE_LENGTH = 180
 REQUIRED_TOOLS = {
     "source_search",
     "ide_windows_list",
+    "ide_dialog_inspect",
+    "ide_dialog_click",
+    "ide_dialog_close",
     "debugger_windows_list",
     "form_designer_inspect",
     "form_show_designer",
@@ -628,9 +631,14 @@ def check_code_insight_integration(errors: list[str]) -> None:
         "DCC_UnitSearchPath",
         "TDAIOTA.RunOnMainThread",
         "TMonitor.Enter(GOperationLock)",
-        "function MarkRequestCancelled",
-        "if GState.Completed then",
-        "if not MarkRequestCancelled(ARequestId) then",
+        "TDAICodeInsightCallbacks = class(TInterfacedObject)",
+        "FStateLock: TCriticalSection",
+        "if FState.Completed then",
+        "if not ACallbacks.MarkCancelled then",
+        "CMaximumPendingCallbacks = 256",
+        "FPendingCallbacks.Count >= CMaximumPendingCallbacks",
+        "RetainCallback(LCallbacks)",
+        "ReleaseCallback(Self)",
     )
     for symbol in required:
         if symbol not in content:
@@ -697,7 +705,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.6"
+    expected = "1.2.7"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")

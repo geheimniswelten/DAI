@@ -30,6 +30,7 @@ type
     class function ProjectConfiguration(const AProject: IOTAProject): string; static;
     class function ProjectPlatform(const AProject: IOTAProject): string; static;
     class function FindSourceEditor(const AFileName: string): IOTASourceEditor; static;
+    class function EnsureFormTextEditor(const AFileName: string): IOTASourceEditor; static;
     class function IsFileOpenInEditor(const AFileName: string): Boolean; static;
     class function IsFormLoadedForFile(const AFileName: string): Boolean; static;
     class function ReadFormText(const AFileName: string; AMaximumBytes: Integer; out AText: string): Boolean; static;
@@ -149,6 +150,11 @@ end;
 class function TDAIOTA.FindSourceEditor(const AFileName: string): IOTASourceEditor;
 begin
   Result := SourceEditor;
+end;
+
+class function TDAIOTA.EnsureFormTextEditor(const AFileName: string): IOTASourceEditor;
+begin
+  Result := FindSourceEditor(AFileName);
 end;
 
 class function TDAIOTA.IsFileOpenInEditor(const AFileName: string): Boolean;

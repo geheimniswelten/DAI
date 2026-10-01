@@ -1,5 +1,24 @@
 # Änderungsprotokoll
 
+## 1.2.7
+
+- Package-Abschluss sperrt neue LSP-Anfragen; eigene Callbackbroker und gehaltenes Callbackmodul schützen noch ausstehende Rückrufe. Package-Austausch nach Code Insight erfordert IDE-Neustart.
+- Eigene Logcallbacks werden beim Abschluss gezielt entfernt; reentranter Runtime-Stop und fehlgeschlagener Server-Drain geben den Server nicht voreilig frei.
+- Unicode in DFM-/FMX-Stringliteralen wird vor dem Designer-Rückwechsel nativ normalisiert; der PAS-Schutz vergleicht echte Inhalte statt des gemeinsamen Modified-Flags.
+
+- Code Insight verwendet eigene Callback-Empfänger pro Anfrage; wiederverwendete IDs, Providerwechsel und verspätete Antworten verfälschen keine spätere Anfrage.
+- Höchstens 256 noch nicht abgeschlossene Callback-Empfänger; weitere Anfragen werden vor dem Provideraufruf mit einer Erklärung abgewiesen.
+- Ein reiner Help-Insight-Marker „HTML“ gilt als nicht verfügbar; tatsächlicher HTML-Inhalt bleibt erhalten.
+- DFM-/FMX-Textmodus verwendet den nativen OTA-Wechsel und bestätigt Erfolg erst bei vorhandenem Quelltexteditor; auch ungespeicherte Formularnamen werden aufgelöst.
+- Formulartext-Schreiben verwendet denselben nativen Pfad; save=false erhält den Editorpuffer ohne Datenträger-Fallback.
+- Native Formularwechsel werden außerhalb des IDE-Hauptthreads begrenzt abgewartet; parallele Anfragen teilen eine Umschaltung.
+- Noch nicht gespeicherte oder geänderte PAS-Units blockieren den ersetzenden Textmoduswechsel vorab; Rückwechsel zum Designer unterstützt.
+- Aktive modale VCL-Dialoge auslesen, Buttons gezielt klicken oder Form.ModalResult setzen; kurzlebige Einmal-Tokens prüfen Identität, Titel und Dialogtext.
+- DAI-Freigaben, native WinAPI-Dialoge und Eingabefeldtexte bleiben ausgeschlossen; Aktionen verlangen IDE-Bearbeitungs- und Ausführungsrechte.
+- IDE-Builds verwenden den dokumentierten Wait=False-Parameter und warten bei Erfolg nicht auf OK; tatsächliches Ergebnis bleibt synchron.
+- Nicht lesbare String-Eigenschaften im Designer melden value_available=false, anstatt einen leeren Wert vorzutäuschen.
+- Native Code-Insight-Regressionen für Win32/Win64 sowie Live-IDE-Tests für Quellen, Editor, Projektverwaltung, Haltepunkte, Exception und Debuggersteuerung ergänzt.
+
 ## 1.2.6
 
 - „Server starten“ verwendet unmittelbar die Port-/Token-Eingaben der geöffneten Optionsseite; dauerhaftes Speichern bleibt separat.

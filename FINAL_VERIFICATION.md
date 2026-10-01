@@ -1,3 +1,33 @@
+# DAI 1.2.7 – Skill- und IDE-Prüfung vom 1./2. Oktober 2026
+
+Der installierte Skill entspricht dem nativen Delphi-Generator und den 55 Werkzeugschemas. YAML, 44 genannte Werkzeuge, 11 Argumentverträge und zwei Beispiele geprüft. Alte Kai-Skills wie beauftragt entfernt. Letzte native Skillmigration mit Sicherung: 14 Konfigurations-/Ownership-Pfade unverändert, davon neun vorhandene Dateien. Keine Zugangsdaten ausgegeben.
+
+## Ergebnis und Korrekturen
+
+Live in Win32 geprüft: Referenzsuche/Interfaceansicht, offene Editorpuffer, hashgeschützte Änderungen, OTA-VCL-Projektanlage, Projekt-/Unit-/Dateiverwaltung, Designer, Builds und Debugger mit bedingtem Haltepunkt, Einzelschritten und Timer-Exception. Eigene Testanwendung beendet, Haltepunkte entfernt, Quellen wiederhergestellt und gespeichert.
+
+Der finale Unicode-DFM-Rundlauf funktioniert: `save=false`, Designerwert „DAI Designer - Grüße“, erneuter Textwechsel bei geänderter DFM, PAS-Datenträgerbytes unverändert. Native Formularwechsel werden asynchron begrenzt abgewartet; echte ungespeicherte PAS-Änderungen werden vorab geschützt. Der Guard vergleicht vollständigen Quelltext mit der dekodierten Datei, statt das gemeinsame Modified-Flag auszuwerten. Unicode-Formularstrings werden als `#nnn` normalisiert; Antwortsha256 beschreibt den tatsächlichen Puffer.
+
+Code Insight findet `TForm` tatsächlich in `Vcl.Forms.pas` (Zeile 1252). Der HTML-Marker liefert einen ehrlichen unavailable-Befund. Jede Anfrage besitzt einen eigenen Empfänger und Callbackbroker; dauerhaftes Shutdown sperrt neue Anfragen. Verspätete Rückrufe benötigen keine finalisierten globalen Sperren. Callbackcode bleibt gemappt: nach Code Insight erfordert Package-Austausch einen IDE-Neustart, MCP-Stop/Start bleibt möglich. Hover löst Editor/View/QueryContext sofort auf dem Hauptthread. Eigene Logcallbacks werden gezielt entfernt; reentranter oder fehlgeschlagener Runtime-Drain gibt den Server nicht voreilig frei.
+
+Die drei neuen VCL-Dialogwerkzeuge wurden praktisch geprüft: echter fehlgeschlagener Build per OK bestätigt und `succeeded=false` erhalten; nach Wiederherstellung Build erfolgreich. Debugger-Exception per BreakButton/Anhalten unterbrochen, fortgesetzt und beendet. InputQuery über Form.ModalResult=2 geschlossen; 0 wird abgewiesen. Tokens prüfen unveränderte Identität/Titel/Text/Buttonzustand und verfallen nach 30 Sekunden. DAI-Freigaben/WinAPI-Dialoge und Inputtexte sind ausgeschlossen.
+
+## Verifikation
+
+- Win32/Win64 jeweils 2.838 native Prüfungen, insgesamt 5.676 bestanden. CodeInsight umfasst je 794 reguläre und 25 echte isolierte BPL-Prüfungen für `UnloadPackage → Latecallback → InitializePackage`; unabhängige Lebensdauerprüfung ohne konkreten Befund.
+- Release und Debug: Packages/Brücken für Win32/Win64 gebaut und PE-/DLL-/EXE-Typ geprüft. Release-Brücken HTTP-Mocktests; finale Debug-Win32-Brücke tatsächlich mit der IDE verbunden und 55 Werkzeuge gelesen.
+- Statische Prüfung: 38 Pascal-Units, 55 Werkzeuge, Version 1.2.7, Quellformat und Diff sauber. Manifest aktualisiert. Bekannte W1002/H2077 enthalten keine Buildfehler; keine GetIt-Abhängigkeit.
+
+## IDE-Abschluss und Grenzen
+
+Der gemeldete Stack zeigt `TLSPPascalManager.GetAllOtherSearchPaths` während Projektabbau über `ModuleRemoved`/`BeforeDestruction`/`WindowCloseQuery`; DAI-Frames fehlen. Für die anschließende Null-AV liegt kein weiterer Stack vor. Ein zuvor verlorener unsaved PAS-Puffer verursachte F1026 und kann interne Projekt-/LSP-Assoziationen beschädigt haben; die konkrete Absturzursache ist nicht bewiesen.
+
+Zwei anschließend frisch gestartete IDE-Sitzungen schlossen laut Nutzer ohne Exception, zuletzt mit allen Abschlusskorrekturen. Das ist ein erfolgreicher Wiederholungstest, kein allgemeiner Beweis zur ursprünglichen LSP-Ursache. Delphi ist nach der abschließenden Prüfung geschlossen. Eine frühe Shutdown-Zulassung für alle OTA-Modulreferenzen bleibt ein gesonderter Auditbefund; kein gleichzeitiger eigener Request ist für den ursprünglichen Abschluss belegt.
+
+Win64-IDE und alle realen Clientregistrierungen wurden nicht live verändert; native Fixtures und Package-Proben bestehen. WinAPI-MessageBox-Aktionen wurden nicht automatisiert. ReadOnlyPolicy liest HKCU ohne Änderungen. Persönliche unversionierte Dateien und Referenzquellen bleiben erhalten.
+
+Der ausführliche Nachweis liegt im Codex-Arbeitsverzeichnis als `DAI-Skilltest-2026-10-01.txt`; Stack/Analyse, Live-JSON und finale Buildlogs liegen unter `work/skill-validation`. Ältere Prüfberichte folgen unverändert.
+
 # DAI 1.2.6 – Prüfbericht vom 1. Oktober 2026
 
 ## Starten mit den aktuellen Optionsfeldern

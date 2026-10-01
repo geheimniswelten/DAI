@@ -11,6 +11,14 @@ uses
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Text.Encoding;
 
+type
+  TDAIFormTextFixture = class(TComponent)
+  private
+    FCaption: string;
+  published
+    property Caption: string read FCaption write FCaption;
+  end;
+
 var
   CheckCount: Integer;
 
@@ -166,6 +174,103 @@ begin
   end;
 end;
 
+function ParseNativeFormCaption(const AText: string): string;
+var
+  Input: TStringStream;
+  Binary: TMemoryStream;
+  Component: TDAIFormTextFixture;
+begin
+  // The native DFM parser uses ANSI without a BOM. These are the same UTF-8
+  // bytes that the OTA writer transfers to the IDE, not a simulated parser.
+  Input := TStringStream.Create(AText, TEncoding.UTF8);
+  Binary := TMemoryStream.Create;
+  Component := nil;
+  try
+    ObjectTextToBinary(Input, Binary);
+    Binary.Position := 0;
+    Component := TDAIFormTextFixture(Binary.ReadComponent(nil));
+    Result := Component.Caption;
+  finally
+    Component.Free;
+    Binary.Free;
+    Input.Free;
+  end;
+end;
+
+procedure CheckFormUnicode(const AExtension: string);
+const
+  CCaption = 'DAI Designer - Grüße 漢字 Ελληνικά Кириллица ' + #$D83D#$DE00;
+var
+  Content: string;
+  Original: string;
+  ResultJson: TJSONObject;
+  ReadJson: TJSONObject;
+  UsedEditor: Boolean;
+  Denied: Boolean;
+  ActualCaption: string;
+begin
+  Original := 'object Fixture: TDAIFormTextFixture' + #13#10 + '  Caption = ''original''' + #13#10 + 'end' + #13#10;
+  Content := StringReplace(Original, 'original', CCaption, []);
+  Check(ParseNativeFormCaption(Content) <> CCaption, 'raw UTF-8 form reproduces native ANSI interpretation');
+  TDAIOTA.Reset(Original);
+  ResultJson := TDAIFileService.WriteFile('IsolatedBuffer.' + AExtension, Content, THashSHA2.GetHashString(Original), False, UsedEditor);
+  try
+    Check(UsedEditor, 'Unicode form uses the IDE text buffer');
+    Check(not ResultJson.GetValue<Boolean>('saved') and (TDAIOTA.SaveCount = 0), 'Unicode form save=false never saves');
+    Check(ParseNativeFormCaption(TDAIOTA.Buffer) = CCaption, 'native form conversion preserves all Unicode characters');
+    Check(Pos('#252', TDAIOTA.Buffer) > 0, 'native serializer emits Unicode character escapes');
+    Check(ResultJson.GetValue<string>('sha256') = THashSHA2.GetHashString(TDAIOTA.Buffer), 'Unicode form returns actual normalized buffer hash');
+    ReadJson := TDAIFileService.ReadFile('IsolatedBuffer.' + AExtension, 0, False);
+    try
+      Check(ReadJson.GetValue<string>('content') = TDAIOTA.Buffer, 'Unicode form readback includes actual canonical text');
+      Check(ReadJson.GetValue<string>('sha256') = ResultJson.GetValue<string>('sha256'), 'Unicode form read/write hashes agree');
+    finally
+      ReadJson.Free;
+    end;
+  finally
+    ResultJson.Free;
+  end;
+  Content := 'object Fixture: TDAIFormTextFixture' + #13#10 + '  Caption = ''Grüße ''''quoted''''''#9 + ' + #13#10 +
+    '    ''漢字''#13#10#55357#56832' + #13#10 + 'end' + #13#10;
+  TDAIOTA.Reset(Original);
+  ResultJson := TDAIFileService.WriteFile('IsolatedBuffer.' + AExtension, Content, '', False, UsedEditor);
+  try
+    ActualCaption := ParseNativeFormCaption(TDAIOTA.Buffer);
+    Check(ActualCaption = 'Grüße ''quoted''' + #9 + '漢字' + #13#10 + #$D83D#$DE00,
+      'native form conversion preserves quotes, concatenation, numeric controls and surrogate pairs');
+  finally
+    ResultJson.Free;
+  end;
+  Content := 'object GrüßeFixture: TDAIFormTextFixture' + #13#10 + '  Caption = #256''Grüße''' + #13#10 + 'end' + #13#10;
+  TDAIOTA.Reset(Original);
+  ResultJson := TDAIFileService.WriteFile('IsolatedBuffer.' + AExtension, Content, '', True, UsedEditor);
+  try
+    Check(ParseNativeFormCaption(TDAIOTA.Buffer) = #$0100 + 'Grüße', 'raw Unicode beside existing wide escape preserves string values');
+    Check(TDAIOTA.Buffer.StartsWith(#$FEFF), 'Unicode object identifier retains native UTF-8 BOM');
+    Check(ResultJson.GetValue<Boolean>('saved') and (TDAIOTA.SaveCount = 1), 'canonical Unicode form also supports explicit save');
+    Check(ResultJson.GetValue<string>('sha256') = THashSHA2.GetHashString(TDAIOTA.Buffer), 'explicit save returns actual Unicode form hash');
+  finally
+    ResultJson.Free;
+  end;
+  TDAIOTA.Reset(Original);
+  ResultJson := TDAIFileService.WriteFile('IsolatedBuffer.' + AExtension, Original, '', False, UsedEditor);
+  try
+    Check(TDAIOTA.Buffer = Original, 'ASCII form source is preserved exactly');
+  finally
+    ResultJson.Free;
+  end;
+  TDAIOTA.Reset(Original);
+  Denied := False;
+  try
+    ResultJson := TDAIFileService.WriteFile('IsolatedBuffer.' + AExtension, 'object Invalid Grüße', '', False, UsedEditor);
+    ResultJson.Free;
+  except
+    on E: Exception do
+      Denied := True;
+  end;
+  Check(Denied and (TDAIOTA.WriteCount = 0) and (TDAIOTA.Buffer = Original), 'invalid Unicode form is rejected before editor mutation');
+end;
+
 procedure RunChecks;
 const
   CUnicode = 'unit IsolatedBuffer; interface { Grüße 漢字 ' + #$D83D#$DE00 + ' } implementation end.';
@@ -258,9 +363,12 @@ end;
 
 begin
   try
+    RegisterClass(TDAIFormTextFixture);
     RunChecks;
     CheckInterfaceReads;
     CheckUnitWriteGuards;
+    CheckFormUnicode('dfm');
+    CheckFormUnicode('fmx');
     Writeln('PASS: ', CheckCount, ' isolated native editor write/read-view checks');
   except
     on E: Exception do

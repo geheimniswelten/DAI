@@ -33,8 +33,8 @@ werden. Bei einer vorhandenen Codex-Registrierung ist danach `Registrieren` aufz
 Kann der konfigurierte Port nicht gebunden werden, bleibt das Design-Time-Package geladen. DAI wechselt den Port nicht automatisch, weil Codex sonst
 unbemerkt mit einer anderen IDE-Instanz verbunden werden könnte. Über die Windows-TCP-Tabelle werden PID und Prozessname des vorhandenen Listeners ermittelt
 und im IDE-Meldungsfenster sowie auf der DAI-Optionsseite angezeigt. Gehört der Listener zur aktuellen `bds.exe`, kann die TCP-Tabelle nicht zusätzlich
-bestimmen, welches BPL oder IDE-Plugin innerhalb dieses Prozesses den Socket geöffnet hat. Nach Auswahl eines freien Ports die Optionen übernehmen und
-anschließend mit „Server starten“ erneut starten.
+bestimmen, welches BPL oder IDE-Plugin innerhalb dieses Prozesses den Socket geöffnet hat. Einen freien Port eintragen und im selben Dialog
+mit „Server starten“ erneut starten; dauerhaftes Speichern kann danach erfolgen.
 
 DAI unterstützt den klassischen MCP-Initialisierungsablauf und die moderne `server/discover`-Methode. Bei Codex-Anfragen wird `_meta.threadId` ausgewertet.
 Dadurch können Session-Freigaben nach Projekt und Codex-Chat getrennt werden. Fehlt die Chat-ID, verwendet DAI ersatzweise die MCP-Transport-Session.
@@ -134,6 +134,9 @@ wird nicht auf DFM-Dateien angewendet.
 Diese PAS-Regel gilt ausdrücklich nicht für DFM-Dateien. DAI überschreibt DFM-Dateien niemals direkt auf dem Datenträger, sondern bearbeitet sie nur im
 IDE-Textpuffer. Delphi entscheidet anschließend beim Speichern anhand der enthaltenen Property-Werte selbst, ob die DFM als ANSI oder UTF-8 gespeichert
 wird. Ist kein DFM-Textpuffer verfügbar, wird der Schreibvorgang abgelehnt; bei Bedarf ist vorher `form_show_as_text` aufzurufen.
+Rohe Unicode-Zeichen in DFM-/FMX-Stringliteralen werden über die native Formularserialisierung als `#nnn` normalisiert, damit der Designer
+UTF-8-Bytes nicht als ANSI-Zeichen übernimmt. `sha256` beschreibt anschließend den tatsächlichen Editorpuffer. Der Textmoduswechsel schützt
+die PAS-Unit durch Vergleich ihres vollständigen Editorinhalts mit der gespeicherten Datei; alleinige DFM-Änderungen verhindern den Wechsel nicht.
 
 `file_read` liefert zusätzlich `encoding` und `line_ending`. `file_write` meldet außerdem die ursprüngliche und die nach dem Schreibvorgang verwendete
 Codierung sowie die ursprüngliche und resultierende Art des Zeilenumbruchs.
@@ -192,6 +195,21 @@ und Eingabefeldtexte werden ausgelassen. Grenzen sind 100 Fenster, 500 Controls 
 Texte oder abgebrochene Abfragen. Ein angehaltener oder nicht antwortender Prozess kann seine Controltexte nicht liefern.
 VCL-Handles werden nur ausgelesen, wenn sie bereits angelegt sind; DAI erzeugt für die Inspektion keine neuen Fensterhandles.
 
+## Aktive VCL-Dialoge
+
+`ide_dialog_inspect` liest `Screen.ActiveCustomForm`, sofern es sich um einen sichtbaren aktiven modalen VCL-Dialog handelt.
+Die Antwort enthält Formklasse/-name, Titel, Controls und Buttons sowie einen 30 Sekunden gültigen `snapshot_token`.
+Jedes neue Auslesen ersetzt die vorherige Momentaufnahme.
+`ide_dialog_click` betätigt einen sichtbaren aktivierten Button anhand seines tatsächlichen Namens; `ide_dialog_close` setzt `Form.ModalResult`.
+Beide Aktionen erfordern IDE-Bearbeitungs- und Ausführungsrechte. Zwischen Auslesen und Aktion muss derselbe Dialog aktiv bleiben.
+Geschlossene/ersetzte Dialoge, verbrauchte Tokens und ungültige Buttons werden abgewiesen. Nach einem Buttonklick werden keine Formobjekte mehr ausgelesen.
+Texte aus Eingabefeldern werden ausgelassen; DAI-Berechtigungsdialoge sind von Auslesen und Aktionen ausgeschlossen. WinAPI-Dialoge sind hier nicht enthalten.
+
+DAI-Builds verwenden den dokumentierten `IOTAProjectBuilder.BuildProject`-Parameter `Wait=False`:
+Erfolgreiche Builds warten nicht auf „OK“ im Fortschrittsdialog. Fehler dürfen weiter sichtbar bleiben; die Rückgabe meldet den tatsächlichen Build-Erfolg.
+`IOTACompileNotifier` meldet Projekt-/Gruppenstart und -ende, enthält aber keinen Parameter zum Ersetzen des Dialogs.
+Debuggernotifier melden unter anderem `nrException`/`psException`; sie garantieren keine Unterdrückung des Exception-Dialogs.
+
 ## Code Insight und Delphi-LSP
 
 DAI greift nicht als zweiter JSON-RPC-Client auf die privaten Standard-I/O-Pipes der von Delphi gestarteten `DelphiLSP.exe` zu. Stattdessen verwendet es den
@@ -211,6 +229,14 @@ Die Integration ist ausschließlich lesend:
 
 Code-Insight-Anfragen werden serialisiert, mit einem Timeout versehen und bei Zeitüberschreitung über `AsyncOperationCanceled` abgebrochen. Ein für Help
 Insight gesetzter `SetQueryContext` wird anschließend stets mit `nil, nil` zurückgesetzt.
+Jede Anfrage besitzt einen eigenen Callback-Empfänger. Verspätete Antworten bleiben damit ihrer ursprünglichen Anfrage zugeordnet, auch wenn der Provider
+IDs erneut verwendet. Bis zum Abschluss hält DAI höchstens 256 Empfänger; bei erreichtem Limit werden weitere Anfragen mit einer Erklärung abgewiesen.
+Liefert der Provider lediglich den Marker `HTML`, melden `success` und `found` den Wert `false`; dieser Marker enthält keinen verwendbaren Symboltext.
+Beim dauerhaften Package-Abschluss werden neue Code-Insight-Anfragen gesperrt. Ausstehende Empfänger halten ihren eigenen Broker bis zum
+tatsächlichen Callback gültig; sie greifen danach nicht auf finalisierte globale Sperren zu. Der Callbackcode wird vor Übergabe an OTA
+im Prozess gehalten. Nach Nutzung von Code Insight erfordert ein Package-Austausch bzw. erneutes Laden daher einen IDE-Neustart.
+Manuelles Stoppen und Starten des MCP-Servers bleibt möglich. Permanente Abschlüsse entfernen ausschließlich eigene wartende Logcallbacks;
+eine fehlgeschlagene Serverbereinigung gibt den noch benötigten Server nicht frei.
 
 Die öffentliche OpenToolsAPI stellt keinen allgemeinen Zugriff auf alle LSP-Methoden bereit. Insbesondere „Find all references“, Workspace-/Document-Symbole,
 Rename, Call Hierarchy, Type Hierarchy und Semantic Tokens sind in dieser Stufe nicht enthalten. Dafür wäre zusätzlich eine eigene, von DAI verwaltete
@@ -478,6 +504,12 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.EditorWrite.ps1 -Platform Both
 .\Scripts\Test.Windows.ps1 -Platform Both
 .\Scripts\Test.ReadOnlyPolicy.ps1 -Platform Both
+.\Scripts\Test.CodeInsight.ps1 -Platform Both
+.\Scripts\Test.Designer.ps1 -Platform Both
+.\Scripts\Test.Build.ps1 -Platform Both
+.\Scripts\Test.Dialogs.ps1 -Platform Both
+.\Scripts\Test.Log.ps1 -Platform Both
+.\Scripts\Test.Runtime.ps1 -Platform Both
 python .\Scripts\test_bridge.py
 ```
 

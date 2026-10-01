@@ -683,6 +683,26 @@ begin
     Exit(TDAIBuildService.StopProject(ArgumentString(AArguments, 'project'), LWithDebugger));
   end;
 
+  if SameText(AName, 'ide_dialog_inspect') then
+  begin
+    RequirePermission(pcReadAccess, 'Aktiven modalen VCL-Dialog lesen', '', LContext);
+    Exit(TDAIUIService.InspectActiveDialog);
+  end;
+
+  if SameText(AName, 'ide_dialog_click') then
+  begin
+    RequirePermission(pcEditInsideIDE, 'Button im erkannten VCL-Dialog betätigen', ArgumentString(AArguments, 'button_name'), LContext);
+    RequirePermission(pcExecute, 'VCL-Dialogaktion ausführen', '', LContext);
+    Exit(TDAIUIService.ClickDialogButton(ArgumentString(AArguments, 'snapshot_token'), ArgumentString(AArguments, 'button_name')));
+  end;
+
+  if SameText(AName, 'ide_dialog_close') then
+  begin
+    RequirePermission(pcEditInsideIDE, 'Erkannten VCL-Dialog über ModalResult schließen', '', LContext);
+    RequirePermission(pcExecute, 'VCL-Dialogabschluss ausführen', '', LContext);
+    Exit(TDAIUIService.CloseDialog(ArgumentString(AArguments, 'snapshot_token'), ArgumentInteger(AArguments, 'modal_result', 0)));
+  end;
+
   if SameText(AName, 'ui_message_box') then
   begin
     RequirePermission(pcEditInsideIDE, 'MessageBox in der Delphi-IDE anzeigen', ArgumentString(AArguments, 'title', 'DAI'), LContext);
@@ -1182,6 +1202,29 @@ begin
     'project_stop',
     'Stoppt das mit oder ohne Debugger laufende Projekt.',
     '{"type":"object","properties":{"project":{"type":"string"},"debugger":{"type":"boolean"}},"additionalProperties":false}',
+    False
+  );
+  AddTool(
+    Result,
+    'ide_dialog_inspect',
+    'Liest den aktiven sichtbaren modalen VCL-Dialog mit Buttons und einem kurzlebigen Snapshot-Token. Eingabefeldtexte und DAI-Freigaben sind ausgeschlossen.',
+    '{"type":"object","additionalProperties":false}',
+    True
+  );
+  AddTool(
+    Result,
+    'ide_dialog_click',
+    'Klickt einen sichtbaren aktivierten Button des unveränderten zuvor erkannten VCL-Dialogs. DAI-Freigaben und WinAPI-Dialoge sind ausgeschlossen.',
+    '{"type":"object","properties":{"snapshot_token":{"type":"string"},"button_name":{"type":"string"}},' +
+    '"required":["snapshot_token","button_name"],"additionalProperties":false}',
+    False
+  );
+  AddTool(
+    Result,
+    'ide_dialog_close',
+    'Schließt den unveränderten zuvor erkannten VCL-Dialog durch Form.ModalResult. DAI-Freigaben und WinAPI-Dialoge sind ausgeschlossen.',
+    '{"type":"object","properties":{"snapshot_token":{"type":"string"},"modal_result":{"type":"integer","minimum":1,"maximum":65535}},' +
+    '"required":["snapshot_token","modal_result"],"additionalProperties":false}',
     False
   );
   AddTool(

@@ -7,6 +7,7 @@ type
   strict private
     class var FServer: TObject;
     class var FLastServerError: string;
+    class var FStopping: Boolean;
   public
     class procedure Start; static;
     class function ApplySettings: Boolean; static;
@@ -27,6 +28,7 @@ uses
   h5u.DAI.Log,
   h5u.DAI.MCP.Server,
   h5u.DAI.OTA.Build,
+  h5u.DAI.OTA.CodeInsight,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
   h5u.DAI.UI;
@@ -122,7 +124,10 @@ end;
 
 class function TDAIRuntime.ServerActive: Boolean;
 begin
-  Result := Assigned(FServer) and TDAIMCPServer(FServer).Active;
+  if Assigned(FServer) then
+    Result := TDAIMCPServer(FServer).Active
+  else
+    Result := False;
 end;
 
 class procedure TDAIRuntime.Start;
@@ -143,24 +148,41 @@ end;
 
 class procedure TDAIRuntime.Stop;
 begin
+  if FStopping then
+    Exit;
+  FStopping := True;
   try
-    if Assigned(FServer) then
-    begin
-      TDAIMCPServer(FServer).Stop;
-      FLastServerError := TDAIMCPServer(FServer).LastError;
+    // Retiring HTTP workers may still log or enter an insight operation.
+    TDAILog.Shutdown;
+    TDAICodeInsightService.Shutdown;
+    try
+      if Assigned(FServer) then
+      begin
+        if not TDAIMCPServer(FServer).Stop then
+        begin
+          FLastServerError := TDAIMCPServer(FServer).LastError;
+          if FLastServerError = '' then
+            FLastServerError := 'Der MCP-Server konnte nicht vollständig beendet werden; die Laufzeit bleibt bis zum erfolgreichen Stop erhalten.';
+          Exit;
+        end;
+        FLastServerError := TDAIMCPServer(FServer).LastError;
+      end;
+      FreeAndNil(FServer);
+    except
+      on E: Exception do
+      begin
+        FLastServerError := Format('Die DAI-Laufzeit konnte den MCP-Server nicht vollständig freigeben: %s: %s', [E.ClassName, E.Message]);
+        TDAILog.Error(FLastServerError);
+        Exit;
+      end;
     end;
-    FreeAndNil(FServer);
-  except
-    on E: Exception do
-    begin
-      FLastServerError := Format('Die DAI-Laufzeit konnte den MCP-Server nicht vollständig freigeben: %s: %s', [E.ClassName, E.Message]);
-      TDAILog.Error(FLastServerError);
-    end;
-  end;
 
-  TDAIPermissionManager.Instance.ClearAllSessions;
-  TDAIBuildService.Shutdown;
-  TDAIUIService.Shutdown;
+    TDAIPermissionManager.Instance.ClearAllSessions;
+    TDAIBuildService.Shutdown;
+    TDAIUIService.Shutdown;
+  finally
+    FStopping := False;
+  end;
 end;
 
 initialization

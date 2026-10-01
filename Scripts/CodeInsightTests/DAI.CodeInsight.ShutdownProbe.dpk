@@ -1,0 +1,17 @@
+﻿package DAI.CodeInsight.ShutdownProbe;
+
+{$RUNONLY}
+
+requires
+  rtl,
+  vcl,
+  designide;
+
+contains
+  DAI.CodeInsight.PackageProbe in 'DAI.CodeInsight.PackageProbe.pas',
+  h5u.DAI.OTA.Helpers in 'h5u.DAI.OTA.Helpers.pas',
+  h5u.DAI.Settings in 'h5u.DAI.Settings.pas',
+  h5u.DAI.Types in '..\..\Source\h5u.DAI.Types.pas',
+  h5u.DAI.OTA.CodeInsight in '..\..\Source\h5u.DAI.OTA.CodeInsight.pas';
+
+end.

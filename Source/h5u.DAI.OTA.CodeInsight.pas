@@ -8,6 +8,7 @@ uses
 type
   TDAICodeInsightService = class sealed
   public
+    class procedure Shutdown; static;
     class function Status(const AFileName: string): TJSONObject; static;
     class function Definition(const AFileName: string; const ALine: Integer; const ACharacter: Integer; const ATimeoutMs: Integer): TJSONObject; static;
     class function Hover(const AFileName: string; const ALine: Integer; const AColumn: Integer; const ATimeoutMs: Integer): TJSONObject; static;
@@ -52,8 +53,39 @@ type
     ResultCharacter: Integer;
   end;
 
-  TDAICodeInsightCallbacks = class
+  IDAICodeInsightCallbackBroker = interface
+    ['{58AD24B3-A2DF-4F65-AD1B-82C5F9C78620}']
+    procedure RetainCallback(const ACallback: IInterface);
+    procedure ReleaseCallback(const ACallback: IInterface);
+    procedure Shutdown;
+  end;
+
+  TDAICodeInsightCallbackBroker = class(TInterfacedObject, IDAICodeInsightCallbackBroker)
+  private
+    FLock: TCriticalSection;
+    FModulePinned: Boolean;
+    FPendingCallbacks: TList<IInterface>;
+    FShutdown: Boolean;
   public
+    constructor Create;
+    destructor Destroy; override;
+    procedure RetainCallback(const ACallback: IInterface);
+    procedure ReleaseCallback(const ACallback: IInterface);
+    procedure Shutdown;
+  end;
+
+  TDAICodeInsightCallbacks = class(TInterfacedObject)
+  private
+    FBroker: IDAICodeInsightCallbackBroker;
+    FResultEvent: TEvent;
+    FState: TDAICodeInsightState;
+    FStateLock: TCriticalSection;
+  public
+    constructor Create(const AOperation: TDAICodeInsightOperation; const ABroker: IDAICodeInsightCallbackBroker);
+    destructor Destroy; override;
+    function MarkCancelled: Boolean;
+    procedure RegisterRequestId(const ARequestId: Integer);
+    function SnapshotState: TDAICodeInsightState;
     procedure DefinitionCallback(Sender: TObject; AId: Integer; const AFileName: string; ALine: Integer; AError: Boolean; const AMessage: string);
     procedure DefinitionCallbackEx(Sender: TObject; AId: Integer; const AFileName: string; ALine, ACharIndex: Integer; AError: Boolean; const AMessage: string);
     procedure HintCallback(Sender: TObject; AId: Integer; const AHint: string; AError: Boolean; const AMessage: string);
@@ -62,15 +94,16 @@ type
 const
   CDefaultTimeoutMs = 10000;
   CMaximumTimeoutMs = 60000;
-  CMaximumCancelledRequestIds = 128;
+  CMaximumPendingCallbacks = 256;
+  CGetModuleHandleExFromAddress = $00000004;
+  CGetModuleHandleExPin = $00000001;
 
 var
-  GCallbacks: TDAICodeInsightCallbacks;
-  GCancelledRequestIds: TList<Integer>;
+  GCallbackRegistryLock: TCriticalSection;
   GOperationLock: TObject;
-  GResultEvent: TEvent;
-  GState: TDAICodeInsightState;
-  GStateLock: TCriticalSection;
+  GCallbackBroker: IDAICodeInsightCallbackBroker;
+  // This unmanaged flag also survives FinalizePackage/InitializePackage of a pinned image.
+  GServiceShutdown: Boolean;
 
 function ClampTimeout(const ATimeoutMs: Integer): Integer;
 begin
@@ -231,69 +264,146 @@ begin
   AErrorMessage := 'Kein aktivierter und bereiter Code-Insight-Provider unterstützt die angeforderte Datei und Operation.';
 end;
 
-procedure PrepareOperation(const AOperation: TDAICodeInsightOperation);
+// These Windows SDK declarations are missing from Delphi's Winapi.Windows unit.
+function DAIGetModuleHandleExW(const AFlags: DWORD; const AAddress: PWideChar; out AModule: HMODULE): BOOL; stdcall;
+  external 'kernel32.dll' name 'GetModuleHandleExW';
+
+procedure PinCallbackModule;
+var
+  LModule: HMODULE;
 begin
-  GStateLock.Acquire;
+  LModule := 0;
+  // OTA receives a raw method pointer and cancellation does not revoke it. Pin code
+  // before publishing the first receiver; Delphi finalization is handled separately.
+  if not DAIGetModuleHandleExW(CGetModuleHandleExFromAddress or CGetModuleHandleExPin,
+    PChar(Pointer(@PinCallbackModule)), LModule) then
+    RaiseLastOSError;
+end;
+
+function RequireActiveBroker: IDAICodeInsightCallbackBroker;
+begin
+  if not Assigned(GCallbackRegistryLock) then
+    raise EInvalidOperation.Create('Code Insight wurde beendet; ein IDE-Neustart ist erforderlich.');
+  GCallbackRegistryLock.Acquire;
   try
-    GState := Default(TDAICodeInsightState);
-    GState.Operation := AOperation;
-    GState.RequestId := -1;
-    GResultEvent.ResetEvent;
+    if GServiceShutdown or not Assigned(GCallbackBroker) then
+      raise EInvalidOperation.Create('Code Insight wurde beendet; ein IDE-Neustart ist erforderlich.');
+    Result := GCallbackBroker;
   finally
-    GStateLock.Release;
+    GCallbackRegistryLock.Release;
   end;
 end;
 
-procedure RegisterRequestId(const ARequestId: Integer);
+constructor TDAICodeInsightCallbackBroker.Create;
 begin
-  GStateLock.Acquire;
+  inherited Create;
+  FLock := TCriticalSection.Create;
+  FPendingCallbacks := TList<IInterface>.Create;
+end;
+
+destructor TDAICodeInsightCallbackBroker.Destroy;
+begin
+  FPendingCallbacks.Free;
+  FLock.Free;
+  inherited;
+end;
+
+procedure TDAICodeInsightCallbackBroker.RetainCallback(const ACallback: IInterface);
+begin
+  FLock.Acquire;
   try
-    if GState.RequestId < 0 then
-      GState.RequestId := ARequestId;
+    if FShutdown then
+      raise EInvalidOperation.Create('Code Insight wurde beendet; ein IDE-Neustart ist erforderlich.');
+    if FPendingCallbacks.Count >= CMaximumPendingCallbacks then
+      raise EInvalidOperation.CreateFmt(
+        'Es sind bereits %d Code-Insight-Anfragen ohne abschließenden Provider-Callback offen; weitere Anfragen sind bis zu deren Abschluss gesperrt.',
+        [CMaximumPendingCallbacks]);
+    if not FModulePinned then
+    begin
+      PinCallbackModule;
+      FModulePinned := True;
+    end;
+    FPendingCallbacks.Add(ACallback);
   finally
-    GStateLock.Release;
+    FLock.Release;
   end;
 end;
 
-function IsCancelledRequest(const ARequestId: Integer): Boolean;
+procedure TDAICodeInsightCallbackBroker.ReleaseCallback(const ACallback: IInterface);
 begin
-  GStateLock.Acquire;
+  FLock.Acquire;
   try
-    Result := GCancelledRequestIds.Contains(ARequestId);
+    FPendingCallbacks.Remove(ACallback);
   finally
-    GStateLock.Release;
+    FLock.Release;
   end;
 end;
 
-function MarkRequestCancelled(const ARequestId: Integer): Boolean;
+procedure TDAICodeInsightCallbackBroker.Shutdown;
 begin
-  GStateLock.Acquire;
+  FLock.Acquire;
   try
-    if GState.Completed then
+    FShutdown := True;
+    // Do not free pending receivers: a provider can still hold their method pointers.
+    // Each receiver owns this broker, so late completion needs no unit globals.
+  finally
+    FLock.Release;
+  end;
+end;
+
+constructor TDAICodeInsightCallbacks.Create(const AOperation: TDAICodeInsightOperation; const ABroker: IDAICodeInsightCallbackBroker);
+begin
+  inherited Create;
+  FBroker := ABroker;
+  FStateLock := TCriticalSection.Create;
+  FResultEvent := TEvent.Create(nil, True, False, '');
+  FState.Operation := AOperation;
+  FState.RequestId := -1;
+end;
+
+destructor TDAICodeInsightCallbacks.Destroy;
+begin
+  FResultEvent.Free;
+  FStateLock.Free;
+  inherited;
+end;
+
+procedure TDAICodeInsightCallbacks.RegisterRequestId(const ARequestId: Integer);
+begin
+  FStateLock.Acquire;
+  try
+    if FState.RequestId < 0 then
+      FState.RequestId := ARequestId;
+  finally
+    FStateLock.Release;
+  end;
+end;
+
+function TDAICodeInsightCallbacks.MarkCancelled: Boolean;
+begin
+  FStateLock.Acquire;
+  try
+    if FState.Completed then
       Exit(False);
-    if (ARequestId >= 0) and not GCancelledRequestIds.Contains(ARequestId) then
-      GCancelledRequestIds.Add(ARequestId);
-    while GCancelledRequestIds.Count > CMaximumCancelledRequestIds do
-      GCancelledRequestIds.Delete(0);
-    GState.TimedOut := True;
-    GState.Completed := True;
-    GState.MessageText := 'Zeitüberschreitung beim Warten auf den IDE-Code-Insight-Provider.';
+    FState.TimedOut := True;
+    FState.Completed := True;
+    FState.MessageText := 'Zeitüberschreitung beim Warten auf den IDE-Code-Insight-Provider.';
     Result := True;
   finally
-    GStateLock.Release;
+    FStateLock.Release;
   end;
 end;
 
-function WaitForOperation(const ATimeoutMs: Integer): Boolean;
+function WaitForOperation(const ACallbacks: TDAICodeInsightCallbacks; const ATimeoutMs: Integer): Boolean;
 var
   LStartedAt: Cardinal;
 begin
   if GetCurrentThreadId <> MainThreadID then
-    Exit(GResultEvent.WaitFor(ATimeoutMs) = wrSignaled);
+    Exit(ACallbacks.FResultEvent.WaitFor(ATimeoutMs) = wrSignaled);
 
   LStartedAt := GetTickCount;
   repeat
-    if GResultEvent.WaitFor(0) = wrSignaled then
+    if ACallbacks.FResultEvent.WaitFor(0) = wrSignaled then
       Exit(True);
     Application.ProcessMessages;
     CheckSynchronize(0);
@@ -302,19 +412,19 @@ begin
   Result := False;
 end;
 
-function SnapshotState: TDAICodeInsightState;
+function TDAICodeInsightCallbacks.SnapshotState: TDAICodeInsightState;
 begin
-  GStateLock.Acquire;
+  FStateLock.Acquire;
   try
-    Result := GState;
+    Result := FState;
   finally
-    GStateLock.Release;
+    FStateLock.Release;
   end;
 end;
 
-procedure CancelRequest(const AAsyncManager: IOTAAsyncCodeInsightManager; const ARequestId: Integer);
+procedure CancelRequest(const ACallbacks: TDAICodeInsightCallbacks; const AAsyncManager: IOTAAsyncCodeInsightManager; const ARequestId: Integer);
 begin
-  if not MarkRequestCancelled(ARequestId) then
+  if not ACallbacks.MarkCancelled then
     Exit;
   if not Assigned(AAsyncManager) or (ARequestId < 0) then
     Exit;
@@ -372,68 +482,92 @@ begin
 end;
 
 procedure TDAICodeInsightCallbacks.DefinitionCallback(Sender: TObject; AId: Integer; const AFileName: string; ALine: Integer; AError: Boolean; const AMessage: string);
+var
+  LKeepAlive: IInterface;
 begin
-  if IsCancelledRequest(AId) then
-    Exit;
-
-  GStateLock.Acquire;
-  try
-    if (GState.Operation <> cioDefinition) or GState.Completed or ((GState.RequestId >= 0) and (GState.RequestId <> AId)) then
-      Exit;
-    GState.RequestId := AId;
-    GState.ResultFileName := AFileName;
-    GState.ResultLine := ALine;
-    GState.ResultCharacter := 0;
-    GState.Error := AError;
-    GState.MessageText := AMessage;
-    GState.Completed := True;
-  finally
-    GStateLock.Release;
-  end;
-  GResultEvent.SetEvent;
+  LKeepAlive := Self;
+  DefinitionCallbackEx(Sender, AId, AFileName, ALine, 0, AError, AMessage);
 end;
 
 procedure TDAICodeInsightCallbacks.DefinitionCallbackEx(Sender: TObject; AId: Integer; const AFileName: string; ALine, ACharIndex: Integer;
   AError: Boolean; const AMessage: string);
+var
+  LKeepAlive: IInterface;
+  LReleasePending: Boolean;
 begin
-  if IsCancelledRequest(AId) then
-    Exit;
-
-  GStateLock.Acquire;
+  // OTA stores a method pointer, not an owning interface. Keep this receiver alive
+  // until its callback returns, including a late result after the caller timed out.
+  LKeepAlive := Self;
+  FStateLock.Acquire;
   try
-    if (GState.Operation <> cioDefinition) or GState.Completed or ((GState.RequestId >= 0) and (GState.RequestId <> AId)) then
+    if (FState.Operation <> cioDefinition) or ((FState.RequestId >= 0) and (FState.RequestId <> AId)) then
       Exit;
-    GState.RequestId := AId;
-    GState.ResultFileName := AFileName;
-    GState.ResultLine := ALine;
-    GState.ResultCharacter := ACharIndex;
-    GState.Error := AError;
-    GState.MessageText := AMessage;
-    GState.Completed := True;
+    if FState.Completed then
+      LReleasePending := FState.TimedOut
+    else
+    begin
+      FState.RequestId := AId;
+      FState.ResultFileName := AFileName;
+      FState.ResultLine := ALine;
+      FState.ResultCharacter := ACharIndex;
+      FState.Error := AError;
+      FState.MessageText := AMessage;
+      FState.Completed := True;
+      FResultEvent.SetEvent;
+      LReleasePending := True;
+    end;
   finally
-    GStateLock.Release;
+    FStateLock.Release;
   end;
-  GResultEvent.SetEvent;
+  if LReleasePending then
+    FBroker.ReleaseCallback(Self);
 end;
 
 procedure TDAICodeInsightCallbacks.HintCallback(Sender: TObject; AId: Integer; const AHint: string; AError: Boolean; const AMessage: string);
+var
+  LKeepAlive: IInterface;
+  LReleasePending: Boolean;
 begin
-  if IsCancelledRequest(AId) then
-    Exit;
-
-  GStateLock.Acquire;
+  LKeepAlive := Self;
+  FStateLock.Acquire;
   try
-    if (GState.Operation <> cioHover) or GState.Completed or ((GState.RequestId >= 0) and (GState.RequestId <> AId)) then
+    if (FState.Operation <> cioHover) or ((FState.RequestId >= 0) and (FState.RequestId <> AId)) then
       Exit;
-    GState.RequestId := AId;
-    GState.ResultText := AHint;
-    GState.Error := AError;
-    GState.MessageText := AMessage;
-    GState.Completed := True;
+    if FState.Completed then
+      LReleasePending := FState.TimedOut
+    else
+    begin
+      FState.RequestId := AId;
+      FState.ResultText := AHint;
+      FState.Error := AError;
+      FState.MessageText := AMessage;
+      FState.Completed := True;
+      FResultEvent.SetEvent;
+      LReleasePending := True;
+    end;
   finally
-    GStateLock.Release;
+    FStateLock.Release;
   end;
-  GResultEvent.SetEvent;
+  if LReleasePending then
+    FBroker.ReleaseCallback(Self);
+end;
+
+class procedure TDAICodeInsightService.Shutdown;
+var
+  LBroker: IDAICodeInsightCallbackBroker;
+begin
+  if not Assigned(GCallbackRegistryLock) then
+    Exit;
+  GCallbackRegistryLock.Acquire;
+  try
+    GServiceShutdown := True;
+    LBroker := GCallbackBroker;
+    if Assigned(LBroker) then
+      LBroker.Shutdown;
+    GCallbackBroker := nil;
+  finally
+    GCallbackRegistryLock.Release;
+  end;
 end;
 
 class function TDAICodeInsightService.Status(const AFileName: string): TJSONObject;
@@ -519,6 +653,9 @@ class function TDAICodeInsightService.Definition(const AFileName: string; const 
 var
   LAsync: IOTAAsyncCodeInsightManager;
   LAsyncEx: IOTAAsyncCodeInsightManager290;
+  LBroker: IDAICodeInsightCallbackBroker;
+  LCallbackLifetime: IInterface;
+  LCallbacks: TDAICodeInsightCallbacks;
   LErrorMessage: string;
   LExpandedFileName: string;
   LManager: IOTACodeInsightManager;
@@ -535,6 +672,7 @@ begin
   if ACharacter < 0 then
     raise EArgumentOutOfRangeException.Create('Der Parameter "character" darf nicht negativ sein.');
 
+  LBroker := RequireActiveBroker;
   LExpandedFileName := ExpandReadableFileName(AFileName);
   LTimeout := ClampTimeout(ATimeoutMs);
   LStarted := False;
@@ -545,36 +683,58 @@ begin
 
   System.TMonitor.Enter(GOperationLock);
   try
-    PrepareOperation(cioDefinition);
+    LCallbacks := TDAICodeInsightCallbacks.Create(cioDefinition, LBroker);
+    LCallbackLifetime := LCallbacks;
     TDAIOTA.RunOnMainThread(
       procedure
+      var
+        LPublished: Boolean;
+        LRetained: Boolean;
       begin
+        LPublished := False;
+        LRetained := False;
         try
-          if not TrySelectManager(LExpandedFileName, citBrowseCodeInsight, LServices, LManager, LAsync, LErrorMessage) then
-            Exit;
-          LProviderId := ManagerId(LManager);
-          LProviderName := ManagerName(LManager);
-          if Supports(LManager, IOTAAsyncCodeInsightManager290, LAsyncEx) then
-            LRequestId := LAsyncEx.AsyncGotoDefinitionEx(LExpandedFileName, ALine, ACharacter, GCallbacks.DefinitionCallbackEx)
-          else
-            LRequestId := LAsync.AsyncGotoDefinition(LExpandedFileName, ALine, ACharacter, GCallbacks.DefinitionCallback);
-          if LRequestId < 0 then
-          begin
-            LErrorMessage := 'Der Code-Insight-Provider hat keine gültige Request-ID zurückgegeben.';
-            Exit;
+          try
+            if not TrySelectManager(LExpandedFileName, citBrowseCodeInsight, LServices, LManager, LAsync, LErrorMessage) then
+              Exit;
+            LProviderId := ManagerId(LManager);
+            LProviderName := ManagerName(LManager);
+            LBroker.RetainCallback(LCallbacks);
+            LRetained := True;
+            if Supports(LManager, IOTAAsyncCodeInsightManager290, LAsyncEx) then
+            begin
+              LPublished := True;
+              LRequestId := LAsyncEx.AsyncGotoDefinitionEx(LExpandedFileName, ALine, ACharacter, LCallbacks.DefinitionCallbackEx);
+            end
+            else
+            begin
+              LPublished := True;
+              LRequestId := LAsync.AsyncGotoDefinition(LExpandedFileName, ALine, ACharacter, LCallbacks.DefinitionCallback);
+            end;
+            if LRequestId < 0 then
+            begin
+              LErrorMessage := 'Der Code-Insight-Provider hat keine gültige Request-ID zurückgegeben.';
+              Exit;
+            end;
+            LCallbacks.RegisterRequestId(LRequestId);
+            LStarted := True;
+          except
+            on E: Exception do
+              LErrorMessage := E.Message;
           end;
-          RegisterRequestId(LRequestId);
-          LStarted := True;
-        except
-          on E: Exception do
-            LErrorMessage := E.Message;
+        finally
+          if LRetained and not LPublished then
+            LBroker.ReleaseCallback(LCallbacks);
+          LAsyncEx := nil;
+          LManager := nil;
+          LServices := nil;
         end;
       end
     );
 
-    if LStarted and not WaitForOperation(LTimeout) then
-      CancelRequest(LAsync, LRequestId);
-    LState := SnapshotState;
+    if LStarted and not WaitForOperation(LCallbacks, LTimeout) then
+      CancelRequest(LCallbacks, LAsync, LRequestId);
+    LState := LCallbacks.SnapshotState;
 
     if not LStarted then
     begin
@@ -597,13 +757,25 @@ begin
     Result.AddPair('input_line', TJSONNumber.Create(ALine));
     Result.AddPair('input_character', TJSONNumber.Create(ACharacter));
   finally
-    System.TMonitor.Exit(GOperationLock);
+    try
+      TDAIOTA.RunOnMainThread(
+        procedure
+        begin
+          LAsync := nil;
+        end
+      );
+    finally
+      System.TMonitor.Exit(GOperationLock);
+    end;
   end;
 end;
 
 class function TDAICodeInsightService.Hover(const AFileName: string; const ALine: Integer; const AColumn: Integer; const ATimeoutMs: Integer): TJSONObject;
 var
   LAsync: IOTAAsyncCodeInsightManager;
+  LBroker: IDAICodeInsightCallbackBroker;
+  LCallbackLifetime: IInterface;
+  LCallbacks: TDAICodeInsightCallbacks;
   LContextSet: Boolean;
   LEditView: IOTAEditView;
   LErrorMessage: string;
@@ -623,6 +795,7 @@ begin
   if AColumn < 1 then
     raise EArgumentOutOfRangeException.Create('Der Parameter "column" muss mindestens 1 sein.');
 
+  LBroker := RequireActiveBroker;
   LExpandedFileName := ExpandReadableFileName(AFileName);
   LTimeout := ClampTimeout(ATimeoutMs);
   LStarted := False;
@@ -634,66 +807,90 @@ begin
 
   System.TMonitor.Enter(GOperationLock);
   try
-    PrepareOperation(cioHover);
+    LCallbacks := TDAICodeInsightCallbacks.Create(cioHover, LBroker);
+    LCallbackLifetime := LCallbacks;
     TDAIOTA.RunOnMainThread(
       procedure
+      var
+        LPublished: Boolean;
+        LRetained: Boolean;
       begin
+        LPublished := False;
+        LRetained := False;
         try
-          LSourceEditor := TDAIOTA.FindSourceEditor(LExpandedFileName);
-          if not Assigned(LSourceEditor) or (LSourceEditor.EditViewCount = 0) then
-          begin
-            LErrorMessage := 'Help Insight benötigt eine in einem Code-Editor geöffnete Datei.';
-            Exit;
+          try
+            LSourceEditor := TDAIOTA.FindSourceEditor(LExpandedFileName);
+            if not Assigned(LSourceEditor) or (LSourceEditor.EditViewCount = 0) then
+            begin
+              LErrorMessage := 'Help Insight benötigt eine in einem Code-Editor geöffnete Datei.';
+              Exit;
+            end;
+            LEditView := LSourceEditor.EditViews[0];
+            if not Assigned(LEditView) then
+            begin
+              LErrorMessage := 'Für die geöffnete Datei ist keine Editoransicht verfügbar.';
+              Exit;
+            end;
+            if not TrySelectManager(LExpandedFileName, citHintCodeInsight, LServices, LManager, LAsync, LErrorMessage) then
+              Exit;
+            LProviderId := ManagerId(LManager);
+            LProviderName := ManagerName(LManager);
+            LBroker.RetainCallback(LCallbacks);
+            LRetained := True;
+            LContextSet := True;
+            LServices.SetQueryContext(LEditView, LManager);
+            LPublished := True;
+            LRequestId := LAsync.AsyncGetHintText(ALine, AColumn, LCallbacks.HintCallback);
+            if LRequestId < 0 then
+            begin
+              LErrorMessage := 'Der Code-Insight-Provider hat keine gültige Request-ID zurückgegeben.';
+              Exit;
+            end;
+            LCallbacks.RegisterRequestId(LRequestId);
+            LStarted := True;
+          except
+            on E: Exception do
+              LErrorMessage := E.Message;
           end;
-          LEditView := LSourceEditor.EditViews[0];
-          if not Assigned(LEditView) then
-          begin
-            LErrorMessage := 'Für die geöffnete Datei ist keine Editoransicht verfügbar.';
-            Exit;
-          end;
-          if not TrySelectManager(LExpandedFileName, citHintCodeInsight, LServices, LManager, LAsync, LErrorMessage) then
-            Exit;
-          LProviderId := ManagerId(LManager);
-          LProviderName := ManagerName(LManager);
-          LServices.SetQueryContext(LEditView, LManager);
-          LContextSet := True;
-          LRequestId := LAsync.AsyncGetHintText(ALine, AColumn, GCallbacks.HintCallback);
-          if LRequestId < 0 then
-          begin
-            LErrorMessage := 'Der Code-Insight-Provider hat keine gültige Request-ID zurückgegeben.';
-            Exit;
-          end;
-          RegisterRequestId(LRequestId);
-          LStarted := True;
-        except
-          on E: Exception do
-            LErrorMessage := E.Message;
-        end;
-      end
-    );
-
-    try
-      if LStarted and not WaitForOperation(LTimeout) then
-        CancelRequest(LAsync, LRequestId);
-    finally
-      if LContextSet then
-        TDAIOTA.RunOnMainThread(
-          procedure
+        finally
+          if LRetained and not LPublished then
+            LBroker.ReleaseCallback(LCallbacks);
+          if LContextSet then
           begin
             try
               LServices.SetQueryContext(nil, nil);
             except
-              // The query result remains usable even if the IDE rejects context restoration during shutdown.
+              // The provider may reject restoration during IDE shutdown.
             end;
-          end
-        );
-    end;
+            LContextSet := False;
+          end;
+          // Query invocation has consumed these interfaces. Release them on the
+          // IDE thread before waiting, so an open module/view is not kept alive.
+          LEditView := nil;
+          LSourceEditor := nil;
+          LManager := nil;
+          LServices := nil;
+        end;
+      end
+    );
 
-    LState := SnapshotState;
+    if LStarted and not WaitForOperation(LCallbacks, LTimeout) then
+      CancelRequest(LCallbacks, LAsync, LRequestId);
+
+    LState := LCallbacks.SnapshotState;
     if not LStarted then
     begin
       LState.Error := True;
       LState.MessageText := LErrorMessage;
+    end;
+
+    // Delphi providers can return this protocol marker instead of position-specific
+    // help text. Viewer/caret documentation is not a reliable substitute here.
+    if not LState.Error and not LState.TimedOut and SameText(Trim(LState.ResultText), 'HTML') then
+    begin
+      LState.Error := True;
+      LState.ResultText := '';
+      LState.MessageText := 'Der IDE-Provider liefert nur den HTML-Marker; positionsbezogener Help-Insight-Inhalt ist nicht verfügbar.';
     end;
 
     Result := CodeInsightResultBase(LExpandedFileName, LProviderName, LProviderId, LState);
@@ -705,7 +902,16 @@ begin
     Result.AddPair('input_column', TJSONNumber.Create(AColumn));
     Result.AddPair('requires_open_editor', TJSONBool.Create(True));
   finally
-    System.TMonitor.Exit(GOperationLock);
+    try
+      TDAIOTA.RunOnMainThread(
+        procedure
+        begin
+          LAsync := nil;
+        end
+      );
+    finally
+      System.TMonitor.Exit(GOperationLock);
+    end;
   end;
 end;
 
@@ -900,17 +1106,16 @@ begin
 end;
 
 initialization
-  GCallbacks := TDAICodeInsightCallbacks.Create;
-  GCancelledRequestIds := TList<Integer>.Create;
+  GCallbackRegistryLock := TCriticalSection.Create;
   GOperationLock := TObject.Create;
-  GResultEvent := TEvent.Create(nil, True, False, '');
-  GStateLock := TCriticalSection.Create;
+  if not GServiceShutdown then
+    GCallbackBroker := TDAICodeInsightCallbackBroker.Create;
 
 finalization
-  GStateLock.Free;
-  GResultEvent.Free;
-  GOperationLock.Free;
-  GCancelledRequestIds.Free;
-  GCallbacks.Free;
+  // Pinning prevents unmapped code, not Delphi FinalizePackage. Detach the broker;
+  // pending receivers keep its independent state alive until completion/process exit.
+  TDAICodeInsightService.Shutdown;
+  FreeAndNil(GOperationLock);
+  FreeAndNil(GCallbackRegistryLock);
 
 end.

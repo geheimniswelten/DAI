@@ -36,6 +36,83 @@ uses
   h5u.DAI.Text.Encoding,
   h5u.DAI.Types;
 
+function PrepareFormEditorText(const AFileName, AText: string): string;
+var
+  LBinary: TMemoryStream;
+  LCharacter: Char;
+  LIndex: Integer;
+  LInString: Boolean;
+  LInput, LOutput: TStringStream;
+  LPrepared: TStringBuilder;
+  LPreparedText: string;
+  LUnicode: Boolean;
+begin
+  Result := AText;
+  if not (SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx')) then
+    Exit;
+  LUnicode := False;
+  for LCharacter in AText do
+    if Ord(LCharacter) > 127 then
+    begin
+      LUnicode := True;
+      Break;
+    end;
+  if not LUnicode then
+    Exit;
+  // TParser's wide-token branch treats raw UTF-8 bytes as separate characters
+  // when a quoted string is adjacent to #nnnn. Escape only literal characters
+  // first; doubled quotes, existing escapes and Unicode identifiers stay intact.
+  LPrepared := TStringBuilder.Create;
+  try
+    LInString := False;
+    LIndex := 1;
+    while LIndex <= Length(AText) do
+    begin
+      LCharacter := AText[LIndex];
+      if LCharacter = '''' then
+      begin
+        LPrepared.Append(LCharacter);
+        if LInString and (LIndex < Length(AText)) then
+          if AText[LIndex + 1] = '''' then
+          begin
+            LPrepared.Append('''');
+            Inc(LIndex, 2);
+            Continue;
+          end;
+        LInString := not LInString;
+      end
+      else if LInString and (Ord(LCharacter) > 127) then
+        LPrepared.Append('''#').Append(Ord(LCharacter)).Append('''')
+      else
+        LPrepared.Append(LCharacter);
+      Inc(LIndex);
+    end;
+    LPreparedText := LPrepared.ToString;
+  finally
+    LPrepared.Free;
+  end;
+  // OTA accepts UTF-8, but the native form parser assumes ANSI without a BOM.
+  // Let the RTL serialize Unicode string values as unambiguous #nnnn escapes.
+  // Unicode identifiers retain the UTF-8 BOM emitted by ObjectBinaryToText.
+  if LPreparedText.StartsWith(#$FEFF) then
+    LInput := TStringStream.Create(LPreparedText, TEncoding.UTF8)
+  else
+    LInput := TStringStream.Create(#$FEFF + LPreparedText, TEncoding.UTF8);
+  LBinary := TMemoryStream.Create;
+  LOutput := TStringStream.Create('', TEncoding.UTF8);
+  try
+    ObjectTextToBinary(LInput, LBinary);
+    LBinary.Position := 0;
+    ObjectBinaryToText(LBinary, LOutput);
+    // TStringStream.DataString strips the preamble; retain it for identifiers.
+    Result := TEncoding.UTF8.GetString(LOutput.Bytes, 0, LOutput.Size);
+  finally
+    LOutput.Free;
+    LBinary.Free;
+    LInput.Free;
+  end;
+end;
+
 procedure AddUniqueFile(const AFiles: TDictionary<string, Boolean>; const AFileName: string);
 var
   LFileName: string;
@@ -66,26 +143,6 @@ begin
   for LRoot in TDAISettings.Instance.ReadOnlyRootDirectories do
     if TDAIOTA.IsPathWithin(ADirectory, LRoot) or TDAIOTA.SameFile(ADirectory, LRoot) then
       Exit(True);
-end;
-
-function EnsureFormTextEditor(const AFileName: string): IOTASourceEditor;
-var
-  LActionServices: IOTAActionServices;
-begin
-  Result := TDAIOTA.FindSourceEditor(AFileName);
-  if Assigned(Result) or not (SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx')) then
-    Exit;
-
-  if not TFile.Exists(AFileName) and not TDAIOTA.IsFormLoadedForFile(AFileName) then
-    Exit;
-
-  TDAIOTA.RunOnMainThread(
-    procedure
-    begin
-      if Supports(BorlandIDEServices, IOTAActionServices, LActionServices) then
-        LActionServices.OpenFile(AFileName);
-    end);
-  Result := TDAIOTA.FindSourceEditor(AFileName);
 end;
 
 function ReadCompleteText(const AFileName: string; out AFromEditor: Boolean; out AFormat: TDAITextFileFormat; out AFromDesigner: Boolean): string;
@@ -408,13 +465,14 @@ begin
     raise EInvalidOperation.Create('Die Datei existiert nicht mehr; expected_sha256 kann nicht erfüllt werden.');
 
   TDAISourceView.RequireCompleteUnit(LFileName, AContent);
-  LSourceEditor := EnsureFormTextEditor(LFileName);
+  LSourceEditor := TDAIOTA.EnsureFormTextEditor(LFileName);
   if Assigned(LSourceEditor) then
   begin
     if LHasCurrentContent then
       LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, LCurrentFormat.LineEndingKind)
     else
       LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, lekNone);
+    LWrittenContent := PrepareFormEditorText(LFileName, LWrittenContent);
     if TEncoding.UTF8.GetByteCount(LWrittenContent) > CDAIMaxTextFileBytes then
       raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
 
@@ -445,10 +503,11 @@ begin
   end
   else
   begin
+    if SameText(TPath.GetExtension(LFileName), '.dfm') or SameText(TPath.GetExtension(LFileName), '.fmx') then
+      raise EInvalidOperation.Create('Der native IDE-Textmodus für dieses Formular ist nicht verfügbar. ' +
+        'Formulardateien werden ausschließlich über einen verfügbaren IDE-Textpuffer geändert.');
     if not ASave then
       raise EInvalidOperation.Create('save=false erfordert einen geöffneten IDE-Textpuffer. Öffnen Sie die Datei zuerst mit file_open.');
-    if SameText(TPath.GetExtension(LFileName), '.dfm') or SameText(TPath.GetExtension(LFileName), '.fmx') then
-      raise EInvalidOperation.Create('Formulardateien werden ausschließlich über einen verfügbaren IDE-Textpuffer geändert.');
     if TDAIOTA.IsFormLoadedForFile(LFileName) then
       raise EInvalidOperation.Create('Das Formular ist im Designer geladen. Wechseln Sie zuerst mit form_show_as_text in den Textmodus.');
 

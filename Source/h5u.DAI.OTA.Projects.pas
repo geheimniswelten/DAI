@@ -649,37 +649,22 @@ end;
 
 class function TDAIProjectService.ShowFormAsText(const AFileName: string): TJSONObject;
 var
-  LActionServices: IOTAActionServices;
-  LDFMFileName: string;
+  LFormFileName: string;
   LFileName: string;
-  LOpened: Boolean;
+  LSourceEditor: IOTASourceEditor;
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
-  if SameText(TPath.GetExtension(LFileName), '.dfm') or SameText(TPath.GetExtension(LFileName), '.fmx') then
-    LDFMFileName := LFileName
-  else
-  begin
-    LDFMFileName := ChangeFileExt(LFileName, '.dfm');
-    if not TFile.Exists(LDFMFileName) and TFile.Exists(ChangeFileExt(LFileName, '.fmx')) then
-      LDFMFileName := ChangeFileExt(LFileName, '.fmx');
-  end;
-
-  if not TFile.Exists(LDFMFileName) and not TDAIOTA.IsFormLoadedForFile(LFileName) then
-    raise EDAIFileNotFound.CreateFmt('Formulardatei nicht gefunden: %s', [LDFMFileName]);
-
-  LOpened := False;
-  TDAIOTA.RunOnMainThread(
-    procedure
-    begin
-      if not Supports(BorlandIDEServices, IOTAActionServices, LActionServices) then
-        raise EInvalidOperation.Create('IOTAActionServices ist nicht verfügbar.');
-      LOpened := LActionServices.OpenFile(LDFMFileName);
-    end);
+  LFormFileName := TDAIOTA.FormFileName(LFileName);
+  if LFormFileName = '' then
+    raise EDAIFileNotFound.CreateFmt('Formulardatei nicht gefunden: %s', [LFileName]);
+  LSourceEditor := TDAIOTA.EnsureFormTextEditor(LFormFileName);
+  if not Assigned(LSourceEditor) then
+    raise EInvalidOperation.CreateFmt('Der native IDE-Textmodus für dieses Formular ist nicht verfügbar: %s', [LFormFileName]);
 
   Result := TJSONObject.Create;
-  Result.AddPair('file', LDFMFileName);
-  Result.AddPair('text_mode_requested', TJSONBool.Create(LOpened));
-  Result.AddPair('source_editor_available', TJSONBool.Create(Assigned(TDAIOTA.FindSourceEditor(LDFMFileName))));
+  Result.AddPair('file', LFormFileName);
+  Result.AddPair('text_mode_requested', TJSONBool.Create(True));
+  Result.AddPair('source_editor_available', TJSONBool.Create(True));
 end;
 
 end.

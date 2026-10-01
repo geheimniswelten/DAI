@@ -45,44 +45,50 @@ begin
 end;
 
 function FindFormEditor(const AFileName: string): IOTAFormEditor;
-var
-  LIndex: Integer;
-  LModule: IOTAModule;
 begin
-  Result := nil;
-  LModule := TDAIOTA.FindModuleByFileName(AFileName);
-  if not Assigned(LModule) and not SameText(TPath.GetExtension(AFileName), '.pas') then
-    LModule := TDAIOTA.FindModuleByFileName(ChangeFileExt(AFileName, '.pas'));
-  if not Assigned(LModule) then
-    Exit;
-  for LIndex := 0 to LModule.ModuleFileCount - 1 do
-    if Supports(LModule.ModuleFileEditors[LIndex], IOTAFormEditor, Result) then
-      Exit;
-  Result := nil;
+  Result := TDAIOTA.FindFormEditor(AFileName);
 end;
 
-function ComponentString(const AComponent: IOTAComponent; const APropertyName: string): string;
+function TryComponentString(const AComponent: IOTAComponent; const APropertyName: string; out AValue: string): Boolean;
 var
   LAnsi: AnsiString;
   LShort: ShortString;
   LWide: WideString;
 begin
-  Result := '';
+  Result := False;
+  AValue := '';
   if not Assigned(AComponent) then
     Exit;
   case AComponent.GetPropTypeByName(APropertyName) of
     tkString:
-      if AComponent.GetPropValueByName(APropertyName, LShort) then
-        Result := string(LShort);
+      begin
+        LShort := '';
+        Result := AComponent.GetPropValueByName(APropertyName, LShort);
+        if Result then
+          AValue := string(LShort);
+      end;
     tkLString:
-      if AComponent.GetPropValueByName(APropertyName, LAnsi) then
-        Result := string(LAnsi);
+      begin
+        Result := AComponent.GetPropValueByName(APropertyName, LAnsi);
+        if Result then
+          AValue := string(LAnsi);
+      end;
     tkWString:
-      if AComponent.GetPropValueByName(APropertyName, LWide) then
-        Result := string(LWide);
+      begin
+        Result := AComponent.GetPropValueByName(APropertyName, LWide);
+        if Result then
+          AValue := string(LWide);
+      end;
     tkUString:
-      AComponent.GetPropValueByName(APropertyName, Result);
+      Result := AComponent.GetPropValueByName(APropertyName, AValue);
   end;
+  if not Result then
+    AValue := '';
+end;
+
+function ComponentString(const AComponent: IOTAComponent; const APropertyName: string): string;
+begin
+  TryComponentString(AComponent, APropertyName, Result);
 end;
 
 function ScalarProperty(const AComponent: IOTAComponent; const AName: string; const AKind: TTypeKind): TJSONValue;
@@ -96,7 +102,8 @@ begin
   Result := nil;
   if AKind in [tkString, tkLString, tkWString, tkUString] then
   begin
-    LText := ComponentString(AComponent, AName);
+    if not TryComponentString(AComponent, AName, LText) then
+      Exit;
     if Length(LText) > CMaximumPropertyCharacters then
       SetLength(LText, CMaximumPropertyCharacters);
     Exit(TJSONString.Create(LText));
@@ -269,31 +276,18 @@ end;
 class function TDAIDesignerService.ShowDesigner(const AFileName: string): TJSONObject;
 var
   LFileName: string;
+  LFormEditor: IOTAFormEditor;
   LResult: TJSONObject;
 begin
   LFileName := DesignerFileName(AFileName);
+  LFormEditor := TDAIOTA.EnsureFormDesigner(LFileName);
+  if not Assigned(LFormEditor) then
+    raise EInvalidOperation.CreateFmt('Die angegebene Datei hat keinen verfügbaren Formdesigner: %s', [LFileName]);
   LResult := TJSONObject.Create;
   try
     TDAIOTA.RunOnMainThread(
       procedure
-      var
-        LActionServices: IOTAActionServices;
-        LFormEditor: IOTAFormEditor;
       begin
-        LFormEditor := FindFormEditor(LFileName);
-        if not Assigned(LFormEditor) then
-        begin
-          if not TFile.Exists(LFileName) then
-            raise EDAIFileNotFound.CreateFmt('Form-Unit nicht gefunden: %s', [LFileName]);
-          if not Supports(BorlandIDEServices, IOTAActionServices, LActionServices) then
-            raise EInvalidOperation.Create('IOTAActionServices ist nicht verfügbar.');
-          if not LActionServices.OpenFile(LFileName) then
-            raise EInvalidOperation.Create('Die Form-Unit konnte nicht geöffnet werden.');
-          LFormEditor := FindFormEditor(LFileName);
-        end;
-        if not Assigned(LFormEditor) then
-          raise EInvalidOperation.Create('Die angegebene Datei hat keinen verfügbaren Formdesigner.');
-        LFormEditor.Show;
         LResult.AddPair('file', LFormEditor.FileName);
         LResult.AddPair('shown', TJSONBool.Create(True));
       end);

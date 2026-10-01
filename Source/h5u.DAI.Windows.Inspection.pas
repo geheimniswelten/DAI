@@ -13,6 +13,7 @@ type
     class function DebuggerWindows(const AIncludeChildren: Boolean; const AMaximumWindows, AMaximumControls, ATimeoutMs: Integer): TJSONObject; static;
     class procedure RegisterPermissionWindow(const AHandle: HWND); static;
     class procedure UnregisterPermissionWindow(const AHandle: HWND); static;
+    class function IsProtectedPermissionWindow(const AHandle: HWND): Boolean; static;
 {$IFDEF DAI_WINDOW_TEST}
     class function TestProcessWindows(const AProcessId: DWORD; const AIncludeChildren: Boolean; const AMaximumWindows, AMaximumControls, ATimeoutMs: Integer): TJSONObject; static;
 {$ENDIF}
@@ -828,6 +829,11 @@ begin
     Result.Free;
     raise;
   end;
+end;
+
+class function TDAIWindowService.IsProtectedPermissionWindow(const AHandle: HWND): Boolean;
+begin
+  Result := IsPermissionWindow(AHandle);
 end;
 
 class procedure TDAIWindowService.RegisterPermissionWindow(const AHandle: HWND);

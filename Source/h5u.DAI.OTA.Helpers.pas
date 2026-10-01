@@ -21,6 +21,10 @@ type
     class function Projects: TArray<IOTAProject>; static;
     class function FindModuleByFileName(const AFileName: string): IOTAModule; static;
     class function FindSourceEditor(const AFileName: string): IOTASourceEditor; static;
+    class function FindFormEditor(const AFileName: string): IOTAFormEditor; static;
+    class function FormFileName(const AFileName: string): string; static;
+    class function EnsureFormTextEditor(const AFileName: string): IOTASourceEditor; static;
+    class function EnsureFormDesigner(const AFileName: string): IOTAFormEditor; static;
     class function ProjectContainsFile(const AProject: IOTAProject; const AFileName: string): Boolean; static;
     class function ProjectForFile(const AFileName: string): IOTAProject; static;
     class function IsFileOpenInEditor(const AFileName: string): Boolean; static;
@@ -51,6 +55,108 @@ uses
 
 const
   CEditReaderChunkSize = 8192;
+  CFormViewWaitMilliseconds = 2000;
+  CFormViewProbeMilliseconds = 25;
+
+type
+  TDAIFormViewRequest = record
+    TextMode: Boolean;
+    Waiters: Integer;
+  end;
+
+var
+  GFormViewRequests: TDictionary<string, TDAIFormViewRequest>;
+
+// Accessed only on the IDE thread. Matching requests share one posted action;
+// an opposite transition must wait for the current request to finish.
+procedure ObserveFormViewRequest(const AFileName: string);
+var
+  LCompleted: Boolean;
+  LKey: string;
+  LRequest: TDAIFormViewRequest;
+begin
+  LKey := LowerCase(TDAIOTA.NormalizeFileName(AFileName));
+  if not GFormViewRequests.TryGetValue(LKey, LRequest) then
+    Exit;
+  if LRequest.Waiters <> 0 then
+    Exit;
+  if LRequest.TextMode then
+    LCompleted := Assigned(TDAIOTA.FindSourceEditor(AFileName))
+  else
+    LCompleted := Assigned(TDAIOTA.FindFormEditor(AFileName));
+  // A timeout cannot cancel a posted IDE message. Keep its guard until completion
+  // is observed (or the module is actually gone), so a late post cannot toggle back.
+  if LCompleted or not Assigned(TDAIOTA.FindModuleByFileName(AFileName)) then
+    GFormViewRequests.Remove(LKey);
+end;
+
+function BeginFormViewRequest(const AFileName: string; const ATextMode: Boolean; out AShouldPost: Boolean): Boolean;
+var
+  LKey: string;
+  LRequest: TDAIFormViewRequest;
+begin
+  AShouldPost := False;
+  ObserveFormViewRequest(AFileName);
+  LKey := LowerCase(TDAIOTA.NormalizeFileName(AFileName));
+  if GFormViewRequests.TryGetValue(LKey, LRequest) then
+  begin
+    if LRequest.TextMode <> ATextMode then
+      Exit(False);
+    Inc(LRequest.Waiters);
+  end
+  else
+  begin
+    LRequest.TextMode := ATextMode;
+    LRequest.Waiters := 1;
+    AShouldPost := True;
+  end;
+  GFormViewRequests.AddOrSetValue(LKey, LRequest);
+  Result := True;
+end;
+
+procedure EndFormViewRequest(const AFileName: string);
+var
+  LKey: string;
+  LRequest: TDAIFormViewRequest;
+begin
+  LKey := LowerCase(TDAIOTA.NormalizeFileName(AFileName));
+  if not GFormViewRequests.TryGetValue(LKey, LRequest) then
+    Exit;
+  Dec(LRequest.Waiters);
+  GFormViewRequests.AddOrSetValue(LKey, LRequest);
+  ObserveFormViewRequest(AFileName);
+end;
+
+function HasOppositeFormViewRequest(const AFileName: string; const ATextMode: Boolean): Boolean;
+var
+  LRequest: TDAIFormViewRequest;
+begin
+  Result := False;
+  ObserveFormViewRequest(AFileName);
+  if GFormViewRequests.TryGetValue(LowerCase(TDAIOTA.NormalizeFileName(AFileName)), LRequest) then
+    Result := LRequest.TextMode <> ATextMode;
+end;
+
+procedure RequireSavedPascalSource(const ASourceEditor: IOTASourceEditor);
+var
+  LFileName, LSavedText, LEditorText: string;
+  LFormat: TDAITextFileFormat;
+begin
+  LFileName := ASourceEditor.FileName;
+  if not SameText(TPath.GetExtension(LFileName), '.pas') then
+    Exit;
+  if TFile.Exists(LFileName) then
+  begin
+    LSavedText := TDAITextEncoding.ReadFile(LFileName, LFormat);
+    LEditorText := TDAIOTA.ReadEditorText(ASourceEditor);
+    // Modified can reflect a dirty DFM in the same module. Compare the actual
+    // complete Pascal source, decoding disk encoding and normalizing line ends.
+    if TDAITextEncoding.ApplyLineEnding(LSavedText, lekCRLF) = TDAITextEncoding.ApplyLineEnding(LEditorText, lekCRLF) then
+      Exit;
+  end;
+  raise EInvalidOperation.CreateFmt('Der native Formular-Textmodus ersetzt den Pascal-Editor. ' +
+    'Die Pascal-Unit ist noch nicht gespeichert oder hat ungespeicherte Änderungen: %s', [LFileName]);
+end;
 
 class function TDAIOTA.ActiveProject: IOTAProject;
 var
@@ -151,6 +257,7 @@ begin
       LModuleServices: IOTAModuleServices;
       LModule: IOTAModule;
       LEditor: IOTAEditor;
+      LAdditionalFiles: IOTAAdditionalModuleFiles;
     begin
       if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
         Exit;
@@ -179,6 +286,16 @@ begin
             Exit;
           end;
         end;
+        if Supports(LModule, IOTAAdditionalModuleFiles, LAdditionalFiles) then
+          for LEditorIndex := 0 to LAdditionalFiles.AdditionalModuleFileCount - 1 do
+          begin
+            LEditor := LAdditionalFiles.AdditionalModuleFileEditors[LEditorIndex];
+            if Assigned(LEditor) and SameFile(LEditor.FileName, AFileName) then
+            begin
+              LResult := LModule;
+              Exit;
+            end;
+          end;
       end;
     end);
   Result := LResult;
@@ -194,27 +311,311 @@ begin
       LModuleIndex: Integer;
       LModuleServices: IOTAModuleServices;
       LModule: IOTAModule;
+      LAdditionalFiles: IOTAAdditionalModuleFiles;
+      LEditorServices: IOTAEditorServices;
+      LIterator: IOTAEditBufferIterator;
       LSourceEditor: IOTASourceEditor;
     begin
-      if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
+      if Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
+        for LModuleIndex := 0 to LModuleServices.ModuleCount - 1 do
+        begin
+          LModule := LModuleServices.Modules[LModuleIndex];
+          if not Assigned(LModule) then
+            Continue;
+
+          for LEditorIndex := 0 to LModule.ModuleFileCount - 1 do
+            if Supports(LModule.ModuleFileEditors[LEditorIndex], IOTASourceEditor, LSourceEditor) then
+              if SameFile(LSourceEditor.FileName, AFileName) then
+              begin
+                LResult := LSourceEditor;
+                Exit;
+              end;
+          if Supports(LModule, IOTAAdditionalModuleFiles, LAdditionalFiles) then
+            for LEditorIndex := 0 to LAdditionalFiles.AdditionalModuleFileCount - 1 do
+              if Supports(LAdditionalFiles.AdditionalModuleFileEditors[LEditorIndex], IOTASourceEditor, LSourceEditor) then
+                if SameFile(LSourceEditor.FileName, AFileName) then
+                begin
+                  LResult := LSourceEditor;
+                  Exit;
+                end;
+        end;
+
+      // Form text buffers need not appear among the module's regular file editors.
+      if not Supports(BorlandIDEServices, IOTAEditorServices, LEditorServices) then
         Exit;
-
-      for LModuleIndex := 0 to LModuleServices.ModuleCount - 1 do
+      if not LEditorServices.GetEditBufferIterator(LIterator) or not Assigned(LIterator) then
+        Exit;
+      for LEditorIndex := 0 to LIterator.Count - 1 do
       begin
-        LModule := LModuleServices.Modules[LModuleIndex];
-        if not Assigned(LModule) then
-          Continue;
-
-        for LEditorIndex := 0 to LModule.ModuleFileCount - 1 do
-          if Supports(LModule.ModuleFileEditors[LEditorIndex], IOTASourceEditor, LSourceEditor) and
-             SameFile(LSourceEditor.FileName, AFileName) then
-          begin
-            LResult := LSourceEditor;
-            Exit;
-          end;
+        LSourceEditor := LIterator.EditBuffers[LEditorIndex];
+        if Assigned(LSourceEditor) and SameFile(LSourceEditor.FileName, AFileName) then
+        begin
+          LResult := LSourceEditor;
+          Exit;
+        end;
       end;
     end);
   Result := LResult;
+end;
+
+class function TDAIOTA.FindFormEditor(const AFileName: string): IOTAFormEditor;
+var
+  LResult: IOTAFormEditor;
+begin
+  LResult := nil;
+  RunOnMainThread(
+    procedure
+    var
+      LFormEditor: IOTAFormEditor;
+      LIndex: Integer;
+      LModule: IOTAModule;
+    begin
+      LModule := FindModuleByFileName(AFileName);
+      if not Assigned(LModule) and not SameText(TPath.GetExtension(AFileName), '.pas') then
+        LModule := FindModuleByFileName(ChangeFileExt(AFileName, '.pas'));
+      if not Assigned(LModule) then
+        Exit;
+      for LIndex := 0 to LModule.ModuleFileCount - 1 do
+        if Supports(LModule.ModuleFileEditors[LIndex], IOTAFormEditor, LFormEditor) then
+        begin
+          if SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx') then
+            if not SameFile(LFormEditor.FileName, AFileName) then
+              Continue;
+          LResult := LFormEditor;
+          Exit;
+        end;
+    end);
+  Result := LResult;
+end;
+
+class function TDAIOTA.FormFileName(const AFileName: string): string;
+var
+  LResult: string;
+begin
+  LResult := '';
+  RunOnMainThread(
+    procedure
+    var
+      LFormEditor: IOTAFormEditor;
+      LIndex: Integer;
+      LModule: IOTAModule;
+    begin
+      LModule := FindModuleByFileName(AFileName);
+      if Assigned(LModule) then
+        for LIndex := 0 to LModule.ModuleFileCount - 1 do
+          if Supports(LModule.ModuleFileEditors[LIndex], IOTAFormEditor, LFormEditor) then
+          begin
+            if SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx') then
+              if not SameFile(LFormEditor.FileName, AFileName) then
+                Continue;
+            LResult := LFormEditor.FileName;
+            Exit;
+          end;
+
+      if SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx') then
+      begin
+        if TFile.Exists(AFileName) or Assigned(FindSourceEditor(AFileName)) then
+          LResult := AFileName;
+      end
+      else if Assigned(FindSourceEditor(ChangeFileExt(AFileName, '.dfm'))) or TFile.Exists(ChangeFileExt(AFileName, '.dfm')) then
+        LResult := ChangeFileExt(AFileName, '.dfm')
+      else if Assigned(FindSourceEditor(ChangeFileExt(AFileName, '.fmx'))) or TFile.Exists(ChangeFileExt(AFileName, '.fmx')) then
+        LResult := ChangeFileExt(AFileName, '.fmx');
+    end);
+  Result := LResult;
+end;
+
+class function TDAIOTA.EnsureFormTextEditor(const AFileName: string): IOTASourceEditor;
+var
+  LCanWait: Boolean;
+  LDeadline: UInt64;
+  LResult: IOTASourceEditor;
+  LViewChangeRequested: Boolean;
+begin
+  LCanWait := GetCurrentThreadId <> MainThreadID;
+  LResult := nil;
+  LViewChangeRequested := False;
+  try
+    RunOnMainThread(
+      procedure
+      var
+        LActionServices: IOTAActionServices;
+        LEditActions: IOTAEditActions;
+        LEditorIndex: Integer;
+        LFormEditor: IOTAFormEditor;
+        LModule: IOTAModule;
+        LShouldPost: Boolean;
+        LSourceEditor: IOTASourceEditor;
+      begin
+        if HasOppositeFormViewRequest(AFileName, True) then
+          Exit;
+        LResult := FindSourceEditor(AFileName);
+        if Assigned(LResult) then
+        begin
+          LResult.Show;
+          Exit;
+        end;
+        if not (SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx')) then
+          Exit;
+
+        LModule := FindModuleByFileName(AFileName);
+        if not Assigned(LModule) then
+        begin
+          if not TFile.Exists(AFileName) then
+            Exit;
+          if not Supports(BorlandIDEServices, IOTAActionServices, LActionServices) then
+            Exit;
+          if not LActionServices.OpenFile(AFileName) then
+            Exit;
+          LResult := FindSourceEditor(AFileName);
+          if Assigned(LResult) then
+          begin
+            LResult.Show;
+            Exit;
+          end;
+          LModule := FindModuleByFileName(AFileName);
+          if not Assigned(LModule) then
+            Exit;
+        end;
+
+        LFormEditor := nil;
+        for LEditorIndex := 0 to LModule.ModuleFileCount - 1 do
+          if Supports(LModule.ModuleFileEditors[LEditorIndex], IOTAFormEditor, LFormEditor) then
+            if SameFile(LFormEditor.FileName, AFileName) then
+              Break
+            else
+              LFormEditor := nil;
+        if not Assigned(LFormEditor) then
+          Exit;
+
+        for LEditorIndex := 0 to LModule.ModuleFileCount - 1 do
+          if Supports(LModule.ModuleFileEditors[LEditorIndex], IOTASourceEditor, LSourceEditor) then
+          begin
+            // View as Text replaces the Pascal module in the native IDE. Never
+            // sacrifice a new or modified in-memory unit to obtain a form buffer.
+            RequireSavedPascalSource(LSourceEditor);
+            LSourceEditor.Show;
+            if LSourceEditor.EditViewCount = 0 then
+              Continue;
+            if not Supports(LSourceEditor.EditViews[0], IOTAEditActions, LEditActions) then
+              Continue;
+            // A posted transition cannot complete inside a direct main-thread caller.
+            if not LCanWait then
+              Exit;
+            if not BeginFormViewRequest(AFileName, True, LShouldPost) then
+              Exit;
+            LViewChangeRequested := True;
+            if not LShouldPost then
+              Exit;
+            LFormEditor.Show;
+            // The native action posts an IDE message; its result may appear after this callback.
+            LEditActions.SwapSourceFormView;
+            LResult := FindSourceEditor(AFileName);
+            if Assigned(LResult) then
+              LResult.Show;
+            Exit;
+          end;
+      end);
+
+    // Never wait or pump messages inside an IDE/main-thread callback. The HTTP worker
+    // releases it first, then probes briefly while the IDE processes its posted action.
+    if LViewChangeRequested and not Assigned(LResult) and (GetCurrentThreadId <> MainThreadID) then
+    begin
+      LDeadline := GetTickCount64 + CFormViewWaitMilliseconds;
+      repeat
+        TThread.Sleep(CFormViewProbeMilliseconds);
+        LResult := FindSourceEditor(AFileName);
+      until Assigned(LResult) or (GetTickCount64 >= LDeadline);
+      if Assigned(LResult) then
+        RunOnMainThread(procedure begin LResult.Show; end);
+    end;
+    Result := LResult;
+  finally
+    if LViewChangeRequested then
+      RunOnMainThread(procedure begin EndFormViewRequest(AFileName); end);
+  end;
+end;
+
+class function TDAIOTA.EnsureFormDesigner(const AFileName: string): IOTAFormEditor;
+var
+  LCanWait: Boolean;
+  LDeadline: UInt64;
+  LFormFileName: string;
+  LResult: IOTAFormEditor;
+  LViewChangeRequested: Boolean;
+begin
+  LCanWait := GetCurrentThreadId <> MainThreadID;
+  LResult := nil;
+  LFormFileName := '';
+  LViewChangeRequested := False;
+  try
+    RunOnMainThread(
+      procedure
+      var
+        LActionServices: IOTAActionServices;
+        LEditActions: IOTAEditActions;
+        LShouldPost: Boolean;
+        LSourceEditor: IOTASourceEditor;
+      begin
+        LFormFileName := FormFileName(AFileName);
+        if LFormFileName <> '' then
+          if HasOppositeFormViewRequest(LFormFileName, False) then
+            Exit;
+        LResult := FindFormEditor(AFileName);
+        if Assigned(LResult) then
+        begin
+          LResult.Show;
+          Exit;
+        end;
+        LSourceEditor := nil;
+        if LFormFileName <> '' then
+          LSourceEditor := FindSourceEditor(LFormFileName);
+        if not Assigned(LSourceEditor) then
+        begin
+          if not TFile.Exists(AFileName) then
+            Exit;
+          if not Supports(BorlandIDEServices, IOTAActionServices, LActionServices) then
+            Exit;
+          if not LActionServices.OpenFile(AFileName) then
+            Exit;
+          LResult := FindFormEditor(AFileName);
+          if Assigned(LResult) then
+            LResult.Show;
+          Exit;
+        end;
+        LSourceEditor.Show;
+        if LSourceEditor.EditViewCount = 0 then
+          Exit;
+        if not Supports(LSourceEditor.EditViews[0], IOTAEditActions, LEditActions) then
+          Exit;
+        if not LCanWait then
+          Exit;
+        if not BeginFormViewRequest(LFormFileName, False, LShouldPost) then
+          Exit;
+        LViewChangeRequested := True;
+        if not LShouldPost then
+          Exit;
+        LEditActions.SwapSourceFormView;
+        LResult := FindFormEditor(LFormFileName);
+        if Assigned(LResult) then
+          LResult.Show;
+      end);
+
+    if LViewChangeRequested and not Assigned(LResult) and (GetCurrentThreadId <> MainThreadID) then
+    begin
+      LDeadline := GetTickCount64 + CFormViewWaitMilliseconds;
+      repeat
+        TThread.Sleep(CFormViewProbeMilliseconds);
+        LResult := FindFormEditor(LFormFileName);
+      until Assigned(LResult) or (GetTickCount64 >= LDeadline);
+      if Assigned(LResult) then
+        RunOnMainThread(procedure begin LResult.Show; end);
+    end;
+    Result := LResult;
+  finally
+    if LViewChangeRequested then
+      RunOnMainThread(procedure begin EndFormViewRequest(LFormFileName); end);
+  end;
 end;
 
 class function TDAIOTA.IsFileOpenInEditor(const AFileName: string): Boolean;
@@ -700,5 +1101,11 @@ begin
     LList.Free;
   end;
 end;
+
+initialization
+  GFormViewRequests := TDictionary<string, TDAIFormViewRequest>.Create;
+
+finalization
+  GFormViewRequests.Free;
 
 end.

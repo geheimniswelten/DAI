@@ -266,7 +266,8 @@ begin
     LMode := cmOTABuild
   else
     LMode := cmOTAMake;
-  Result := AProject.ProjectBuilder.BuildProject(LMode, True, AClearMessages);
+  // ToolsAPI: Wait controls the final OK prompt; the Boolean return still reports the completed build result.
+  Result := AProject.ProjectBuilder.BuildProject(LMode, False, AClearMessages);
 end;
 
 class procedure TDAIBuildService.ClearProjectProcess(const AProjectFileName: string);
