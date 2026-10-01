@@ -2,6 +2,9 @@
 
 ## 1.2.5
 
+- 18 längere Text-/JSON-Vorlagen als native Delphi-Multiline-Strings mit explizitem TEXTBLOCK CRLF; dynamische Werte über Format.
+- Skill, Quellvorlagen, Dialogtexte und serialisierte MCP-Werkzeugdefinitionen bleiben unverändert; Prüfer versteht Textblöcke.
+- Statische Versionsprüfung prüft optionale Datei-/Produktversionsressourcen nur bei aktivierter VerInfo_IncludeVerInfo-Einstellung.
 - DAI-Skill heißt künftig dai-delphi-ide; Verzeichnis und YAML-Name tragen die Herkunft, vorgeschriebene Einstiegsdatei bleibt SKILL.md.
 - Native Skillmigration für beide alten delphi-ide-Pfade unter USERPROFILE/APPDATA, mit Besitzmarkern, Sicherungen und Konfliktprüfung.
 - MigrateSkillFiles aktualisiert ausschließlich Skills; vorhandene Clientkonfigurationen und Settings bleiben unverändert.

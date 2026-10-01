@@ -1,5 +1,7 @@
 ﻿unit h5u.DAI.OTA.Creators;
 
+{$TEXTBLOCK CRLF}
+
 interface
 
 uses
@@ -215,8 +217,18 @@ end;
 
 function TDAIModuleCreatorImpl.BuildDefaultUnitSource: string;
 begin
-  Result := 'unit ' + FUnitName + ';' + sLineBreak + sLineBreak + 'interface' + sLineBreak + sLineBreak + 'implementation' + sLineBreak + sLineBreak +
-    'end.' + sLineBreak;
+  Result := Format(
+    '''
+    unit %s;
+
+    interface
+
+    implementation
+
+    end.
+
+    ''', [FUnitName]
+  );
 end;
 
 function TDAIModuleCreatorImpl.BuildFormResource(const AFormIdent: string): string;
@@ -224,11 +236,26 @@ var
   LFormName: string;
 begin
   LFormName := EffectiveFormName(AFormIdent);
-  Result := 'object ' + LFormName + ': ' + FormClassName(LFormName) + sLineBreak + '  Left = 0' + sLineBreak + '  Top = 0' + sLineBreak +
-    '  Caption = ''' + EscapePascalString(LFormName) + '''' + sLineBreak + '  ClientHeight = 480' + sLineBreak + '  ClientWidth = 640' + sLineBreak +
-    '  Color = clBtnFace' + sLineBreak + '  Font.Charset = DEFAULT_CHARSET' + sLineBreak + '  Font.Color = clWindowText' + sLineBreak +
-    '  Font.Height = -12' + sLineBreak + '  Font.Name = ''Segoe UI''' + sLineBreak + '  Font.Style = []' + sLineBreak + '  Position = poScreenCenter' +
-    sLineBreak + '  TextHeight = 15' + sLineBreak + 'end' + sLineBreak;
+  Result := Format(
+    '''
+    object %s: %s
+      Left = 0
+      Top = 0
+      Caption = '%s'
+      ClientHeight = 480
+      ClientWidth = 640
+      Color = clBtnFace
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -12
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      Position = poScreenCenter
+      TextHeight = 15
+    end
+
+    ''', [LFormName, FormClassName(LFormName), EscapePascalString(LFormName)]
+  );
 end;
 
 function TDAIModuleCreatorImpl.BuildFormSource(const AFormIdent: string; const AAncestorIdent: string): string;
@@ -238,11 +265,32 @@ var
 begin
   LAncestorName := EffectiveAncestorName(AAncestorIdent);
   LFormName := EffectiveFormName(AFormIdent);
-  Result := 'unit ' + FUnitName + ';' + sLineBreak + sLineBreak + 'interface' + sLineBreak + sLineBreak + 'uses' + sLineBreak +
-    '  System.Classes,' + sLineBreak + '  Vcl.Controls,' + sLineBreak + '  Vcl.Forms;' + sLineBreak + sLineBreak + 'type' + sLineBreak + '  ' +
-    FormClassName(LFormName) + ' = class(' + LAncestorName + ')' + sLineBreak + '  end;' + sLineBreak + sLineBreak + 'var' + sLineBreak + '  ' + LFormName +
-    ': ' + FormClassName(LFormName) + ';' + sLineBreak + sLineBreak + 'implementation' + sLineBreak + sLineBreak + '{$R *.dfm}' + sLineBreak + sLineBreak +
-    'end.' + sLineBreak;
+  Result := Format(
+    '''
+    unit %s;
+
+    interface
+
+    uses
+      System.Classes,
+      Vcl.Controls,
+      Vcl.Forms;
+
+    type
+      %s = class(%s)
+      end;
+
+    var
+      %s: %s;
+
+    implementation
+
+    {$R *.dfm}
+
+    end.
+
+    ''', [FUnitName, FormClassName(LFormName), LAncestorName, LFormName, FormClassName(LFormName)]
+  );
 end;
 
 function TDAIModuleCreatorImpl.EffectiveAncestorName(const AAncestorIdent: string): string;
@@ -561,12 +609,33 @@ begin
   if Trim(LProjectName) = '' then
     LProjectName := FProjectName;
   if FKind = pkVCL then
-    LSource := 'program ' + LProjectName + ';' + sLineBreak + sLineBreak + 'uses' + sLineBreak + '  Vcl.Forms;' + sLineBreak + sLineBreak + 'begin' +
-      sLineBreak + '  Application.Initialize;' + sLineBreak + '  Application.MainFormOnTaskbar := True;' + sLineBreak + '  Application.Run;' + sLineBreak +
-      'end.' + sLineBreak
+    LSource := Format(
+      '''
+      program %s;
+
+      uses
+        Vcl.Forms;
+
+      begin
+        Application.Initialize;
+        Application.MainFormOnTaskbar := True;
+        Application.Run;
+      end.
+
+      ''', [LProjectName]
+    )
   else
-    LSource := 'program ' + LProjectName + ';' + sLineBreak + sLineBreak + '{$APPTYPE CONSOLE}' + sLineBreak + sLineBreak + 'begin' + sLineBreak + 'end.' +
-      sLineBreak;
+    LSource := Format(
+      '''
+      program %s;
+
+      {$APPTYPE CONSOLE}
+
+      begin
+      end.
+
+      ''', [LProjectName]
+    );
   Result := TDAIStringFile.Create(LSource);
 end;
 

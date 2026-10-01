@@ -1,5 +1,28 @@
 # DAI 1.2.5 – Prüfbericht vom 1. Oktober 2026
 
+## Ergänzung: Delphi-Multiline-Strings
+
+18 Vorlagen mit mindestens drei Text- oder bisherigen Literalzeilen verwenden native Delphi-Textblöcke:
+Skill und Codex-TOML, Hermes-YAML, fünf Unit-/Form-/Projektvorlagen, drei Projektbestätigungen und sieben längere MCP-Eingabeschemas.
+TEXTBLOCK CRLF steht einmal im Header jeder betroffenen Unit; MCP.Tools verwendet zusätzlich die JSON-Dekoration.
+Format setzt dynamische Werte ein. Die bisherigen Inhalte, Einrückungen und finalen Zeilenumbrüche bleiben erhalten.
+Kurze/optionale Textsegmente sowie Testorakel für Mischzeilenenden, Quotes und unvollständige Sourcen bleiben explizit.
+
+- Native Vorher/Nachher-Vergleiche: je Win32/Win64 32 OTA- und 24 TOML-/YAML-Vergleiche, inklusive Unicode, Apostrophen und Prozentzeichen.
+- Generierter Skill mit 7.267 UTF-8-Bytes entspricht bytegenau vorherigem Generator und installierter Datei; keine erneute Registrierung nötig.
+- Alle 52 nativ exportierten Werkzeugobjekte inklusive Schemas/Annotations bleiben in Win32/Win64 bytegenau identisch zum bisherigen Export.
+- Alle 38 aktuellen PAS-Units bestehen unter Win32/Win64 den nativen Ganzdatei-Schreibguard und Interfacefilter, einschließlich Textblock-Vorlagen.
+- Je 144 bestehende Registrierungsprüfungen unter Win32/Win64 erfolgreich; Release-Package und Bridge für beide Architekturen gebaut/geprüft.
+- Der statische Prüfer maskiert 3/5/7-Quote-Textblöcke, ignoriert darin vermeintlichen Pascalcode und dekodiert JSON-Schema-Blöcke; 32 lokale Checks erfolgreich.
+
+Compilerprobe dcc32/dcc64 37.0: NATIVE ist der Standard und liefert unter Windows CRLF, auch bei LF in der Probe-Quelldatei.
+TEXTBLOCK DEFAULT ist ungültig (E1030). Die Schlussquotes müssen auf einer eigenen Zeile stehen (inline: E2658).
+Der unmittelbar vorhergehende Zeilenumbruch gehört nicht zum Wert; ein finaler CRLF erfordert eine zusätzliche leere Textblockzeile.
+
+Die aktuelle DAI.dproj hatte bereits vor dieser Änderung keine Versionsressource aktiviert; diese Projekteinstellung bleibt erhalten.
+Die Versionsprüfung prüft Datei-/Produktversionen weiterhin bei aktivierter VerInfo_IncludeVerInfo-Einstellung.
+Die MCP-/Produktversion bleibt 1.2.5; der Refactor ändert keine Werkzeugschnittstellen oder Clientdateien.
+
 ## DAI-Dateinamen und aktuelle Migration
 
 Der verwaltete Skill heißt dai-delphi-ide und liegt unter %USERPROFILE%\.agents\skills\dai-delphi-ide\SKILL.md.

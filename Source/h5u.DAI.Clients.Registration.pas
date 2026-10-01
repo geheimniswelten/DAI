@@ -1,5 +1,7 @@
 ﻿unit h5u.DAI.Clients.Registration;
 
+{$TEXTBLOCK CRLF}
+
 interface
 
 uses
@@ -258,8 +260,15 @@ begin
     if (Ord(LCharacter) < 32) or (Ord(LCharacter) = 127) then
       raise EDAIClientConfigConflict.Create('Steuerzeichen im Bearer-Token werden nicht registriert.');
   if AClient.Format = 'yaml' then
-    Exit('dai:' + sLineBreak + '  url: ' + JsonString(Endpoint) + sLineBreak +
-      '  headers:' + sLineBreak + '    Authorization: ' + JsonString('Bearer ' + TDAISettings.Instance.Token) + sLineBreak + '  timeout: 180');
+    Exit(Format(
+      '''
+      dai:
+        url: %s
+        headers:
+          Authorization: %s
+        timeout: 180
+      ''',
+      [JsonString(Endpoint), JsonString('Bearer ' + TDAISettings.Instance.Token)]));
   LEntry := TJSONObject.Create;
   try
     if AClient.Id = 'claude-desktop' then

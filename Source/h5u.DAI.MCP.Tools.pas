@@ -1,5 +1,7 @@
 ﻿unit h5u.DAI.MCP.Tools;
 
+{$TEXTBLOCK CRLF JSON}
+
 interface
 
 uses
@@ -795,21 +797,126 @@ begin
   AddTool(Result, 'reference_roots_list', 'Listet schreibgeschützte Delphi-, Demo-, GetIt- und zusätzliche Referenzpfade.',
     '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'source_search', 'Sucht wörtlichen Text; standardmäßig nur Unit-Interfaces. interfaces_only=false durchsucht auch Implementierungen.',
-    '{"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":256},' +
-    '"scope":{"type":"string","enum":["project","group","references","all"],"default":"all"},"project":{"type":"string"},' +
-    '"directory":{"type":"string"},"file_patterns":{"type":"array","items":{"type":"string","minLength":1,"maxLength":256},"maxItems":100},' +
-    '"interfaces_only":{"type":"boolean","default":true},"case_sensitive":{"type":"boolean"},"whole_word":{"type":"boolean"},' +
-    '"maximum_results":{"type":"integer","minimum":1,"maximum":1000},' +
-    '"maximum_files":{"type":"integer","minimum":1,"maximum":100000},"timeout_ms":{"type":"integer","minimum":1,"maximum":30000}},' +
-    '"required":["query"],"additionalProperties":false}', True);
+    '''
+    {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "project",
+            "group",
+            "references",
+            "all"
+          ],
+          "default": "all"
+        },
+        "project": {
+          "type": "string"
+        },
+        "directory": {
+          "type": "string"
+        },
+        "file_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 100
+        },
+        "interfaces_only": {
+          "type": "boolean",
+          "default": true
+        },
+        "case_sensitive": {
+          "type": "boolean"
+        },
+        "whole_word": {
+          "type": "boolean"
+        },
+        "maximum_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "maximum_files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+    ''', True);
   AddTool(Result, 'ide_windows_list', 'Liest VCL- und native Fenster der IDE; liest DAI-Berechtigungsdialoge und Eingabefeldtexte nicht aus.',
-    '{"type":"object","properties":{"include_children":{"type":"boolean"},"maximum_windows":{"type":"integer","minimum":1,"maximum":100},' +
-    '"maximum_controls":{"type":"integer","minimum":1,"maximum":500},"timeout_ms":{"type":"integer","minimum":1,"maximum":2000}},' +
-    '"additionalProperties":false}', True);
+    '''
+    {
+      "type": "object",
+      "properties": {
+        "include_children": {
+          "type": "boolean"
+        },
+        "maximum_windows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maximum_controls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
+        }
+      },
+      "additionalProperties": false
+    }
+    ''', True);
   AddTool(Result, 'debugger_windows_list', 'Liest native Fenster des aktuellen Debuggerprozesses ohne ihn fortzusetzen; angehaltene Fenstertexte können fehlen.',
-    '{"type":"object","properties":{"include_children":{"type":"boolean"},"maximum_windows":{"type":"integer","minimum":1,"maximum":100},' +
-    '"maximum_controls":{"type":"integer","minimum":1,"maximum":500},"timeout_ms":{"type":"integer","minimum":1,"maximum":2000}},' +
-    '"additionalProperties":false}', True);
+    '''
+    {
+      "type": "object",
+      "properties": {
+        "include_children": {
+          "type": "boolean"
+        },
+        "maximum_windows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maximum_controls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
+        }
+      },
+      "additionalProperties": false
+    }
+    ''', True);
   AddTool(
     Result,
     'reference_files_list',
@@ -845,18 +952,70 @@ begin
     Result,
     'code_definition',
     'Ermittelt die Definition eines Symbols über den bereits von Delphi verwendeten Code-Insight-/LSP-Provider.',
-    '{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer","minimum":1},' +
-    '"character":{"type":"integer","minimum":0},"timeout_ms":{"type":"integer","minimum":100,"maximum":60000}},' +
-    '"required":["file","line","character"],"additionalProperties":false}',
+    '''
+    {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "character": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        }
+      },
+      "required": [
+        "file",
+        "line",
+        "character"
+      ],
+      "additionalProperties": false
+    }
+    ''',
     True
   );
   AddTool(
     Result,
     'code_hover',
     'Liest Help Insight an einer Editorposition; die Datei muss in einem Code-Editor geöffnet sein.',
-    '{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer","minimum":1},' +
-    '"column":{"type":"integer","minimum":1},"timeout_ms":{"type":"integer","minimum":100,"maximum":60000}},' +
-    '"required":["file","line","column"],"additionalProperties":false}',
+    '''
+    {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        }
+      },
+      "required": [
+        "file",
+        "line",
+        "column"
+      ],
+      "additionalProperties": false
+    }
+    ''',
     True
   );
   AddTool(
@@ -870,9 +1029,28 @@ begin
     Result,
     'project_context',
     'Liest den aktiven Delphi-Projekt-, Plattform-, Build-Konfigurations- und Compilerkontext.',
-    '{"type":"object","properties":{"project":{"type":"string"},"include_files":{"type":"boolean"},' +
-    '"maximum_files":{"type":"integer","minimum":1,"maximum":50000},"include_compiler_options":{"type":"boolean"}},' +
-    '"additionalProperties":false}',
+    '''
+    {
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "include_files": {
+          "type": "boolean"
+        },
+        "maximum_files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50000
+        },
+        "include_compiler_options": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+    ''',
     True
   );
   AddTool(
@@ -887,9 +1065,35 @@ begin
     Result,
     'project_create',
     'Erstellt Console- oder VCL-Projekt, bei VCL mit Hauptformular. save=false erzeugt ungespeicherte OTA-Module.',
-    '{"type":"object","properties":{"name":{"type":"string"},"directory":{"type":"string"},"project_kind":{"type":"string","enum":["console","vcl"]},' +
-    '"save":{"type":"boolean","default":true}},' +
-    '"required":["name","directory"],"additionalProperties":false}',
+    '''
+    {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "directory": {
+          "type": "string"
+        },
+        "project_kind": {
+          "type": "string",
+          "enum": [
+            "console",
+            "vcl"
+          ]
+        },
+        "save": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "required": [
+        "name",
+        "directory"
+      ],
+      "additionalProperties": false
+    }
+    ''',
     False
   );
   AddTool(

@@ -1,5 +1,7 @@
 ﻿unit h5u.DAI.OTA.Projects;
 
+{$TEXTBLOCK CRLF}
+
 interface
 
 uses
@@ -333,8 +335,14 @@ begin
   if LOpenProjects <> '' then
     if not ConfirmWorkspaceChange(
       'Neues Projekt erstellen',
-      'DAI erstellt das neue Projekt in der aktuellen Projektgruppe. Sollte die IDE die vorhandene Gruppe nicht erweitern können, könnte sie einen Wechsel anbieten.' +
-      sLineBreak + sLineBreak + 'Geöffnete Projekte:' + sLineBreak + LOpenProjects
+      Format(
+        '''
+        DAI erstellt das neue Projekt in der aktuellen Projektgruppe. Sollte die IDE die vorhandene Gruppe nicht erweitern können, könnte sie einen Wechsel anbieten.
+
+        Geöffnete Projekte:
+        %s
+        ''', [LOpenProjects]
+      )
     ) then
       raise EAbort.Create('Die Projekterstellung wurde durch den Benutzer abgebrochen.');
 
@@ -509,9 +517,17 @@ begin
     LOpenProjects := OpenProjectSummary;
     if not ConfirmWorkspaceChange(
       'Projekt öffnen',
-      'DAI wird die folgende Projektdatei öffnen:' + sLineBreak + LFileName + sLineBreak + sLineBreak +
-      'Die vorhandenen Projekte sollen geöffnet bleiben. Falls die IDE stattdessen einen Gruppenwechsel verlangt, erscheint zusätzlich deren eigener Dialog.' +
-      sLineBreak + sLineBreak + 'Bereits geöffnet:' + sLineBreak + LOpenProjects
+      Format(
+        '''
+        DAI wird die folgende Projektdatei öffnen:
+        %s
+
+        Die vorhandenen Projekte sollen geöffnet bleiben. Falls die IDE stattdessen einen Gruppenwechsel verlangt, erscheint zusätzlich deren eigener Dialog.
+
+        Bereits geöffnet:
+        %s
+        ''', [LFileName, LOpenProjects]
+      )
     ) then
       raise EAbort.Create('Das Öffnen des Projekts wurde durch den Benutzer abgebrochen.');
   end;
@@ -581,8 +597,14 @@ begin
 
   if not ConfirmWorkspaceChange(
     'Projekt aus Projektgruppe entfernen',
-    'Projekt:' + sLineBreak + LProjectFileName + sLineBreak + sLineBreak +
-    'Das Projekt wird nur aus der aktuellen Projektgruppe entfernt. Dateien auf dem Datenträger werden nicht gelöscht.'
+    Format(
+      '''
+      Projekt:
+      %s
+
+      Das Projekt wird nur aus der aktuellen Projektgruppe entfernt. Dateien auf dem Datenträger werden nicht gelöscht.
+      ''', [LProjectFileName]
+    )
   ) then
     raise EAbort.Create('Das Entfernen des Projekts wurde durch den Benutzer abgebrochen.');
 

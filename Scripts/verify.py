@@ -165,11 +165,13 @@ def normalized_declaration(lines: list[str]) -> str:
 def check_declaration_layout(errors: list[str]) -> None:
     for path in sorted(SOURCE.glob("*.pas")):
         lines = read_project_text(path).splitlines()
+        stripped, _ = strip_pascal_strings_and_comments(read_project_text(path))
+        code_lines = stripped.splitlines()
         line_index = 0
         while line_index < len(lines):
-            routine_match = ROUTINE_HEADER_START.match(lines[line_index])
+            routine_match = ROUTINE_HEADER_START.match(code_lines[line_index])
             if routine_match and routine_match.group(2).lower() not in {"begin", "var"}:
-                end_index = find_routine_header_end(lines, line_index)
+                end_index = find_routine_header_end(code_lines, line_index)
                 if end_index is not None:
                     declaration_lines = lines[line_index:end_index + 1]
                     if end_index > line_index and len(normalized_declaration(declaration_lines)) <= MAX_LINE_LENGTH:
@@ -180,9 +182,9 @@ def check_declaration_layout(errors: list[str]) -> None:
                     line_index = end_index + 1
                     continue
 
-            if re.match(r"^\s*property\b", lines[line_index], re.IGNORECASE):
+            if re.match(r"^\s*property\b", code_lines[line_index], re.IGNORECASE):
                 end_index = line_index
-                while end_index < len(lines) and ";" not in lines[end_index]:
+                while end_index < len(lines) and ";" not in code_lines[end_index]:
                     end_index += 1
                 if end_index < len(lines) and end_index > line_index:
                     declaration_lines = lines[line_index:end_index + 1]
@@ -212,6 +214,7 @@ def check_unit_names(errors: list[str]) -> None:
         if not path.name.startswith("h5u."):
             fail(errors, f"Pascal-Datei ohne h5u.-Präfix: {path.name}")
         content = read_project_text(path)
+        content, _ = strip_pascal_strings_and_comments(content)
         match = re.search(r"(?im)^\s*unit\s+([A-Za-z0-9_.]+)\s*;", content)
         if not match:
             fail(errors, f"Keine Unit-Deklaration: {path.name}")
@@ -239,7 +242,8 @@ def check_frame_resources(errors: list[str]) -> None:
     frame_pattern = re.compile(r"\b(T[A-Za-z_][A-Za-z0-9_]*)\s*=\s*class\s*\(\s*TFrame\s*\)", re.IGNORECASE)
     for path in sorted(SOURCE.glob("*.pas")):
         content = read_project_text(path)
-        frame_classes = frame_pattern.findall(content)
+        stripped, _ = strip_pascal_strings_and_comments(content)
+        frame_classes = frame_pattern.findall(stripped)
         if not frame_classes:
             continue
 
@@ -350,46 +354,98 @@ def check_dproj(errors: list[str]) -> None:
             fail(errors, f"DAI.dproj: Base_{platform}-Konfiguration fehlt")
 
 
+def read_pascal_literal(content: str, start: int) -> tuple[str, int]:
+    """Decode one classic literal or text block for static JSON schema verification."""
+    quotes = 1
+    while start + quotes < len(content) and content[start + quotes] == "'":
+        quotes += 1
+    after_quotes = content[start + quotes] if start + quotes < len(content) else ""
+    if quotes >= 3 and quotes % 2 and after_quotes in {"\r", "\n"}:
+        opening_end = start + quotes
+        newline_length = 2 if content.startswith("\r\n", opening_end) else 1
+        body_start = opening_end + newline_length
+        delimiter = "'" * quotes
+        closing = re.search(rf"(?m)^([ \t]*){re.escape(delimiter)}(?!')", content[body_start:])
+        if closing is None:
+            raise ValueError("nicht abgeschlossener Delphi-Textblock")
+        body_end = body_start + closing.start()
+        body = content[body_start:body_end]
+        if body.endswith("\r\n"):
+            body = body[:-2]
+        elif body.endswith(("\n", "\r")):
+            body = body[:-1]
+        indent = closing.group(1)
+        lines = body.splitlines(keepends=True)
+        decoded = "".join(line[len(indent):] if line.startswith(indent) else line for line in lines)
+        return decoded, body_start + closing.end()
+
+    index = start + 1
+    output: list[str] = []
+    while index < len(content):
+        if content[index] == "'":
+            if index + 1 < len(content) and content[index + 1] == "'":
+                output.append("'")
+                index += 2
+                continue
+            return "".join(output), index + 1
+        output.append(content[index])
+        index += 1
+    raise ValueError("nicht abgeschlossene Delphi-Zeichenkette")
+
+
+def pascal_literal_expression(content: str) -> str:
+    parts: list[str] = []
+    index = 0
+    while index < len(content):
+        if content[index] == "'":
+            literal, index = read_pascal_literal(content, index)
+            parts.append(literal)
+        else:
+            index += 1
+    return "".join(parts)
+
+
 def check_tools(errors: list[str]) -> None:
     content = read_project_text(SOURCE / "h5u.DAI.MCP.Tools.pas")
-    declared = set(re.findall(r"AddTool\s*\(\s*Result\s*,\s*'([^']+)'", content, flags=re.IGNORECASE | re.DOTALL))
+    stripped, _ = strip_pascal_strings_and_comments(content)
+    declared = {
+        match.group(1)
+        for match in re.finditer(r"AddTool\s*\(\s*Result\s*,\s*'([^']+)'", content, flags=re.IGNORECASE | re.DOTALL)
+        if stripped[match.start():match.start() + 7].lower() == "addtool"
+    }
     missing = sorted(REQUIRED_TOOLS - declared)
     extra = sorted(declared - REQUIRED_TOOLS)
     if missing:
         fail(errors, "Fehlende MCP-Werkzeuge: " + ", ".join(missing))
     if extra:
         fail(errors, "Unerwartete MCP-Werkzeuge: " + ", ".join(extra))
-    dispatched = set(re.findall(r"SameText\s*\(\s*AName\s*,\s*'([^']+)'", content, flags=re.IGNORECASE))
+    dispatched = {
+        match.group(1)
+        for match in re.finditer(r"SameText\s*\(\s*AName\s*,\s*'([^']+)'", content, flags=re.IGNORECASE)
+        if stripped[match.start():match.start() + 8].lower() == "sametext"
+    }
     for name in sorted(declared - dispatched):
         fail(errors, f"MCP-Werkzeug ohne Dispatch: {name}")
 
-    for match in re.finditer(r"AddTool\s*\(\s*Result\s*,", content, flags=re.IGNORECASE):
-        args = [""]
-        depth, index, quoted = 1, match.end(), False
+    for match in re.finditer(r"AddTool\s*\(\s*Result\s*,", stripped, flags=re.IGNORECASE):
+        args: list[str] = []
+        depth, index, argument_start = 1, match.end(), match.end()
         while index < len(content) and depth:
-            char = content[index]
-            if char == "'":
-                args[-1] += char
-                if quoted and index + 1 < len(content) and content[index + 1] == "'":
-                    args[-1] += "'"
-                    index += 2
-                    continue
-                quoted = not quoted
-            elif not quoted and char == "," and depth == 1:
-                args.append("")
-            elif not quoted and char in "()":
+            char = stripped[index]
+            if char == "," and depth == 1:
+                args.append(content[argument_start:index])
+                argument_start = index + 1
+            elif char in "()":
                 depth += 1 if char == "(" else -1
-                if depth:
-                    args[-1] += char
-            else:
-                args[-1] += char
+                if not depth:
+                    args.append(content[argument_start:index])
             index += 1
         if len(args) != 4:
             fail(errors, "MCP-Werkzeugdeklaration besitzt ungültige Argumentanzahl")
             continue
         name = args[0].strip()
         try:
-            schema_text = "".join(s.replace("''", "'") for s in re.findall(r"'((?:''|[^'])*)'", args[2]))
+            schema_text = pascal_literal_expression(args[2])
             schema = json.loads(schema_text)
             if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
                 fail(errors, f"{name}: Eingabeschema muss ein begrenztes Objekt sein")
@@ -434,6 +490,7 @@ def check_known_invalid_symbols(errors: list[str]) -> None:
     unsuitable_file_exception_types = ("EFCreateError", "EFOpenError")
     for path in SOURCE.glob("*.pas"):
         content = read_project_text(path)
+        content, _ = strip_pascal_strings_and_comments(content)
         for symbol in invalid_symbols:
             if re.search(rf"\b{re.escape(symbol)}\b", content):
                 fail(errors, f"{path.name}: nicht vorhandener Delphi-Typ {symbol}")
@@ -452,7 +509,7 @@ def check_qualified_system_monitor(errors: list[str]) -> None:
             fail(errors, f"{path.relative_to(ROOT)}:{line}: Synchronisationszugriffe müssen System.TMonitor verwenden")
 
 def check_dai_type_definitions(errors: list[str]) -> None:
-    content = "\n".join(read_project_text(path) for path in SOURCE.glob("*.pas"))
+    content = "\n".join(strip_pascal_strings_and_comments(read_project_text(path))[0] for path in SOURCE.glob("*.pas"))
     identifiers = set(re.findall(r"\b(?:TDAI|EDAI)[A-Za-z0-9_]*\b", content))
     definitions = set(re.findall(r"\b((?:TDAI|EDAI)[A-Za-z0-9_]*)\s*=\s*(?:class|record|interface|\()", content, re.IGNORECASE))
     definitions.update(re.findall(r"\b((?:TDAI|EDAI)[A-Za-z0-9_]*)\s*=\s*[^;]+;", content, re.IGNORECASE))
@@ -461,6 +518,7 @@ def check_dai_type_definitions(errors: list[str]) -> None:
 
 
 def direct_used_units(content: str) -> set[str]:
+    content, _ = strip_pascal_strings_and_comments(content)
     return {
         match.lower()
         for match in re.findall(r"(?im)^\s*([A-Za-z0-9_.]+)\s*(?:,|;|\bin\s)", content)
@@ -647,8 +705,10 @@ def check_version_consistency(errors: list[str]) -> None:
 
     if f"CDAIVersion = '{expected}'" not in consts:
         fail(errors, f"h5u.DAI.Consts.pas: CDAIVersion muss {expected} sein")
-    if f"FileVersion={expected}.0" not in dproj or f"ProductVersion={expected}.0" not in dproj:
-        fail(errors, f"DAI.dproj: Datei- und Produktversion müssen {expected}.0 sein")
+    # VERSIONINFO is optional; the current IDE-saved project does not enable it.
+    version_info_enabled = re.search(r"<VerInfo_IncludeVerInfo>\s*true\s*</VerInfo_IncludeVerInfo>", dproj, re.IGNORECASE)
+    if version_info_enabled and (f"FileVersion={expected}.0" not in dproj or f"ProductVersion={expected}.0" not in dproj):
+        fail(errors, f"DAI.dproj: aktivierte Datei- und Produktversion müssen {expected}.0 sein")
     if f"version = '{expected}'" not in test_client:
         fail(errors, f"Test-MCP.ps1: Clientversion muss {expected} sein")
     if not changelog.startswith(f"# Änderungsprotokoll\n\n## {expected}\n"):
@@ -738,6 +798,7 @@ def check_duplicate_implementations(errors: list[str]) -> None:
     )
     for path in SOURCE.glob("*.pas"):
         content = read_project_text(path)
+        content, _ = strip_pascal_strings_and_comments(content)
         implementation = re.split(r"(?im)^\s*implementation\s*$", content, maxsplit=1)
         if len(implementation) != 2:
             fail(errors, f"{path.name}: implementation-Abschnitt fehlt")
@@ -753,11 +814,14 @@ def check_duplicate_implementations(errors: list[str]) -> None:
 
 
 def strip_pascal_strings_and_comments(content: str) -> tuple[str, list[str]]:
+    """Mask Pascal trivia without changing offsets or newline counts, including Delphi text blocks."""
     errors: list[str] = []
     output: list[str] = []
     i = 0
     line = 1
     state = "code"
+    textblock_quotes = 0
+    textblock_line_prefix = False
     while i < len(content):
         ch = content[i]
         nxt = content[i + 1] if i + 1 < len(content) else ""
@@ -767,8 +831,19 @@ def strip_pascal_strings_and_comments(content: str) -> tuple[str, list[str]]:
 
         if state == "code":
             if ch == "'":
-                state = "string"
-                output.append(" ")
+                quotes = 1
+                while i + quotes < len(content) and content[i + quotes] == "'":
+                    quotes += 1
+                after_quotes = content[i + quotes] if i + quotes < len(content) else ""
+                if quotes >= 3 and quotes % 2 and after_quotes in {"\r", "\n"}:
+                    state = "textblock"
+                    textblock_quotes = quotes
+                    textblock_line_prefix = True
+                    output.extend(" " * quotes)
+                    i += quotes - 1
+                else:
+                    state = "string"
+                    output.append(" ")
             elif ch == "/" and nxt == "/":
                 state = "line_comment"
                 output.extend([" ", " "])
@@ -791,6 +866,24 @@ def strip_pascal_strings_and_comments(content: str) -> tuple[str, list[str]]:
                 output.append(" ")
             else:
                 output.append("\n" if ch == "\n" else " ")
+        elif state == "textblock":
+            if ch in {"\r", "\n"}:
+                textblock_line_prefix = True
+                output.append("\n" if ch == "\n" else " ")
+            elif textblock_line_prefix and ch in {" ", "\t"}:
+                output.append(" ")
+            elif textblock_line_prefix and ch == "'":
+                quotes = 1
+                while i + quotes < len(content) and content[i + quotes] == "'":
+                    quotes += 1
+                output.extend(" " * quotes)
+                i += quotes - 1
+                if quotes == textblock_quotes:
+                    state = "code"
+                textblock_line_prefix = False
+            else:
+                textblock_line_prefix = False
+                output.append(" ")
         elif state == "line_comment":
             if ch == "\n":
                 state = "code"
@@ -812,6 +905,8 @@ def strip_pascal_strings_and_comments(content: str) -> tuple[str, list[str]]:
 
     if state == "string":
         errors.append("nicht abgeschlossene Zeichenkette")
+    elif state == "textblock":
+        errors.append("nicht abgeschlossener Textblock")
     elif state in {"brace_comment", "paren_comment"}:
         errors.append("nicht abgeschlossener Kommentar")
     return "".join(output), errors
