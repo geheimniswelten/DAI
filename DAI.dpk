@@ -1,4 +1,4 @@
-package DAI;
+﻿package DAI;
 
 {$R *.res}
 {$DESIGNONLY}
@@ -38,6 +38,11 @@ requires
   IndyProtocols;
 
 contains
+  h5u.DAI.OTA.Designer in 'Source\h5u.DAI.OTA.Designer.pas',
+  h5u.DAI.OTA.Debugger in 'Source\h5u.DAI.OTA.Debugger.pas',
+  h5u.DAI.Clients.Registration in 'Source\h5u.DAI.Clients.Registration.pas',
+  h5u.DAI.Clients.SafeFiles in 'Source\h5u.DAI.Clients.SafeFiles.pas',
+  h5u.DAI.Clients.ConfigText in 'Source\h5u.DAI.Clients.ConfigText.pas',
   h5u.DAI.Codex.Registration in 'Source\h5u.DAI.Codex.Registration.pas',
   h5u.DAI.Consts in 'Source\h5u.DAI.Consts.pas',
   h5u.DAI.IDE.Notifier in 'Source\h5u.DAI.IDE.Notifier.pas',

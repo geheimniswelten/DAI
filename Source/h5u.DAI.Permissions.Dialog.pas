@@ -50,11 +50,13 @@ var
 begin
   LContextText := '';
   if Trim(AContext.ThreadId) <> '' then
-    LContextText := sLineBreak + sLineBreak + 'Codex-Chat: ' + AContext.ThreadId
+    LContextText := sLineBreak + sLineBreak + 'KI-Chat: ' + AContext.ThreadId
   else if Trim(AContext.TransportSessionId) <> '' then
     LContextText := sLineBreak + sLineBreak + 'MCP-Sitzung: ' + AContext.TransportSessionId
   else
     LContextText := sLineBreak + sLineBreak + 'Hinweis: Der anfragende KI-Chat konnte nicht eindeutig identifiziert werden.';
+  if AContext.ClientName <> '' then
+    LContextText := LContextText + sLineBreak + 'Client: ' + AContext.ClientName;
 
   Result := DAIPermissionCategoryName(ACategory) + sLineBreak + sLineBreak + AOperation;
   if Trim(AResource) <> '' then

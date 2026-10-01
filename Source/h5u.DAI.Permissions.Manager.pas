@@ -25,6 +25,7 @@ type
       const AForCurrentRequest: Boolean);
     procedure ApplyToLowerLevelsUnlocked(const ASourceCategory: TDAIPermissionCategory; const ALevel: TDAIPermissionLevel; const AContext: TDAIRequestContext);
   public
+    class constructor Initialize;
     constructor Create;
     destructor Destroy; override;
     class destructor Finalize;
@@ -51,6 +52,8 @@ begin
   Result := LowerCase(Trim(AValue));
   if Result = '' then
     Result := '<none>';
+  Result := StringReplace(Result, '%', '%25', [rfReplaceAll]);
+  Result := StringReplace(Result, '|', '%7c', [rfReplaceAll]);
 end;
 
 constructor TDAIPermissionManager.Create;
@@ -78,8 +81,15 @@ begin
 end;
 
 function TDAIPermissionManager.AccessKey(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): string;
+var
+  LSession: string;
 begin
-  Result := NormalizeKeyPart(AContext.ProjectKey) + '|' + NormalizeKeyPart(AContext.SessionIdentity) + '|' + DAIPermissionCategoryKey(ACategory);
+  LSession := AContext.SessionIdentity;
+  if (LSession <> '*') and (AContext.TransportSessionId <> '') and (AContext.ThreadId <> '') then
+    LSession := LSession + ':transport:' + AContext.TransportSessionId;
+  if LSession <> '*' then
+    LSession := AContext.ClientName + ':' + LSession;
+  Result := NormalizeKeyPart(AContext.ProjectKey) + '|' + NormalizeKeyPart(LSession) + '|' + DAIPermissionCategoryKey(ACategory);
 end;
 
 function TDAIPermissionManager.WildcardAccessKey(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): string;
@@ -138,7 +148,10 @@ begin
   case ALevel of
     plNever,
     plAlways:
-      TDAIPermissionStore.SetLevel(ACategory, AContext.ProjectKey, ALevel);
+      begin
+        ClearRuntimeCategoryUnlocked(ACategory, AContext.ProjectKey);
+        TDAIPermissionStore.SetLevel(ACategory, AContext.ProjectKey, ALevel);
+      end;
 
     plDeny:
       if not AForCurrentRequest then
@@ -164,7 +177,10 @@ begin
       end;
 
     plAsk:
-      TDAIPermissionStore.SetLevel(ACategory, AContext.ProjectKey, plAsk);
+      begin
+        ClearRuntimeCategoryUnlocked(ACategory, AContext.ProjectKey);
+        TDAIPermissionStore.SetLevel(ACategory, AContext.ProjectKey, plAsk);
+      end;
   end;
 end;
 
@@ -198,6 +214,9 @@ begin
 
   System.TMonitor.Enter(FLock);
   try
+    LLevel := EffectiveLevelUnlocked(ACategory, AContext);
+    if LLevel = plNever then
+      Exit(False);
     if ConsumeCounter(FOneShotDenials, LKey) or ConsumeCounter(FOneShotDenials, LWildcardKey) or
        ConsumeCounter(FOneShotDenials, LGlobalWildcardKey) then
     begin
@@ -320,13 +339,21 @@ begin
   LWildcardKey := WildcardAccessKey(ACategory, AContext);
   LGlobalWildcardKey := GlobalWildcardAccessKey(ACategory);
 
+  Result := TDAIPermissionStore.GetLevel(ACategory, AContext.ProjectKey);
+  if Result = plNever then
+    Exit;
+
   if FSessionAllows.ContainsKey(LKey) or FSessionAllows.ContainsKey(LWildcardKey) or FSessionAllows.ContainsKey(LGlobalWildcardKey) then
     Exit(plSession);
   if FOneShotAllows.ContainsKey(LKey) or FOneShotAllows.ContainsKey(LWildcardKey) or FOneShotAllows.ContainsKey(LGlobalWildcardKey) then
     Exit(plOnce);
   if FOneShotDenials.ContainsKey(LKey) or FOneShotDenials.ContainsKey(LWildcardKey) or FOneShotDenials.ContainsKey(LGlobalWildcardKey) then
     Exit(plDeny);
-  Result := TDAIPermissionStore.GetLevel(ACategory, AContext.ProjectKey);
+end;
+
+class constructor TDAIPermissionManager.Initialize;
+begin
+  FInstance := TDAIPermissionManager.Create;
 end;
 
 function TDAIPermissionManager.GetEffectiveLevel(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): TDAIPermissionLevel;
@@ -341,8 +368,6 @@ end;
 
 class function TDAIPermissionManager.Instance: TDAIPermissionManager;
 begin
-  if FInstance = nil then
-    FInstance := TDAIPermissionManager.Create;
   Result := FInstance;
 end;
 

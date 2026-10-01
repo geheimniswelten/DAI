@@ -1,5 +1,21 @@
 # Änderungsprotokoll
 
+## 1.2.0
+
+- KI-Client-Registrierung in Delphi für Codex, Claude Code, Claude Desktop, Gemini CLI / Code Assist, Hermes, LM Studio und OpenClaw ergänzt; Eigent und Gemini Desktop mit geprüften manuellen Hinweisen.
+- Native Delphi-stdio-Brücke für Claude Desktop; HTTP mit Bearer-Token und verwalteter Session.
+- Sicherungen, private Windows-Rechte, gezielte JSON-/JSON5-/YAML-Änderungen und Besitzprüfung vor Aktualisierung oder Deregistrierung.
+- Codex berücksichtigt CODEX_HOME; Skill enthält YAML-Metadaten und aktuelle Arbeitsanweisungen. Fremde Skills bleiben erhalten.
+- Formdesigner-Inspektion/Anzeige, aktuelle ungespeicherte DFM-/FMX-Inhalte, Quellhaltepunkte und Debugger-Steuerung über OpenToolsAPI.
+- Aktives Projekt und Projektgruppen-Dateizugriff korrigiert; sicherer Umgang mit Projektmodulen, Editor-Hashkonflikten und save=false.
+- HTTP-Origin-, Session-, JSON-RPC- und Projektberechtigungsprüfung korrigiert; moderner und klassischer MCP-Verbindungsablauf geprüft.
+- Reproduzierbare native Registrierungs- und Protokolltests sowie Test der kompilierten Delphi-Brücke.
+
+## 1.1.16
+
+- Hinweis am unteren Ende des DAI-Options-Frames ergänzt, dass die Codex-App nach Änderungen an Port oder Bearer-Token sowie nach dem Registrieren oder Deregistrieren neu gestartet werden muss
+- Hinweis in die dynamische Frame-Höhe einbezogen, damit die IDE-eigene ScrollBox ihn vollständig anzeigt
+
 ## 1.1.15
 
 - dynamisch geladene WinAPI-Funktionen werden direkt den typisierten Codepointer-Variablen zugewiesen

@@ -16,6 +16,7 @@ type
 implementation
 
 uses
+  System.Classes,
   System.JSON,
   System.IOUtils,
   System.SysUtils,
@@ -42,7 +43,7 @@ begin
   end;
 end;
 
-function ReadProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string): TDAIPermissionLevel;
+function ReadProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; out AFound: Boolean): TDAIPermissionLevel;
 var
   LFileName: string;
   LJsonValue: TJSONValue;
@@ -51,7 +52,12 @@ var
   LValue: string;
 begin
   Result := plAsk;
+  AFound := False;
   LFileName := TDAIPermissionStore.ProjectSettingsFileName(AProjectFileName);
+  if (LFileName = '') or not TFile.Exists(LFileName) then
+    Exit;
+  // An unreadable project policy must not inherit a global "always" permission.
+  AFound := True;
   LRoot := ReadJsonObject(LFileName);
   try
     if not Assigned(LRoot) then
@@ -60,6 +66,9 @@ begin
     if not (LJsonValue is TJSONObject) then
       Exit;
     LPermissions := TJSONObject(LJsonValue);
+    AFound := Assigned(LPermissions.GetValue(DAIPermissionCategoryKey(ACategory)));
+    if not AFound then
+      Exit;
     LValue := LPermissions.GetValue<string>(DAIPermissionCategoryKey(ACategory), 'ask');
     Result := DAIPermissionLevelFromKey(LValue);
     if not (Result in [plNever, plAsk, plAlways]) then
@@ -120,7 +129,11 @@ begin
 
   LRoot := ReadJsonObject(LFileName);
   if not Assigned(LRoot) then
+  begin
+    if TFile.Exists(LFileName) then
+      raise EInvalidOperation.Create('Die vorhandene Projekt-Berechtigungsdatei ist ungültig und wird nicht überschrieben.');
     LRoot := TJSONObject.Create;
+  end;
   try
     LRoot.RemovePair('version').Free;
     LRoot.AddPair('version', TJSONNumber.Create(1));
@@ -130,6 +143,7 @@ begin
       LPermissions := TJSONObject(LJsonValue)
     else
     begin
+      LRoot.RemovePair('permissions').Free;
       LPermissions := TJSONObject.Create;
       LRoot.AddPair('permissions', LPermissions);
     end;
@@ -145,11 +159,13 @@ begin
 end;
 
 class function TDAIPermissionStore.GetLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string): TDAIPermissionLevel;
+var
+  LFound: Boolean;
 begin
   if Trim(AProjectFileName) <> '' then
   begin
-    Result := ReadProjectLevel(ACategory, AProjectFileName);
-    if Result <> plAsk then
+    Result := ReadProjectLevel(ACategory, AProjectFileName, LFound);
+    if LFound then
       Exit;
   end;
   Result := ReadGlobalLevel(ACategory);

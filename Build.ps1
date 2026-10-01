@@ -50,6 +50,25 @@ foreach ($currentPlatform in $platforms) {
     if ($LASTEXITCODE -ne 0) {
         throw "Der DAI-Build für $currentPlatform ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
     }
+
+    $bridgeOutput = Join-Path $projectRoot "Build\$currentPlatform\$Configuration\Bpl"
+    $bridgeDcu = Join-Path $projectRoot "Build\$currentPlatform\$Configuration\BridgeDcu"
+    New-Item -ItemType Directory -Path $bridgeOutput, $bridgeDcu -Force | Out-Null
+    $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
+    $bridgeCommand = @(
+        'call'
+        "`"$rsvars`""
+        '&&'
+        "`"$(Join-Path $BdsRoot "bin\$compilerName")`""
+        '-B'
+        "-E`"$bridgeOutput`""
+        "-N0`"$bridgeDcu`""
+        "`"$(Join-Path $projectRoot 'DAI.McpBridge.dpr')`""
+    ) -join ' '
+    & $env:ComSpec /d /s /c $bridgeCommand
+    if ($LASTEXITCODE -ne 0) {
+        throw "Der Delphi-MCP-Bridge-Build für $currentPlatform ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
+    }
 }
 
 Write-Host 'DAI wurde erfolgreich gebaut.'

@@ -67,12 +67,12 @@ begin
       Exit(True);
 end;
 
-function EnsureDFMTextEditor(const AFileName: string): IOTASourceEditor;
+function EnsureFormTextEditor(const AFileName: string): IOTASourceEditor;
 var
   LActionServices: IOTAActionServices;
 begin
   Result := TDAIOTA.FindSourceEditor(AFileName);
-  if Assigned(Result) or not SameText(TPath.GetExtension(AFileName), '.dfm') then
+  if Assigned(Result) or not (SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx')) then
     Exit;
 
   if not TFile.Exists(AFileName) and not TDAIOTA.IsFormLoadedForFile(AFileName) then
@@ -87,12 +87,13 @@ begin
   Result := TDAIOTA.FindSourceEditor(AFileName);
 end;
 
-function ReadCompleteText(const AFileName: string; out AFromEditor: Boolean; out AFormat: TDAITextFileFormat): string;
+function ReadCompleteText(const AFileName: string; out AFromEditor: Boolean; out AFormat: TDAITextFileFormat; out AFromDesigner: Boolean): string;
 var
   LResult: string;
   LSourceEditor: IOTASourceEditor;
 begin
   AFromEditor := False;
+  AFromDesigner := False;
   LSourceEditor := TDAIOTA.FindSourceEditor(AFileName);
   if Assigned(LSourceEditor) then
   begin
@@ -103,6 +104,16 @@ begin
       begin
         LResult := TDAIOTA.ReadEditorText(LSourceEditor);
       end);
+    AFormat.EncodingKind := tekIDEBuffer;
+    AFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LResult);
+    Exit(LResult);
+  end;
+
+  if (SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx')) and
+    TDAIOTA.ReadFormText(AFileName, CDAIMaxTextFileBytes, LResult) then
+  begin
+    AFromEditor := True;
+    AFromDesigner := True;
     AFormat.EncodingKind := tekIDEBuffer;
     AFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LResult);
     Exit(LResult);
@@ -125,7 +136,6 @@ var
   LPattern: string;
   LSearchOption: TSearchOption;
 begin
-  Result := TJSONArray.Create;
   LDirectory := TDAISettings.Instance.ExpandPath(ADirectory);
   if not TDirectory.Exists(LDirectory) then
     raise EDirectoryNotFoundException.CreateFmt('Verzeichnis nicht gefunden: %s', [LDirectory]);
@@ -150,6 +160,7 @@ begin
 
   LFiles := TDirectory.GetFiles(LDirectory, LPattern, LSearchOption);
   TArray.Sort<string>(LFiles);
+  Result := TJSONArray.Create;
   LCount := 0;
   for LFileName in LFiles do
   begin
@@ -202,13 +213,12 @@ var
   LFileName: string;
   LProject: IOTAProject;
 begin
+  LProject := TDAIOTA.ProjectByNameOrPath(AProjectNameOrPath);
+  if not Assigned(LProject) then
+    raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
   Result := TJSONArray.Create;
   LFiles := TDictionary<string, Boolean>.Create;
   try
-    LProject := TDAIOTA.ProjectByNameOrPath(AProjectNameOrPath);
-    if not Assigned(LProject) then
-      raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
-
     TDAIOTA.RunOnMainThread(
       procedure
       var
@@ -268,6 +278,7 @@ var
   LContent: string;
   LFileName: string;
   LFormat: TDAITextFileFormat;
+  LFromDesigner: Boolean;
   LFromEditor: Boolean;
   LHash: string;
   LOriginalLength: Integer;
@@ -277,7 +288,7 @@ begin
   if not FileAllowedForRead(LFileName) then
     raise EDAIAccessDenied.Create('Lesezugriff ist nur auf Workspace- und freigegebene Referenzdateien erlaubt.');
 
-  LContent := ReadCompleteText(LFileName, LFromEditor, LFormat);
+  LContent := ReadCompleteText(LFileName, LFromEditor, LFormat, LFromDesigner);
   LOriginalLength := Length(LContent);
   LHash := THashSHA2.GetHashString(LContent);
   LTruncated := (AMaximumCharacters > 0) and (Length(LContent) > AMaximumCharacters);
@@ -287,7 +298,10 @@ begin
   Result := TJSONObject.Create;
   Result.AddPair('file', LFileName);
   Result.AddPair('content', LContent);
-  Result.AddPair('source', IfThen(LFromEditor, 'editor_buffer', 'disk'));
+  if LFromDesigner then
+    Result.AddPair('source', 'designer_buffer')
+  else
+    Result.AddPair('source', IfThen(LFromEditor, 'editor_buffer', 'disk'));
   Result.AddPair('encoding', TDAITextEncoding.EncodingName(LFormat.EncodingKind));
   Result.AddPair('line_ending', TDAITextEncoding.LineEndingName(LFormat.LineEndingKind));
   Result.AddPair('sha256', LHash);
@@ -319,6 +333,7 @@ var
   LCurrentFormat: TDAITextFileFormat;
   LCurrentHash: string;
   LFileName: string;
+  LFromDesigner: Boolean;
   LHasCurrentContent: Boolean;
   LOriginalEncoding: string;
   LOriginalLineEnding: string;
@@ -327,6 +342,7 @@ var
   LWrittenContent: string;
 begin
   AUsedEditorBuffer := False;
+  LFromDesigner := False;
   LHasCurrentContent := False;
   LOriginalEncoding := '';
   LOriginalLineEnding := '';
@@ -337,18 +353,20 @@ begin
   if not TDAIOTA.IsWorkspaceFile(LFileName) then
     raise EDAIAccessDenied.Create('Schreibzugriff ist nur innerhalb geöffneter Workspaces erlaubt.');
 
-  if TFile.Exists(LFileName) or TDAIOTA.IsFileOpenInEditor(LFileName) then
+  if TFile.Exists(LFileName) or TDAIOTA.IsFileOpenInEditor(LFileName) or TDAIOTA.IsFormLoadedForFile(LFileName) then
   begin
-    LCurrentContent := ReadCompleteText(LFileName, AUsedEditorBuffer, LCurrentFormat);
+    LCurrentContent := ReadCompleteText(LFileName, AUsedEditorBuffer, LCurrentFormat, LFromDesigner);
     LHasCurrentContent := True;
     LCurrentHash := THashSHA2.GetHashString(LCurrentContent);
     LOriginalEncoding := TDAITextEncoding.EncodingName(LCurrentFormat.EncodingKind);
     LOriginalLineEnding := TDAITextEncoding.LineEndingName(LCurrentFormat.LineEndingKind);
     if (Trim(AExpectedSha256) <> '') and not SameText(LCurrentHash, Trim(AExpectedSha256)) then
       raise EInvalidOperation.CreateFmt('Die Datei wurde zwischenzeitlich geändert. Erwartet: %s; aktuell: %s.', [AExpectedSha256, LCurrentHash]);
-  end;
+  end
+  else if Trim(AExpectedSha256) <> '' then
+    raise EInvalidOperation.Create('Die Datei existiert nicht mehr; expected_sha256 kann nicht erfüllt werden.');
 
-  LSourceEditor := EnsureDFMTextEditor(LFileName);
+  LSourceEditor := EnsureFormTextEditor(LFileName);
   if Assigned(LSourceEditor) then
   begin
     if LHasCurrentContent then
@@ -364,16 +382,29 @@ begin
     TDAIOTA.RunOnMainThread(
       procedure
       begin
+        if LHasCurrentContent and (TDAIOTA.ReadEditorText(LSourceEditor) <> LCurrentContent) then
+        begin
+          if LFromDesigner then
+            raise EInvalidOperation.Create('Der Formulartext wurde in einen Textpuffer übertragen. Lesen Sie den aktuellen IDE-Textpuffer erneut.');
+          raise EInvalidOperation.Create('Der Editorpuffer wurde während der Schreibanforderung geändert. Lesen Sie die Datei erneut.');
+        end;
         if not TDAIOTA.ReplaceEditorText(LSourceEditor, LWrittenContent) then
           raise EInvalidOperation.Create('Der Editorpuffer konnte nicht ersetzt werden.');
-        if ASave and Supports(BorlandIDEServices, IOTAActionServices, LActionServices) and not LActionServices.SaveFile(LFileName) then
-          raise EInvalidOperation.Create('Der Editorpuffer wurde geändert, konnte aber nicht gespeichert werden.');
+        if ASave then
+        begin
+          if not Supports(BorlandIDEServices, IOTAActionServices, LActionServices) then
+            raise EInvalidOperation.Create('Der Editorpuffer wurde geändert; IOTAActionServices zum Speichern ist nicht verfügbar.');
+          if not LActionServices.SaveFile(LFileName) then
+            raise EInvalidOperation.Create('Der Editorpuffer wurde geändert, konnte aber nicht gespeichert werden.');
+        end;
       end);
   end
   else
   begin
-    if SameText(TPath.GetExtension(LFileName), '.dfm') then
-      raise EInvalidOperation.Create('DFM-Dateien werden ausschließlich über den IDE-Textpuffer geändert, damit Delphi die Dateicodierung beim Speichern selbst festlegt.');
+    if not ASave then
+      raise EInvalidOperation.Create('save=false erfordert einen geöffneten IDE-Textpuffer. Öffnen Sie die Datei zuerst mit file_open.');
+    if SameText(TPath.GetExtension(LFileName), '.dfm') or SameText(TPath.GetExtension(LFileName), '.fmx') then
+      raise EInvalidOperation.Create('Formulardateien werden ausschließlich über einen verfügbaren IDE-Textpuffer geändert.');
     if TDAIOTA.IsFormLoadedForFile(LFileName) then
       raise EInvalidOperation.Create('Das Formular ist im Designer geladen. Wechseln Sie zuerst mit form_show_as_text in den Textmodus.');
 

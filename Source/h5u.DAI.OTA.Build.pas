@@ -229,6 +229,7 @@ end;
 class function TDAIBuildService.RunProject(const AProjectNameOrPath: string; const AWithDebugger: Boolean): TJSONObject;
 var
   LAction: TBasicAction;
+  LDebugger: IOTADebuggerServices;
   LExecutable: string;
   LKey: string;
   LProcess: TDAIRunningProcess;
@@ -245,6 +246,9 @@ begin
     TDAIOTA.RunOnMainThread(
       procedure
       begin
+        if Supports(BorlandIDEServices, IOTADebuggerServices, LDebugger) and Assigned(LDebugger.CurrentProcess) and
+          not (LDebugger.CurrentProcess.ProcessState in [psNothing, psTerminated, psNoProcess]) then
+          raise EInvalidOperation.Create('Ein Debuggerprozess ist bereits aktiv. Verwenden Sie debugger_control zum Fortsetzen oder project_stop.');
         SelectProject(LProject);
         LAction := FindIDEAction([
           'RunRunCommand',
@@ -333,6 +337,13 @@ begin
   LStopped := False;
   if AWithDebugger then
   begin
+    LTargetProject := nil;
+    if Trim(AProjectNameOrPath) <> '' then
+    begin
+      LTargetProject := TDAIOTA.ProjectByNameOrPath(AProjectNameOrPath);
+      if not Assigned(LTargetProject) then
+        raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
+    end;
     TDAIOTA.RunOnMainThread(
       procedure
       begin
@@ -343,6 +354,8 @@ begin
           Exit;
         if LProcess.ProcessState in [psNothing, psTerminated, psNoProcess] then
           Exit;
+        if Assigned(LTargetProject) and not TDAIOTA.SameFile(LProcess.ExeName, ResolveTargetExecutable(LTargetProject)) then
+          raise EInvalidOperation.Create('Der aktuelle Debuggerprozess gehört nicht zur Ausgabedatei des angegebenen Projekts.');
         LProcess.Terminate;
         LStopped := True;
       end);

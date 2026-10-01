@@ -8,7 +8,7 @@ uses
 type
   TDAIMCPProtocol = class sealed
   public
-    class function HandleMessage(const AMessage: TJSONObject; const ATransportSessionId: string; out AHTTPStatus: Integer): TJSONObject; static;
+    class function HandleMessage(const AMessage: TJSONObject; const ATransportSessionId: string; out AHTTPStatus: Integer; const AClientName: string = ''): TJSONObject; static;
   end;
 
 implementation
@@ -105,37 +105,50 @@ var
   LMeta: TJSONObject;
   LParams: TJSONObject;
 begin
-  Result := SameText(AMessage.GetValue<string>('method', ''), 'server/discover');
-  LParams := AMessage.GetValue<TJSONObject>('params');
+  Result := False;
+  LParams := AMessage.GetValue<TJSONObject>('params', nil);
   if not Assigned(LParams) then
     Exit;
-  LMeta := LParams.GetValue<TJSONObject>('_meta');
+  LMeta := LParams.GetValue<TJSONObject>('_meta', nil);
   if Assigned(LMeta) then
-    Result := SameText(LMeta.GetValue<string>('io.modelcontextprotocol/protocolVersion', ''), '2026-07-28');
+    Result := (LMeta.GetValue('io.modelcontextprotocol/protocolVersion') is TJSONString) and
+      (LMeta.GetValue('io.modelcontextprotocol/protocolVersion').Value = '2026-07-28');
 end;
 
-function ExtractRequestContext(const AParams: TJSONObject; const AArguments: TJSONObject; const ATransportSessionId: string): TDAIRequestContext;
+function ExtractRequestContext(const AParams: TJSONObject; const AArguments: TJSONObject; const ATransportSessionId: string; const AClientName: string): TDAIRequestContext;
 var
+  LClientInfo: TJSONObject;
   LMeta: TJSONObject;
 begin
   Result := Default(TDAIRequestContext);
   Result.TransportSessionId := ATransportSessionId;
   Result.ProjectKey := TDAIOTA.ActiveProjectFileName;
+  Result.ClientName := AClientName;
 
   LMeta := nil;
   if Assigned(AParams) then
-    LMeta := AParams.GetValue<TJSONObject>('_meta');
+    LMeta := AParams.GetValue<TJSONObject>('_meta', nil);
   if not Assigned(LMeta) and Assigned(AArguments) then
-    LMeta := AArguments.GetValue<TJSONObject>('_meta');
+    LMeta := AArguments.GetValue<TJSONObject>('_meta', nil);
 
   if Assigned(LMeta) then
   begin
-    Result.ThreadId := LMeta.GetValue<string>('threadId', '');
-    Result.ClientName := LMeta.GetValue<string>('clientName', 'Codex');
+    Result.ThreadId := Trim(LMeta.GetValue<string>('threadId', ''));
+    // The wildcard is reserved for IDE options and is never a remote chat identity.
+    if Result.ThreadId = '*' then
+      Result.ThreadId := '';
+    if Result.ClientName = '' then
+    begin
+      LClientInfo := LMeta.GetValue<TJSONObject>('io.modelcontextprotocol/clientInfo', nil);
+      if Assigned(LClientInfo) then
+        Result.ClientName := LClientInfo.GetValue<string>('name', '');
+      if Result.ClientName = '' then
+        Result.ClientName := LMeta.GetValue<string>('clientName', '');
+    end;
   end;
 
   if Result.ClientName = '' then
-    Result.ClientName := 'Codex';
+    Result.ClientName := 'KI-Client';
 end;
 
 function BuildInitializationResult(const ARequestedVersion: string): TJSONObject;
@@ -145,12 +158,10 @@ var
   LServerInfo: TJSONObject;
   LTools: TJSONObject;
 begin
-  if SameText(ARequestedVersion, '2026-07-28') then
-    LProtocolVersion := '2026-07-28'
-  else if SameText(ARequestedVersion, '2025-11-25') then
-    LProtocolVersion := '2025-11-25'
+  if SameText(ARequestedVersion, '2025-06-18') then
+    LProtocolVersion := '2025-06-18'
   else
-    LProtocolVersion := '2025-06-18';
+    LProtocolVersion := '2025-11-25';
 
   LTools := TJSONObject.Create;
   LTools.AddPair('listChanged', TJSONBool.Create(False));
@@ -166,7 +177,7 @@ begin
   Result.AddPair('serverInfo', LServerInfo);
   Result.AddPair(
     'instructions',
-    'DAI steuert die aktuell geöffnete Delphi-IDE. Berechtigungen werden in der IDE nach Projekt und Codex-Chat getrennt abgefragt.'
+    'DAI steuert die aktuell geöffnete Delphi-IDE. Berechtigungen werden in der IDE nach Projekt und KI-Chat bzw. MCP-Sitzung abgefragt.'
   );
 end;
 
@@ -194,44 +205,91 @@ begin
   Result.AddPair('instructions', 'DAI unterstützt die moderne MCP-Erkennung sowie den klassischen initialize-Ablauf.');
 end;
 
-class function TDAIMCPProtocol.HandleMessage(const AMessage: TJSONObject; const ATransportSessionId: string; out AHTTPStatus: Integer): TJSONObject;
+class function TDAIMCPProtocol.HandleMessage(const AMessage: TJSONObject; const ATransportSessionId: string; out AHTTPStatus: Integer; const AClientName: string): TJSONObject;
 var
   LArguments: TJSONObject;
   LContext: TDAIRequestContext;
   LCreatedArguments: Boolean;
   LCreatedParams: Boolean;
   LId: TJSONValue;
+  LNumericId: Int64;
   LMethod: string;
+  LMeta: TJSONObject;
   LModern: Boolean;
   LName: string;
   LParams: TJSONObject;
   LResult: TJSONObject;
   LToolResult: TJSONObject;
+  LValue: TJSONValue;
 begin
   AHTTPStatus := 200;
   LId := AMessage.GetValue('id');
+  LValue := AMessage.GetValue('method');
+  if not (AMessage.GetValue('jsonrpc') is TJSONString) or not (LValue is TJSONString) then
+  begin
+    AHTTPStatus := 400;
+    Exit(JsonRpcError(nil, -32600, 'Ungültige JSON-RPC-2.0-Anfrage.'));
+  end;
   LMethod := AMessage.GetValue<string>('method', '');
-  LParams := AMessage.GetValue<TJSONObject>('params');
-  LModern := IsModernRequest(AMessage);
+  LValue := AMessage.GetValue('params');
+  if Assigned(LValue) and not (LValue is TJSONObject) then
+  begin
+    AHTTPStatus := 400;
+    Exit(JsonRpcError(LId, -32602, 'params muss ein Objekt sein.'));
+  end;
+  LParams := AMessage.GetValue<TJSONObject>('params', nil);
 
-  if AMessage.GetValue<string>('jsonrpc', '') <> '2.0' then
+  if (AMessage.GetValue<string>('jsonrpc', '') <> '2.0') or (LMethod = '') or
+     (Assigned(LId) and not ((LId is TJSONString) or (LId is TJSONNumber))) or
+     ((LId is TJSONNumber) and not TryStrToInt64(LId.Value, LNumericId)) then
   begin
     AHTTPStatus := 400;
     Exit(JsonRpcError(LId, -32600, 'Ungültige JSON-RPC-2.0-Anfrage.'));
   end;
 
-  if SameText(LMethod, 'notifications/initialized') or SameText(LMethod, 'notifications/cancelled') then
+  // Notifications must never execute an RPC or return a JSON-RPC response.
+  if not Assigned(LId) then
   begin
     AHTTPStatus := 202;
     Exit(nil);
   end;
-
-  if SameText(LMethod, 'initialize') then
+  LMeta := nil;
+  if Assigned(LParams) then
   begin
+    LValue := LParams.GetValue('_meta');
+    if Assigned(LValue) and not (LValue is TJSONObject) then
+    begin
+      AHTTPStatus := 400;
+      Exit(JsonRpcError(LId, -32602, '_meta muss ein Objekt sein.'));
+    end;
+    LMeta := LParams.GetValue<TJSONObject>('_meta', nil);
+  end;
+  LModern := IsModernRequest(AMessage);
+  if LModern then
+  begin
+    if not (LMeta.GetValue('io.modelcontextprotocol/clientCapabilities') is TJSONObject) then
+    begin
+      AHTTPStatus := 400;
+      Exit(JsonRpcError(LId, -32602, 'Moderne MCP-Anfragen benötigen clientCapabilities in _meta.'));
+    end;
+  end;
+
+  if (LMethod = 'initialize') then
+  begin
+    if LModern then
+    begin
+      AHTTPStatus := 404;
+      Exit(JsonRpcError(LId, -32601, 'initialize gehört zu den MCP-Versionen vor 2026-07-28.'));
+    end;
     LCreatedParams := not Assigned(LParams);
     if LCreatedParams then
       LParams := TJSONObject.Create;
     try
+      if Assigned(LParams.GetValue('protocolVersion')) and not (LParams.GetValue('protocolVersion') is TJSONString) then
+      begin
+        AHTTPStatus := 400;
+        Exit(JsonRpcError(LId, -32602, 'protocolVersion muss ein String sein.'));
+      end;
       Exit(JsonRpcResponse(LId, BuildInitializationResult(LParams.GetValue<string>('protocolVersion', '2025-06-18'))));
     finally
       if LCreatedParams then
@@ -239,13 +297,21 @@ begin
     end;
   end;
 
-  if SameText(LMethod, 'server/discover') then
+  if (LMethod = 'server/discover') then
     Exit(JsonRpcResponse(LId, BuildDiscoveryResult));
 
-  if SameText(LMethod, 'ping') then
-    Exit(JsonRpcResponse(LId, TJSONObject.Create));
+  if (LMethod = 'ping') then
+  begin
+    LResult := TJSONObject.Create;
+    if LModern then
+    begin
+      LResult.AddPair('resultType', 'complete');
+      LResult.AddPair('_meta', BuildServerMeta);
+    end;
+    Exit(JsonRpcResponse(LId, LResult));
+  end;
 
-  if SameText(LMethod, 'tools/list') then
+  if (LMethod = 'tools/list') then
   begin
     LResult := TJSONObject.Create;
     if LModern then
@@ -257,19 +323,26 @@ begin
     Exit(JsonRpcResponse(LId, LResult));
   end;
 
-  if SameText(LMethod, 'tools/call') then
+  if (LMethod = 'tools/call') then
   begin
     if not Assigned(LParams) then
       Exit(JsonRpcError(LId, -32602, 'params muss ein Objekt sein.'));
 
+    if not (LParams.GetValue('name') is TJSONString) then
+      Exit(JsonRpcError(LId, -32602, 'name muss ein nichtleerer String sein.'));
     LName := LParams.GetValue<string>('name', '');
-    LArguments := LParams.GetValue<TJSONObject>('arguments');
+    if LName = '' then
+      Exit(JsonRpcError(LId, -32602, 'name muss ein nichtleerer String sein.'));
+    LValue := LParams.GetValue('arguments');
+    if Assigned(LValue) and not (LValue is TJSONObject) then
+      Exit(JsonRpcError(LId, -32602, 'arguments muss ein Objekt sein.'));
+    LArguments := LParams.GetValue<TJSONObject>('arguments', nil);
     LCreatedArguments := not Assigned(LArguments);
     if LCreatedArguments then
       LArguments := TJSONObject.Create;
     try
-      LContext := ExtractRequestContext(LParams, LArguments, ATransportSessionId);
       try
+        LContext := ExtractRequestContext(LParams, LArguments, ATransportSessionId, AClientName);
         LToolResult := TDAIMCPTools.CallTool(LName, LArguments, LContext);
         try
           Exit(JsonRpcResponse(LId, BuildToolResult(LToolResult, LModern)));

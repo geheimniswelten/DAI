@@ -21,10 +21,13 @@ uses
   System.Math,
   System.SysUtils,
   ToolsAPI,
+  h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
   h5u.DAI.Log,
   h5u.DAI.OTA.Build,
   h5u.DAI.OTA.CodeInsight,
+  h5u.DAI.OTA.Debugger,
+  h5u.DAI.OTA.Designer,
   h5u.DAI.OTA.Files,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.OTA.Projects,
@@ -124,6 +127,19 @@ begin
     raise EAbort.Create('Die Operation wurde durch die DAI-Berechtigungsrichtlinie verweigert.');
 end;
 
+procedure EnsureDebuggerIdle;
+var
+  LDebugger: IOTADebuggerServices;
+begin
+  TDAIOTA.RunOnMainThread(
+    procedure
+    begin
+      if Supports(BorlandIDEServices, IOTADebuggerServices, LDebugger) and Assigned(LDebugger.CurrentProcess) and
+         not (LDebugger.CurrentProcess.ProcessState in [psNothing, psTerminated, psNoProcess]) then
+        raise EInvalidOperation.Create('Ein Debuggerprozess ist bereits aktiv. Verwenden Sie debugger_control oder project_stop.');
+    end);
+end;
+
 function ToolStatus(const AContext: TDAIRequestContext): TJSONObject;
 var
   LPermissions: TJSONObject;
@@ -147,10 +163,57 @@ begin
   Result.AddPair('permissions', LPermissions);
 end;
 
+function ContextForArguments(const AArguments: TJSONObject; const AContext: TDAIRequestContext): TDAIRequestContext;
+var
+  LFileName: string;
+  LProject: IOTAProject;
+  LProjectName: string;
+  LRoot: string;
+  LBestLength: Integer;
+begin
+  Result := AContext;
+  LProjectName := ArgumentString(AArguments, 'project');
+  if LProjectName <> '' then
+  begin
+    LProject := TDAIOTA.ProjectByNameOrPath(LProjectName);
+    if Assigned(LProject) then
+      Result.ProjectKey := TDAIOTA.ProjectFileName(LProject);
+    Exit;
+  end;
+  LFileName := ArgumentString(AArguments, 'file');
+  if LFileName = '' then
+    LFileName := ArgumentString(AArguments, 'directory');
+  if LFileName = '' then
+    Exit;
+  LFileName := TDAISettings.Instance.ExpandPath(LFileName);
+  LProject := TDAIOTA.ProjectByNameOrPath('');
+  if Assigned(LProject) and TDAIOTA.ProjectContainsFile(LProject, LFileName) then
+  begin
+    Result.ProjectKey := TDAIOTA.ProjectFileName(LProject);
+    Exit;
+  end;
+  LBestLength := 0;
+  for LProject in TDAIOTA.Projects do
+  begin
+    if TDAIOTA.ProjectContainsFile(LProject, LFileName) then
+    begin
+      Result.ProjectKey := TDAIOTA.ProjectFileName(LProject);
+      Exit;
+    end;
+    LRoot := TPath.GetDirectoryName(TDAIOTA.ProjectFileName(LProject));
+    if (Length(LRoot) > LBestLength) and (TDAIOTA.IsPathWithin(LFileName, LRoot) or TDAIOTA.SameFile(LFileName, LRoot)) then
+    begin
+      LBestLength := Length(LRoot);
+      Result.ProjectKey := TDAIOTA.ProjectFileName(LProject);
+    end;
+  end;
+end;
+
 class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
 var
   LBuildFirst: Boolean;
   LCompileResult: TJSONObject;
+  LContext: TDAIRequestContext;
   LExpandedFileName: string;
   LFileName: string;
   LProjectObject: IOTAProject;
@@ -158,17 +221,18 @@ var
   LUsedEditorBuffer: Boolean;
   LWithDebugger: Boolean;
 begin
+  LContext := ContextForArguments(AArguments, AContext);
   TDAILog.Access('MCP tools/call: ' + AName);
 
   if SameText(AName, 'ide_status') then
   begin
-    RequirePermission(pcReadAccess, 'Status der Delphi-IDE lesen', '', AContext);
-    Exit(ToolStatus(AContext));
+    RequirePermission(pcReadAccess, 'Status der Delphi-IDE lesen', '', LContext);
+    Exit(ToolStatus(LContext));
   end;
 
   if SameText(AName, 'open_files_list') then
   begin
-    RequirePermission(pcReadAccess, 'Liste der aktuell geöffneten Dateien lesen', '', AContext);
+    RequirePermission(pcReadAccess, 'Liste der aktuell geöffneten Dateien lesen', '', LContext);
     Result := TJSONObject.Create;
     Result.AddPair('files', TDAIFileService.OpenFiles);
     Exit;
@@ -176,7 +240,7 @@ begin
 
   if SameText(AName, 'projects_list') then
   begin
-    RequirePermission(pcReadAccess, 'Projekte und Projektpfade der aktuellen Projektgruppe lesen', '', AContext);
+    RequirePermission(pcReadAccess, 'Projekte und Projektpfade der aktuellen Projektgruppe lesen', '', LContext);
     Result := TJSONObject.Create;
     Result.AddPair('projects', TDAIFileService.Projects);
     Exit;
@@ -185,7 +249,7 @@ begin
   if SameText(AName, 'project_files_list') then
   begin
     LProject := ArgumentString(AArguments, 'project');
-    RequirePermission(pcReadAccess, 'Dateien eines Projekts lesen', LProject, AContext);
+    RequirePermission(pcReadAccess, 'Dateien eines Projekts lesen', LProject, LContext);
     Result := TJSONObject.Create;
     Result.AddPair('files', TDAIFileService.ProjectFiles(LProject));
     Exit;
@@ -194,7 +258,7 @@ begin
   if SameText(AName, 'project_directory_files_list') then
   begin
     LProject := ArgumentString(AArguments, 'project');
-    RequirePermission(pcReadAccess, 'Dateien im Projektverzeichnis auflisten', LProject, AContext);
+    RequirePermission(pcReadAccess, 'Dateien im Projektverzeichnis auflisten', LProject, LContext);
     LProjectObject := TDAIOTA.ProjectByNameOrPath(LProject);
     if not Assigned(LProjectObject) then
       raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
@@ -215,7 +279,7 @@ begin
   if SameText(AName, 'directory_files_list') then
   begin
     LFileName := ArgumentString(AArguments, 'directory');
-    RequirePermission(pcReadAccess, 'Freigegebenes Verzeichnis auflisten', LFileName, AContext);
+    RequirePermission(pcReadAccess, 'Freigegebenes Verzeichnis auflisten', LFileName, LContext);
     Result := TJSONObject.Create;
     Result.AddPair(
       'files',
@@ -231,7 +295,7 @@ begin
 
   if SameText(AName, 'reference_roots_list') then
   begin
-    RequirePermission(pcReadAccess, 'Delphi-, Demo-, GetIt- und zusätzliche Referenzpfade lesen', '', AContext);
+    RequirePermission(pcReadAccess, 'Delphi-, Demo-, GetIt- und zusätzliche Referenzpfade lesen', '', LContext);
     Result := TJSONObject.Create;
     Result.AddPair('roots', TDAIFileService.ReferenceRoots);
     Exit;
@@ -240,7 +304,7 @@ begin
   if SameText(AName, 'reference_files_list') then
   begin
     LFileName := ArgumentString(AArguments, 'directory');
-    RequirePermission(pcReadAccess, 'Dateien eines schreibgeschützten Referenzpfads auflisten', LFileName, AContext);
+    RequirePermission(pcReadAccess, 'Dateien eines schreibgeschützten Referenzpfads auflisten', LFileName, LContext);
     Result := TJSONObject.Create;
     Result.AddPair(
       'files',
@@ -257,21 +321,21 @@ begin
   if SameText(AName, 'file_read') or SameText(AName, 'reference_file_read') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcReadAccess, 'Dateiinhalt lesen', LFileName, AContext);
+    RequirePermission(pcReadAccess, 'Dateiinhalt lesen', LFileName, LContext);
     Exit(TDAIFileService.ReadFile(LFileName, ArgumentInteger(AArguments, 'maximum_characters', 0)));
   end;
 
   if SameText(AName, 'code_insight_status') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcReadAccess, 'Status der IDE-Code-Insight-Provider lesen', LFileName, AContext);
+    RequirePermission(pcReadAccess, 'Status der IDE-Code-Insight-Provider lesen', LFileName, LContext);
     Exit(TDAICodeInsightService.Status(LFileName));
   end;
 
   if SameText(AName, 'code_definition') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcReadAccess, 'Semantische Definition über IDE Code Insight ermitteln', LFileName, AContext);
+    RequirePermission(pcReadAccess, 'Semantische Definition über IDE Code Insight ermitteln', LFileName, LContext);
     Exit(
       TDAICodeInsightService.Definition(
         LFileName,
@@ -285,7 +349,7 @@ begin
   if SameText(AName, 'code_hover') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcReadAccess, 'Help Insight für eine Quelltextposition lesen', LFileName, AContext);
+    RequirePermission(pcReadAccess, 'Help Insight für eine Quelltextposition lesen', LFileName, LContext);
     Exit(
       TDAICodeInsightService.Hover(
         LFileName,
@@ -299,14 +363,14 @@ begin
   if SameText(AName, 'file_diagnostics') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcReadAccess, 'Error-Insight-Diagnosen einer IDE-Datei lesen', LFileName, AContext);
+    RequirePermission(pcReadAccess, 'Error-Insight-Diagnosen einer IDE-Datei lesen', LFileName, LContext);
     Exit(TDAICodeInsightService.Diagnostics(LFileName));
   end;
 
   if SameText(AName, 'project_context') then
   begin
     LProject := ArgumentString(AArguments, 'project');
-    RequirePermission(pcReadAccess, 'Aktiven Projekt- und Compilerkontext lesen', LProject, AContext);
+    RequirePermission(pcReadAccess, 'Aktiven Projekt- und Compilerkontext lesen', LProject, LContext);
     Exit(
       TDAICodeInsightService.ProjectContext(
         LProject,
@@ -321,11 +385,12 @@ begin
   begin
     LFileName := ArgumentString(AArguments, 'file');
     LExpandedFileName := TDAISettings.Instance.ExpandPath(LFileName);
-    if SameText(TPath.GetExtension(LExpandedFileName), '.dfm') or TDAIOTA.IsFileOpenInEditor(LExpandedFileName) or
+    if SameText(TPath.GetExtension(LExpandedFileName), '.dfm') or SameText(TPath.GetExtension(LExpandedFileName), '.fmx') or
+       TDAIOTA.IsFileOpenInEditor(LExpandedFileName) or
        TDAIOTA.IsFormLoadedForFile(LExpandedFileName) then
-      RequirePermission(pcEditInsideIDE, 'Datei im Editorpuffer bearbeiten', LFileName, AContext)
+      RequirePermission(pcEditInsideIDE, 'Datei im Editorpuffer bearbeiten', LFileName, LContext)
     else
-      RequirePermission(pcEditOutsideIDE, 'Datei auf dem Datenträger bearbeiten', LFileName, AContext);
+      RequirePermission(pcEditOutsideIDE, 'Datei auf dem Datenträger bearbeiten', LFileName, LContext);
 
     Exit(
       TDAIFileService.WriteFile(
@@ -340,7 +405,7 @@ begin
 
   if SameText(AName, 'project_create') then
   begin
-    RequirePermission(pcEditInsideIDE, 'Projekt in der aktuellen Projektgruppe erstellen', ArgumentString(AArguments, 'directory'), AContext);
+    RequirePermission(pcEditInsideIDE, 'Projekt in der aktuellen Projektgruppe erstellen', ArgumentString(AArguments, 'directory'), LContext);
     Exit(
       TDAIProjectService.CreateProject(
         ArgumentString(AArguments, 'name'),
@@ -353,28 +418,28 @@ begin
   if SameText(AName, 'project_open') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcEditInsideIDE, 'Projekt öffnen', LFileName, AContext);
+    RequirePermission(pcEditInsideIDE, 'Projekt öffnen', LFileName, LContext);
     Exit(TDAIProjectService.OpenProject(LFileName));
   end;
 
   if SameText(AName, 'project_save') then
   begin
     LProject := ArgumentString(AArguments, 'project');
-    RequirePermission(pcEditInsideIDE, 'Projekt speichern', LProject, AContext);
+    RequirePermission(pcEditInsideIDE, 'Projekt speichern', LProject, LContext);
     Exit(TDAIProjectService.SaveProject(LProject));
   end;
 
   if SameText(AName, 'project_remove') then
   begin
     LProject := ArgumentString(AArguments, 'project');
-    RequirePermission(pcEditInsideIDE, 'Projekt aus der aktuellen Projektgruppe entfernen', LProject, AContext);
+    RequirePermission(pcEditInsideIDE, 'Projekt aus der aktuellen Projektgruppe entfernen', LProject, LContext);
     Exit(TDAIProjectService.RemoveProject(LProject));
   end;
 
   if SameText(AName, 'unit_create') then
   begin
     LProject := ArgumentString(AArguments, 'project');
-    RequirePermission(pcEditInsideIDE, 'Unit erstellen und zum Projekt hinzufügen', ArgumentString(AArguments, 'file'), AContext);
+    RequirePermission(pcEditInsideIDE, 'Unit erstellen und zum Projekt hinzufügen', ArgumentString(AArguments, 'file'), LContext);
     Exit(
       TDAIProjectService.CreateUnit(
         LProject,
@@ -387,7 +452,7 @@ begin
   if SameText(AName, 'form_unit_create') then
   begin
     LProject := ArgumentString(AArguments, 'project');
-    RequirePermission(pcEditInsideIDE, 'Form-Unit erstellen und zum Projekt hinzufügen', ArgumentString(AArguments, 'file'), AContext);
+    RequirePermission(pcEditInsideIDE, 'Form-Unit erstellen und zum Projekt hinzufügen', ArgumentString(AArguments, 'file'), LContext);
     Exit(
       TDAIProjectService.CreateFormUnit(
         LProject,
@@ -401,42 +466,111 @@ begin
   if SameText(AName, 'file_open') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcEditInsideIDE, 'Datei in der IDE öffnen', LFileName, AContext);
+    RequirePermission(pcEditInsideIDE, 'Datei in der IDE öffnen', LFileName, LContext);
     Exit(TDAIProjectService.OpenFile(LFileName));
   end;
 
   if SameText(AName, 'file_activate') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcEditInsideIDE, 'Datei in der IDE aktivieren', LFileName, AContext);
+    RequirePermission(pcEditInsideIDE, 'Datei in der IDE aktivieren', LFileName, LContext);
     Exit(TDAIProjectService.ActivateFile(LFileName));
   end;
 
   if SameText(AName, 'file_close') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcEditInsideIDE, 'Datei in der IDE schließen', LFileName, AContext);
+    RequirePermission(pcEditInsideIDE, 'Datei in der IDE schließen', LFileName, LContext);
     Exit(TDAIProjectService.CloseFile(LFileName));
   end;
 
   if SameText(AName, 'project_file_remove') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcEditInsideIDE, 'Datei aus dem Projekt entfernen', LFileName, AContext);
+    RequirePermission(pcEditInsideIDE, 'Datei aus dem Projekt entfernen', LFileName, LContext);
     Exit(TDAIProjectService.RemoveFileFromProject(ArgumentString(AArguments, 'project'), LFileName));
   end;
 
   if SameText(AName, 'form_show_as_text') then
   begin
     LFileName := ArgumentString(AArguments, 'file');
-    RequirePermission(pcEditInsideIDE, 'Formular in den DFM-Textmodus umschalten', LFileName, AContext);
+    RequirePermission(pcEditInsideIDE, 'Formular in den DFM-Textmodus umschalten', LFileName, LContext);
     Exit(TDAIProjectService.ShowFormAsText(LFileName));
+  end;
+
+  if SameText(AName, 'form_designer_inspect') then
+  begin
+    LFileName := ArgumentString(AArguments, 'file');
+    RequirePermission(pcReadAccess, 'Formdesigner und veröffentlichte Eigenschaften lesen', LFileName, LContext);
+    Exit(TDAIDesignerService.InspectForm(LFileName));
+  end;
+
+  if SameText(AName, 'form_show_designer') then
+  begin
+    LFileName := ArgumentString(AArguments, 'file');
+    RequirePermission(pcEditInsideIDE, 'Formdesigner in der IDE anzeigen', LFileName, LContext);
+    Exit(TDAIDesignerService.ShowDesigner(LFileName));
+  end;
+
+  if SameText(AName, 'debugger_status') then
+  begin
+    RequirePermission(pcReadAccess, 'Debugger-, Prozess- und Threadstatus lesen', '', LContext);
+    Exit(TDAIDebuggerService.Status);
+  end;
+
+  if SameText(AName, 'breakpoints_list') then
+  begin
+    RequirePermission(pcReadAccess, 'Quellhaltepunkte lesen', '', LContext);
+    Result := TJSONObject.Create;
+    Result.AddPair('breakpoints', TDAIDebuggerService.Breakpoints);
+    Exit;
+  end;
+
+  if SameText(AName, 'breakpoint_set') then
+  begin
+    LFileName := ArgumentString(AArguments, 'file');
+    RequirePermission(pcEditInsideIDE, 'Quellhaltepunkt erstellen oder ändern', LFileName, LContext);
+    Exit(TDAIDebuggerService.SetBreakpoint(LFileName, ArgumentInteger(AArguments, 'line', 0),
+      ArgumentBoolean(AArguments, 'enabled', True), ArgumentString(AArguments, 'condition'), ArgumentInteger(AArguments, 'pass_count', 0)));
+  end;
+
+  if SameText(AName, 'breakpoint_remove') then
+  begin
+    LFileName := ArgumentString(AArguments, 'file');
+    RequirePermission(pcEditInsideIDE, 'Quellhaltepunkt entfernen', LFileName, LContext);
+    Exit(TDAIDebuggerService.RemoveBreakpoint(LFileName, ArgumentInteger(AArguments, 'line', 0)));
+  end;
+
+  if SameText(AName, 'debugger_control') then
+  begin
+    RequirePermission(pcExecute, 'Debugger steuern: ' + ArgumentString(AArguments, 'action'), '', LContext);
+    Exit(TDAIDebuggerService.Control(ArgumentString(AArguments, 'action')));
+  end;
+
+  if SameText(AName, 'clients_registration_status') then
+  begin
+    RequirePermission(pcReadAccess, 'MCP-Registrierung der KI-Clients prüfen', '', LContext);
+    Exit(TDAIClientRegistration.Status(ArgumentString(AArguments, 'client')));
+  end;
+
+  if SameText(AName, 'clients_register') then
+  begin
+    RequirePermission(pcEditOutsideIDE, 'DAI beim KI-Client registrieren: ' + ArgumentString(AArguments, 'client', 'all'),
+      TDAICodexRegistration.UserProfileDirectory, LContext);
+    Exit(TDAIClientRegistration.RegisterFiles(ArgumentString(AArguments, 'client')));
+  end;
+
+  if SameText(AName, 'clients_unregister') then
+  begin
+    RequirePermission(pcEditOutsideIDE, 'DAI beim KI-Client deregistrieren: ' + ArgumentString(AArguments, 'client', 'all'),
+      TDAICodexRegistration.UserProfileDirectory, LContext);
+    Exit(TDAIClientRegistration.UnregisterFiles(ArgumentString(AArguments, 'client')));
   end;
 
   if SameText(AName, 'project_compile') then
   begin
     LProject := ArgumentString(AArguments, 'project');
-    RequirePermission(pcCompile, 'Projekt kompilieren', LProject, AContext);
+    RequirePermission(pcCompile, 'Projekt kompilieren', LProject, LContext);
     Exit(
       TDAIBuildService.CompileProject(
         LProject,
@@ -448,7 +582,11 @@ begin
 
   if SameText(AName, 'project_group_compile') then
   begin
-    RequirePermission(pcCompile, 'Alle Projekte der Projektgruppe kompilieren', '', AContext);
+    for LProjectObject in TDAIOTA.Projects do
+    begin
+      LContext.ProjectKey := TDAIOTA.ProjectFileName(LProjectObject);
+      RequirePermission(pcCompile, 'Projekt der Projektgruppe kompilieren', LContext.ProjectKey, LContext);
+    end;
     Exit(
       TDAIBuildService.CompileProjectGroup(
         ArgumentBoolean(AArguments, 'full_build', False),
@@ -462,9 +600,12 @@ begin
     LProject := ArgumentString(AArguments, 'project');
     LBuildFirst := ArgumentBoolean(AArguments, 'build_first', True);
     LWithDebugger := ArgumentBoolean(AArguments, 'debugger', True);
+    RequirePermission(pcExecute, 'Projekt starten', LProject, LContext);
+    if LWithDebugger or LBuildFirst then
+      EnsureDebuggerIdle;
     if LBuildFirst then
     begin
-      RequirePermission(pcCompile, 'Projekt vor dem Start kompilieren', LProject, AContext);
+      RequirePermission(pcCompile, 'Projekt vor dem Start kompilieren', LProject, LContext);
       LCompileResult := TDAIBuildService.CompileProject(LProject, False, True);
       try
         if not LCompileResult.GetValue<Boolean>('succeeded') then
@@ -473,20 +614,19 @@ begin
         LCompileResult.Free;
       end;
     end;
-    RequirePermission(pcExecute, 'Projekt starten', LProject, AContext);
     Exit(TDAIBuildService.RunProject(LProject, LWithDebugger));
   end;
 
   if SameText(AName, 'project_stop') then
   begin
     LWithDebugger := ArgumentBoolean(AArguments, 'debugger', True);
-    RequirePermission(pcExecute, 'Laufendes Projekt stoppen', '', AContext);
+    RequirePermission(pcExecute, 'Laufendes Projekt stoppen', '', LContext);
     Exit(TDAIBuildService.StopProject(ArgumentString(AArguments, 'project'), LWithDebugger));
   end;
 
   if SameText(AName, 'ui_message_box') then
   begin
-    RequirePermission(pcEditInsideIDE, 'MessageBox in der Delphi-IDE anzeigen', ArgumentString(AArguments, 'title', 'DAI'), AContext);
+    RequirePermission(pcEditInsideIDE, 'MessageBox in der Delphi-IDE anzeigen', ArgumentString(AArguments, 'title', 'DAI'), LContext);
     Exit(
       TDAIUIService.ShowMessage(
         ArgumentString(AArguments, 'title', 'DAI'),
@@ -498,7 +638,7 @@ begin
 
   if SameText(AName, 'ui_input_box') then
   begin
-    RequirePermission(pcEditInsideIDE, 'InputBox in der Delphi-IDE anzeigen', ArgumentString(AArguments, 'title', 'DAI'), AContext);
+    RequirePermission(pcEditInsideIDE, 'InputBox in der Delphi-IDE anzeigen', ArgumentString(AArguments, 'title', 'DAI'), LContext);
     Exit(
       TDAIUIService.AskInput(
         ArgumentString(AArguments, 'title', 'DAI'),
@@ -510,7 +650,7 @@ begin
 
   if SameText(AName, 'ui_balloon_hint') then
   begin
-    RequirePermission(pcEditInsideIDE, 'BalloonHint in der Delphi-IDE anzeigen', ArgumentString(AArguments, 'title', 'DAI'), AContext);
+    RequirePermission(pcEditInsideIDE, 'BalloonHint in der Delphi-IDE anzeigen', ArgumentString(AArguments, 'title', 'DAI'), LContext);
     Exit(
       TDAIUIService.ShowBalloon(
         ArgumentString(AArguments, 'title', 'DAI'),
@@ -522,27 +662,27 @@ begin
 
   if SameText(AName, 'codex_registration_status') then
   begin
-    RequirePermission(pcReadAccess, 'Status der Codex- und Skill-Registrierung lesen', '', AContext);
+    RequirePermission(pcReadAccess, 'Status der Codex- und Skill-Registrierung lesen', '', LContext);
     Exit(TDAICodexRegistration.Status);
   end;
 
   if SameText(AName, 'codex_register') then
   begin
-    RequirePermission(pcEditOutsideIDE, 'DAI in .codex und .agents registrieren', TDAICodexRegistration.UserProfileDirectory, AContext);
+    RequirePermission(pcEditOutsideIDE, 'DAI in .codex und .agents registrieren', TDAICodexRegistration.UserProfileDirectory, LContext);
     TDAICodexRegistration.RegisterFiles;
     Exit(TDAICodexRegistration.Status);
   end;
 
   if SameText(AName, 'codex_unregister') then
   begin
-    RequirePermission(pcEditOutsideIDE, 'DAI aus .codex und .agents deregistrieren', TDAICodexRegistration.UserProfileDirectory, AContext);
+    RequirePermission(pcEditOutsideIDE, 'DAI aus .codex und .agents deregistrieren', TDAICodexRegistration.UserProfileDirectory, LContext);
     TDAICodexRegistration.UnregisterFiles;
     Exit(TDAICodexRegistration.Status);
   end;
 
   if SameText(AName, 'msbuild_execute') then
   begin
-    RequirePermission(pcCompile, 'MSBuild.exe direkt ausführen', ArgumentString(AArguments, 'working_directory'), AContext);
+    RequirePermission(pcCompile, 'MSBuild.exe direkt ausführen', ArgumentString(AArguments, 'working_directory'), LContext);
     Exit(
       TDAIBuildService.ExecuteMSBuild(
         ArgumentString(AArguments, 'executable'),
@@ -555,7 +695,7 @@ begin
 
   if SameText(AName, 'dcc32_execute') then
   begin
-    RequirePermission(pcCompile, 'DCC32.exe direkt ausführen', ArgumentString(AArguments, 'working_directory'), AContext);
+    RequirePermission(pcCompile, 'DCC32.exe direkt ausführen', ArgumentString(AArguments, 'working_directory'), LContext);
     Exit(
       TDAIBuildService.ExecuteDCC32(
         ArgumentStringArray(AArguments, 'arguments'),
@@ -667,7 +807,7 @@ begin
   AddTool(
     Result,
     'file_write',
-    'Ersetzt den Editorpuffer oder schreibt eine geschlossene Workspace-Datei codierungs- und zeilenendenbewusst; DFM wird über die IDE gespeichert.',
+    'Ersetzt Editorpuffer; geschlossene Workspace-Dateien benötigen save=true. DFM/FMX werden ausschließlich über IDE-Textpuffer geschrieben.',
     '{"type":"object","properties":{"file":{"type":"string"},"content":{"type":"string"},"expected_sha256":{"type":"string"},' +
     '"save":{"type":"boolean"}},"required":["file","content"],"additionalProperties":false}',
     False
@@ -787,6 +927,29 @@ begin
     '"required":["message"],"additionalProperties":false}',
     False
   );
+  AddTool(Result, 'form_designer_inspect', 'Liest Komponenten, Auswahl und skalare veröffentlichte Eigenschaften eines geladenen Formdesigners.',
+    '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}', True);
+  AddTool(Result, 'form_show_designer', 'Öffnet ein Workspace-Formular bei Bedarf und zeigt seinen Formdesigner.',
+    '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}', False);
+  AddTool(Result, 'debugger_status', 'Liest den Debuggerstatus einschließlich aktueller Prozesse und Threads.',
+    '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'breakpoints_list', 'Listet Quellhaltepunkte mit Datei, Zeile, Bedingung und Aktivierung.',
+    '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'breakpoint_set', 'Erstellt oder aktualisiert einen Quellhaltepunkt im geöffneten Workspace.',
+    '{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer","minimum":1},"enabled":{"type":"boolean"},' +
+    '"condition":{"type":"string"},"pass_count":{"type":"integer","minimum":0}},"required":["file","line"],"additionalProperties":false}', False);
+  AddTool(Result, 'breakpoint_remove', 'Entfernt Quellhaltepunkte an der angegebenen Datei und Zeile.',
+    '{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer","minimum":1}},' +
+    '"required":["file","line"],"additionalProperties":false}', False);
+  AddTool(Result, 'debugger_control', 'Pausiert den aktiven Prozess oder setzt einen angehaltenen Thread fort beziehungsweise führt Einzelschritte aus.',
+    '{"type":"object","properties":{"action":{"type":"string","enum":["pause","continue","step_into","step_over","step_out"]}},' +
+    '"required":["action"],"additionalProperties":false}', False);
+  AddTool(Result, 'clients_registration_status', 'Prüft erkannte KI-Clients, Konfigurationspfade und DAI-Registrierungen ohne Tokenausgabe.',
+    '{"type":"object","properties":{"client":{"type":"string"}},"additionalProperties":false}', True);
+  AddTool(Result, 'clients_register', 'Registriert DAI für einen Client oder alle erkannten unterstützten Clients. Fremde Einträge bleiben erhalten.',
+    '{"type":"object","properties":{"client":{"type":"string"}},"additionalProperties":false}', False);
+  AddTool(Result, 'clients_unregister', 'Entfernt ausschließlich unveränderte, von DAI verwaltete KI-Client-Einträge.',
+    '{"type":"object","properties":{"client":{"type":"string"}},"additionalProperties":false}', False);
   AddTool(Result, 'codex_registration_status', 'Prüft DAI-Einträge unter .codex und .agents.', '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'codex_register', 'Registriert den DAI-MCP-Server und den Delphi-Skill für Codex.', '{"type":"object","additionalProperties":false}', False);
   AddTool(Result, 'codex_unregister', 'Entfernt ausschließlich die von DAI verwalteten Codex- und Skill-Einträge.', '{"type":"object","additionalProperties":false}', False);

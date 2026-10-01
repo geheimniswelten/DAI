@@ -26,6 +26,7 @@ type
     class function IsFileOpenInEditor(const AFileName: string): Boolean; static;
     class function IsFormLoadedForFile(const AFileName: string): Boolean; static;
     class function ReadEditorText(const ASourceEditor: IOTASourceEditor): string; static;
+    class function ReadFormText(const AFileName: string; const AMaximumBytes: Integer; out AText: string): Boolean; static;
     class function ReplaceEditorText(const ASourceEditor: IOTASourceEditor; const AText: string): Boolean; static;
     class function NormalizeFileName(const AFileName: string): string; static;
     class function SameFile(const ALeft: string; const ARight: string): Boolean; static;
@@ -326,6 +327,11 @@ begin
       if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
         Exit;
       LQuery := Trim(ANameOrPath);
+      if LQuery = '' then
+      begin
+        LResult := LModuleServices.GetActiveProject;
+        Exit;
+      end;
       if TPath.IsPathRooted(LQuery) then
       begin
         LQuery := NormalizeFileName(LQuery);
@@ -384,18 +390,39 @@ var
 begin
   LResult := False;
   RunOnMainThread(
-    procedure var LIndex: Integer;
+    procedure var LAdditionalFiles: TStringList;
+      LAdditionalFile: string;
+      LIndex: Integer;
       LModuleInfo: IOTAModuleInfo;
     begin
       if not Assigned(AProject) then
         Exit;
+      if SameFile(AProject.FileName, AFileName) then
+      begin
+        LResult := True;
+        Exit;
+      end;
       for LIndex := 0 to AProject.GetModuleCount - 1 do
       begin
         LModuleInfo := AProject.GetModule(LIndex);
-        if Assigned(LModuleInfo) and SameFile(LModuleInfo.FileName, AFileName) then
+        if not Assigned(LModuleInfo) then
+          Continue;
+        if SameFile(LModuleInfo.FileName, AFileName) then
         begin
           LResult := True;
           Exit;
+        end;
+        LAdditionalFiles := TStringList.Create;
+        try
+          LModuleInfo.GetAdditionalFiles(LAdditionalFiles);
+          for LAdditionalFile in LAdditionalFiles do
+            if SameFile(LAdditionalFile, AFileName) then
+            begin
+              LResult := True;
+              Exit;
+            end;
+        finally
+          LAdditionalFiles.Free;
         end;
       end;
     end);
@@ -480,6 +507,73 @@ begin
     Delete(Result, Length(Result), 1);
 end;
 
+class function TDAIOTA.ReadFormText(const AFileName: string; const AMaximumBytes: Integer; out AText: string): Boolean;
+var
+  LFound: Boolean;
+  LText: string;
+begin
+  LFound := False;
+  LText := '';
+  RunOnMainThread(
+    procedure
+    var
+      LFormEditor: IOTAFormEditor;
+      LIndex: Integer;
+      LModule: IOTAModule;
+      LNativeEditor: INTAFormEditor;
+      LReader: TStreamReader;
+      LResource: TMemoryStream;
+      LSignature: Cardinal;
+      LTextStream: TMemoryStream;
+    begin
+      LModule := FindModuleByFileName(AFileName);
+      if not Assigned(LModule) then
+        Exit;
+      for LIndex := 0 to LModule.ModuleFileCount - 1 do
+      begin
+        if not Supports(LModule.ModuleFileEditors[LIndex], IOTAFormEditor, LFormEditor) or
+          not SameFile(LFormEditor.FileName, AFileName) or not Supports(LFormEditor, INTAFormEditor, LNativeEditor) then
+          Continue;
+        LResource := TMemoryStream.Create;
+        LTextStream := TMemoryStream.Create;
+        try
+          LNativeEditor.GetFormResource(LResource);
+          if (AMaximumBytes > 0) and (LResource.Size > AMaximumBytes) then
+            raise EInvalidOperation.Create('Die Formularressource überschreitet das Textdateilimit.');
+          LResource.Position := 0;
+          if TestStreamFormat(LResource) = sofBinary then
+          begin
+            LSignature := 0;
+            LResource.Read(LSignature, SizeOf(LSignature));
+            LResource.Position := 0;
+            if LSignature = $30465054 then // TPF0: component stream without resource header
+              ObjectBinaryToText(LResource, LTextStream)
+            else
+              ObjectResourceToText(LResource, LTextStream);
+          end
+          else
+            LTextStream.CopyFrom(LResource, LResource.Size);
+          if (AMaximumBytes > 0) and (LTextStream.Size > AMaximumBytes) then
+            raise EInvalidOperation.Create('Der Formulartext überschreitet das Textdateilimit.');
+          LTextStream.Position := 0;
+          LReader := TStreamReader.Create(LTextStream, TEncoding.UTF8, True, 4096);
+          try
+            LText := LReader.ReadToEnd;
+          finally
+            LReader.Free;
+          end;
+          LFound := True;
+          Exit;
+        finally
+          LTextStream.Free;
+          LResource.Free;
+        end;
+      end;
+    end);
+  AText := LText;
+  Result := LFound;
+end;
+
 class function TDAIOTA.ReplaceEditorText(const ASourceEditor: IOTASourceEditor; const AText: string): Boolean;
 var
   LCurrentBytes: TBytes;
@@ -528,12 +622,28 @@ end;
 
 class function TDAIOTA.WorkspaceRoots: TArray<string>;
 var
+  LGroup: IOTAProjectGroup;
+  LGroupFileName: string;
   LList: TList<string>;
   LProject: IOTAProject;
   LRoot: string;
 begin
   LList := TList<string>.Create;
   try
+    LGroup := MainProjectGroup;
+    LGroupFileName := '';
+    RunOnMainThread(
+      procedure
+      begin
+        if Assigned(LGroup) then
+          LGroupFileName := LGroup.FileName;
+      end);
+    if LGroupFileName <> '' then
+    begin
+      LRoot := NormalizeFileName(TPath.GetDirectoryName(LGroupFileName));
+      if LRoot <> '' then
+        LList.Add(LRoot);
+    end;
     for LProject in Projects do
     begin
       LRoot := NormalizeFileName(TPath.GetDirectoryName(ProjectFileName(LProject)));

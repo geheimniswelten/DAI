@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -11,6 +12,16 @@ SOURCE = ROOT / "Source"
 MAX_LINE_LENGTH = 180
 
 REQUIRED_TOOLS = {
+    "form_designer_inspect",
+    "form_show_designer",
+    "debugger_status",
+    "breakpoints_list",
+    "breakpoint_set",
+    "breakpoint_remove",
+    "debugger_control",
+    "clients_registration_status",
+    "clients_register",
+    "clients_unregister",
     "ide_status",
     "open_files_list",
     "projects_list",
@@ -309,11 +320,49 @@ def check_tools(errors: list[str]) -> None:
         fail(errors, "Fehlende MCP-Werkzeuge: " + ", ".join(missing))
     if extra:
         fail(errors, "Unerwartete MCP-Werkzeuge: " + ", ".join(extra))
+    dispatched = set(re.findall(r"SameText\s*\(\s*AName\s*,\s*'([^']+)'", content, flags=re.IGNORECASE))
+    for name in sorted(declared - dispatched):
+        fail(errors, f"MCP-Werkzeug ohne Dispatch: {name}")
+
+    for match in re.finditer(r"AddTool\s*\(\s*Result\s*,", content, flags=re.IGNORECASE):
+        args = [""]
+        depth, index, quoted = 1, match.end(), False
+        while index < len(content) and depth:
+            char = content[index]
+            if char == "'":
+                args[-1] += char
+                if quoted and index + 1 < len(content) and content[index + 1] == "'":
+                    args[-1] += "'"
+                    index += 2
+                    continue
+                quoted = not quoted
+            elif not quoted and char == "," and depth == 1:
+                args.append("")
+            elif not quoted and char in "()":
+                depth += 1 if char == "(" else -1
+                if depth:
+                    args[-1] += char
+            else:
+                args[-1] += char
+            index += 1
+        if len(args) != 4:
+            fail(errors, "MCP-Werkzeugdeklaration besitzt ungültige Argumentanzahl")
+            continue
+        name = args[0].strip()
+        try:
+            schema_text = "".join(s.replace("''", "'") for s in re.findall(r"'((?:''|[^'])*)'", args[2]))
+            schema = json.loads(schema_text)
+            if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
+                fail(errors, f"{name}: Eingabeschema muss ein begrenztes Objekt sein")
+            if set(schema.get("required", [])) - set(schema.get("properties", {})):
+                fail(errors, f"{name}: required nennt nicht deklarierte Eigenschaften")
+        except (ValueError, TypeError) as exc:
+            fail(errors, f"{name}: ungültiges JSON-Eingabeschema: {exc}")
 
 
 def check_old_names(errors: list[str]) -> None:
     old_names = ("CodexMCPIDE", "Codex MCP IDE", "CodexMCP.")
-    for path in ROOT.rglob("*"):
+    for path in deliverable_files():
         if path.resolve() == Path(__file__).resolve():
             continue
         if "__pycache__" in path.parts or path.suffix.lower() == ".pyc":
@@ -425,10 +474,12 @@ def check_encoding_policy(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.OTA.Files.pas: geschlossene Dateien werden nicht codierungserhaltend geschrieben")
     if re.search(r"TFile\.WriteAllText\s*\(\s*LFileName\s*,\s*AContent\s*,\s*TEncoding\.UTF8", files_content):
         fail(errors, "h5u.DAI.OTA.Files.pas: Dateiinhalt darf nicht pauschal als UTF-8 geschrieben werden")
-    if "DFM-Dateien werden ausschließlich über den IDE-Textpuffer geändert" not in files_content:
+    if "Formulardateien werden ausschließlich über einen verfügbaren IDE-Textpuffer geändert" not in files_content:
         fail(errors, "h5u.DAI.OTA.Files.pas: DFM-Direktschreibschutz fehlt")
     if "SameText(TPath.GetExtension(LExpandedFileName), '.dfm')" not in tools_content:
         fail(errors, "h5u.DAI.MCP.Tools.pas: DFM-Schreibzugriffe müssen als IDE-Bearbeitung autorisiert werden")
+    if "SameText(TPath.GetExtension(LExpandedFileName), '.fmx')" not in tools_content:
+        fail(errors, "h5u.DAI.MCP.Tools.pas: FMX-Schreibzugriffe müssen als IDE-Bearbeitung autorisiert werden")
     for required in (
         "tekANSI",
         "tekUTF8BOM",
@@ -530,6 +581,15 @@ def check_options_frame_layout(errors: list[str]) -> None:
     if not token_width or int(token_width.group(1)) > 360:
         fail(errors, "h5u.DAI.Options.Frame.pas: Bearer-Token-Edit muss genügend Platz für die Token-Schaltfläche lassen")
 
+    restart_notice = "Nach dem Ändern von Port oder Bearer-Token sowie nach dem Registrieren oder Deregistrieren muss die Codex-App neu gestartet werden."
+    if restart_notice not in content:
+        fail(errors, "h5u.DAI.Options.Frame.pas: Hinweis zum erforderlichen Neustart der Codex-App fehlt")
+    notice_position = content.find(restart_notice)
+    unregister_position = content.find("FUnregisterButton.OnClick := UnregisterClicked")
+    align_position = content.find("Align := alTop", unregister_position)
+    if unregister_position < 0 or align_position < 0 or not (unregister_position < notice_position < align_position):
+        fail(errors, "h5u.DAI.Options.Frame.pas: Neustart-Hinweis muss ganz unten zwischen Registrierungsbuttons und Frame-Ausrichtung stehen")
+
     settings = read_project_text(SOURCE / "h5u.DAI.Settings.pas")
     public_part = re.split(r"(?im)^\s*implementation\s*$", settings, maxsplit=1)[0]
     public_section = re.search(r"(?is)\bpublic\b(.*?)(?:\bend\s*;)", public_part)
@@ -540,11 +600,11 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.1.15"
+    expected = "1.2.0"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
-    changelog = read_project_text(ROOT / "CHANGELOG.md")
+    changelog = read_project_text(ROOT / "CHANGELOG.md").replace("\r\n", "\n")
 
     if f"CDAIVersion = '{expected}'" not in consts:
         fail(errors, f"h5u.DAI.Consts.pas: CDAIVersion muss {expected} sein")
@@ -624,7 +684,7 @@ def check_bearer_authentication_and_registration_paths(errors: list[str]) -> Non
         fail(errors, "Codex- und Skill-Registrierung darf TPath.GetHomePath unter Windows nicht verwenden")
     if "LegacyApplicationDataDirectory" not in registration or "RemoveLegacyRegistration" not in registration:
         fail(errors, "h5u.DAI.Codex.Registration.pas: DAI muss eigene Altregistrierungen unter APPDATA bereinigen")
-    for required in (".codex\\config.toml", ".agents\\skills\\", 'http_headers = { Authorization = "Bearer '):
+    for required in (".codex\\config.toml", ".agents\\skills\\", 'http_headers = { Authorization = ', "TomlQuotedString('Bearer "):
         if required not in registration:
             fail(errors, f"h5u.DAI.Codex.Registration.pas: Registrierungselement fehlt: {required}")
     if tools.count("TDAICodexRegistration.UserProfileDirectory") < 2:
@@ -740,16 +800,18 @@ def check_lexical_balance(errors: list[str]) -> None:
         if stack:
             fail(errors, f"{path.relative_to(ROOT)}:{stack[-1][1]}: nicht geschlossene Klammer {stack[-1][0]}")
 
+def deliverable_files() -> list[Path]:
+    """Check the shipped source, excluding builds, personal chats and permission files."""
+    files = [p for folder in (SOURCE, ROOT / "Scripts") for p in folder.rglob("*")
+             if p.is_file() and "__pycache__" not in p.parts and p.suffix.lower() != ".pyc"]
+    names = ("DAI.dpk", "DAI.dproj", "DAI.McpBridge.dpr", "Build.ps1", "Test-MCP.ps1", ".gitignore",
+             "README.md", "CHANGELOG.md", "FINAL_VERIFICATION.md", "OPENTOOLSAPI_CODE_INSIGHT.md")
+    files.extend(ROOT / name for name in names if (ROOT / name).is_file())
+    return files
+
+
 def write_manifest() -> None:
-    files = [
-        path
-        for path in ROOT.rglob("*")
-        if path.is_file()
-        and path.name not in {"MANIFEST.sha256"}
-        and ".git" not in path.parts
-        and "__pycache__" not in path.parts
-        and path.suffix.lower() != ".pyc"
-    ]
+    files = deliverable_files()
     lines = []
     for path in sorted(files):
         digest = hashlib.sha256(path.read_bytes()).hexdigest()

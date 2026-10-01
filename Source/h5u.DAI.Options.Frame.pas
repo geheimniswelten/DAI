@@ -4,6 +4,7 @@ interface
 
 uses
   System.Classes,
+  System.JSON,
   Vcl.Controls,
   Vcl.Forms,
   Vcl.StdCtrls,
@@ -23,16 +24,21 @@ type
     FScopeComboBox: TComboBox;
     FProjectLabel: TLabel;
     FPermissionComboBoxes: array[TDAIPermissionCategory] of TComboBox;
+    FClientComboBox: TComboBox;
+    FClientStatusMemo: TMemo;
     FCodexStatusLabel: TLabel;
     FSkillStatusLabel: TLabel;
     FRegisterButton: TButton;
     FUnregisterButton: TButton;
     procedure BuildControls;
     procedure RefreshServerStatus;
+    procedure DisplayClientStatus(const AStatus: TJSONObject);
     procedure AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
     procedure PopulatePermissionCombo(const AComboBox: TComboBox);
     procedure ScopeChanged(Sender: TObject);
     procedure GenerateTokenClicked(Sender: TObject);
+    procedure ClientChanged(Sender: TObject);
+    function SelectedClient: string;
     procedure RegisterClicked(Sender: TObject);
     procedure UnregisterClicked(Sender: TObject);
     function SelectedPermissionScope: TDAIPermissionScope;
@@ -51,13 +57,13 @@ implementation
 {$R *.dfm}
 
 uses
-  System.JSON,
   System.IOUtils,
   System.StrUtils,
   System.SysUtils,
   System.UITypes,
   Vcl.Dialogs,
   Vcl.Graphics,
+  h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
   h5u.DAI.Consts,
   h5u.DAI.OTA.Helpers,
@@ -113,7 +119,7 @@ begin
   FServerEnabledCheckBox.Parent := Self;
   FServerEnabledCheckBox.Left := 24;
   FServerEnabledCheckBox.Top := LTop;
-  FServerEnabledCheckBox.Caption := 'MCP-Server für Codex aktivieren';
+  FServerEnabledCheckBox.Caption := 'Lokalen MCP-Server aktivieren';
   FServerEnabledCheckBox.Width := 300;
   Inc(LTop, 32);
 
@@ -141,7 +147,7 @@ begin
   FGenerateTokenButton.Top := LTop;
   FGenerateTokenButton.Width := 158;
   FGenerateTokenButton.Caption := 'Token erzeugen';
-  FGenerateTokenButton.Hint := 'Erzeugt eine neue GUID. Danach „Registrieren“ und Codex neu starten, damit die neue Verbindung verwendet wird.';
+  FGenerateTokenButton.Hint := 'Erzeugt eine neue GUID. Danach „Registrieren“ und den KI-Client neu starten, damit die neue Verbindung verwendet wird.';
   FGenerateTokenButton.ShowHint := True;
   FGenerateTokenButton.OnClick := GenerateTokenClicked;
   Inc(LTop, 32);
@@ -217,14 +223,53 @@ begin
   LInfoLabel.Height := 36;
   Inc(LTop, 42);
 
-  with NewLabel(Self, 'Codex- und Skill-Registrierung', 16, LTop) do
+  with NewLabel(Self, 'KI-Client- und Skill-Registrierung', 16, LTop) do
     Font.Style := [fsBold];
   Inc(LTop, 30);
 
-  FCodexStatusLabel := NewLabel(Self, '', 24, LTop);
-  Inc(LTop, 24);
-  FSkillStatusLabel := NewLabel(Self, '', 24, LTop);
+  FClientComboBox := TComboBox.Create(Self);
+  FClientComboBox.Parent := Self;
+  FClientComboBox.Left := 24;
+  FClientComboBox.Top := LTop;
+  FClientComboBox.Width := 330;
+  FClientComboBox.Style := csDropDownList;
+  FClientComboBox.Items.Add('Alle erkannten Clients');
+  FClientComboBox.Items.Add('Codex');
+  FClientComboBox.Items.Add('Claude Code (CLI / VS Code)');
+  FClientComboBox.Items.Add('Claude Desktop');
+  FClientComboBox.Items.Add('Eigent');
+  FClientComboBox.Items.Add('Gemini CLI / Code Assist');
+  FClientComboBox.Items.Add('Gemini Desktop');
+  FClientComboBox.Items.Add('Hermes');
+  FClientComboBox.Items.Add('LM Studio');
+  FClientComboBox.Items.Add('OpenClaw');
+  FClientComboBox.ItemIndex := 0;
+  FClientComboBox.OnChange := ClientChanged;
   Inc(LTop, 34);
+
+  FClientStatusMemo := TMemo.Create(Self);
+  FClientStatusMemo.Parent := Self;
+  FClientStatusMemo.Left := 24;
+  FClientStatusMemo.Top := LTop;
+  FClientStatusMemo.Width := 736;
+  FClientStatusMemo.Height := 154;
+  FClientStatusMemo.ReadOnly := True;
+  FClientStatusMemo.ScrollBars := ssVertical;
+  FClientStatusMemo.WordWrap := True;
+  Inc(LTop, 164);
+
+  FCodexStatusLabel := NewLabel(Self, '', 24, LTop);
+  FCodexStatusLabel.AutoSize := False;
+  FCodexStatusLabel.WordWrap := True;
+  FCodexStatusLabel.Width := 736;
+  FCodexStatusLabel.Height := 36;
+  Inc(LTop, 40);
+  FSkillStatusLabel := NewLabel(Self, '', 24, LTop);
+  FSkillStatusLabel.AutoSize := False;
+  FSkillStatusLabel.WordWrap := True;
+  FSkillStatusLabel.Width := 736;
+  FSkillStatusLabel.Height := 36;
+  Inc(LTop, 44);
 
   FRegisterButton := TButton.Create(Self);
   FRegisterButton.Parent := Self;
@@ -242,6 +287,21 @@ begin
   FUnregisterButton.Caption := 'Deregistrieren';
   FUnregisterButton.OnClick := UnregisterClicked;
   Inc(LTop, 48);
+
+  LInfoLabel := NewLabel(
+    Self,
+    'Betroffene KI-Clients müssen ihre MCP-Verbindung neu laden oder neu gestartet werden. ' +
+    'Hinweis: Nach dem Ändern von Port oder Bearer-Token sowie nach dem Registrieren oder Deregistrieren muss die Codex-App neu gestartet werden.',
+    24,
+    LTop
+  );
+  LInfoLabel.AutoSize := False;
+  LInfoLabel.WordWrap := True;
+  LInfoLabel.Width := 760;
+  LInfoLabel.Height := 60;
+  LInfoLabel.Font.Style := [fsBold];
+  LInfoLabel.Font.Color := clGrayText;
+  Inc(LTop, 76);
 
   Align := alTop;
   Height := LTop;
@@ -355,23 +415,106 @@ procedure TDAIOptionsFrame.RefreshRegistrationStatus;
 var
   LStatus: TJSONObject;
 begin
-  LStatus := TDAICodexRegistration.Status;
+  LStatus := nil;
   try
-    FCodexStatusLabel.Caption := 'Codex: ' + LStatus.GetValue<string>('codex_config') + ' – ' +
-      IfThen(LStatus.GetValue<Boolean>('codex_entry_registered'), 'registriert', 'nicht registriert');
-    FSkillStatusLabel.Caption := 'Skill: ' + LStatus.GetValue<string>('skill_file') + ' – ' +
-      IfThen(LStatus.GetValue<Boolean>('skill_registered'), 'registriert', 'nicht registriert');
+    try
+      LStatus := TDAICodexRegistration.Status;
+      FCodexStatusLabel.Caption := 'Codex: ' + LStatus.GetValue<string>('codex_config') + ' – ' +
+        IfThen(LStatus.GetValue<Boolean>('codex_entry_registered'), 'registriert', 'nicht registriert');
+      FSkillStatusLabel.Caption := 'Skill: ' + LStatus.GetValue<string>('skill_file') + ' – ' +
+        IfThen(LStatus.GetValue<Boolean>('skill_registered'), 'registriert', 'nicht registriert');
+    except
+      on E: Exception do
+      begin
+        FCodexStatusLabel.Caption := 'Codex-Status nicht lesbar; Details in der Ergebnisliste.';
+        FSkillStatusLabel.Caption := 'Skill-Status konnte nicht geprüft werden.';
+      end;
+    end;
+  finally
+    LStatus.Free;
+  end;
+  LStatus := TDAIClientRegistration.Status(SelectedClient);
+  try
+    DisplayClientStatus(LStatus);
   finally
     LStatus.Free;
   end;
 end;
 
+procedure TDAIOptionsFrame.DisplayClientStatus(const AStatus: TJSONObject);
+var
+  LClient: TJSONValue;
+  LClients: TJSONArray;
+  LObject: TJSONObject;
+  LText: string;
+begin
+  FClientStatusMemo.Lines.BeginUpdate;
+  try
+    FClientStatusMemo.Clear;
+    LClients := AStatus.GetValue<TJSONArray>('clients', nil);
+    if not Assigned(LClients) then
+      Exit;
+    for LClient in LClients do
+    begin
+      if not (LClient is TJSONObject) then
+        Continue;
+      LObject := TJSONObject(LClient);
+      LText := LObject.GetValue<string>('status', '');
+      if LText = 'registered' then LText := 'registriert'
+      else if LText = 'unregistered' then LText := 'deregistriert'
+      else if LText = 'not_registered' then LText := 'nicht registriert'
+      else if LText = 'needs_update' then LText := 'Registrierung muss aktualisiert werden'
+      else if LText = 'not_detected' then LText := 'nicht erkannt'
+      else if LText = 'unsupported' then LText := 'manuelle Einrichtung erforderlich'
+      else if LText = 'manual_configuration' then LText := 'manuelle Einrichtung erforderlich'
+      else if LText = 'configured' then LText := 'registriert'
+      else if LText = 'configured_pending' then LText := 'registriert; Verwaltungsabschluss offen'
+      else if LText = 'removed' then LText := 'deregistriert'
+      else if LText = 'unchanged' then LText := 'unverändert'
+      else if LText = 'conflict' then LText := 'Konflikt'
+      else if LText = 'missing_bridge' then LText := 'Delphi-Brücke fehlt'
+      else if LText = 'error' then LText := 'Fehler';
+      FClientStatusMemo.Lines.Add(LObject.GetValue<string>('label', '') + ': ' + LText);
+      LText := LObject.GetValue<string>('path', '');
+      if LText <> '' then FClientStatusMemo.Lines.Add('  ' + LText);
+      LText := LObject.GetValue<string>('message', '');
+      if LText <> '' then FClientStatusMemo.Lines.Add('  ' + LText);
+      LText := LObject.GetValue<string>('backup', '');
+      if LText <> '' then FClientStatusMemo.Lines.Add('  Sicherung: ' + LText);
+    end;
+  finally
+    FClientStatusMemo.Lines.EndUpdate;
+  end;
+end;
+
+function TDAIOptionsFrame.SelectedClient: string;
+const
+  CClients: array[0..9] of string = ('all', 'codex', 'claude-code', 'claude-desktop', 'eigent', 'gemini',
+    'gemini-desktop', 'hermes', 'lm-studio', 'openclaw');
+begin
+  if (FClientComboBox.ItemIndex < Low(CClients)) or (FClientComboBox.ItemIndex > High(CClients)) then
+    Exit('all');
+  Result := CClients[FClientComboBox.ItemIndex];
+end;
+
+procedure TDAIOptionsFrame.ClientChanged(Sender: TObject);
+begin
+  RefreshRegistrationStatus;
+end;
+
 procedure TDAIOptionsFrame.RegisterClicked(Sender: TObject);
+var
+  LResult: TJSONObject;
 begin
   try
     StoreToSettings;
-    TDAICodexRegistration.RegisterFiles;
-    RefreshRegistrationStatus;
+    LResult := TDAIClientRegistration.RegisterFiles(SelectedClient);
+    try
+      RefreshRegistrationStatus;
+      DisplayClientStatus(LResult);
+    finally
+      LResult.Free;
+    end;
   except
     on E: Exception do
       TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);
@@ -435,10 +578,17 @@ begin
 end;
 
 procedure TDAIOptionsFrame.UnregisterClicked(Sender: TObject);
+var
+  LResult: TJSONObject;
 begin
   try
-    TDAICodexRegistration.UnregisterFiles;
-    RefreshRegistrationStatus;
+    LResult := TDAIClientRegistration.UnregisterFiles(SelectedClient);
+    try
+      RefreshRegistrationStatus;
+      DisplayClientStatus(LResult);
+    finally
+      LResult.Free;
+    end;
   except
     on E: Exception do
       TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);

@@ -1,14 +1,18 @@
 [CmdletBinding()]
 param(
     [int]$Port = 7331,
-    [string]$Token = $env:DELPHI_IDE_MCP_TOKEN
+    [string]$Token = $env:DELPHI_IDE_MCP_TOKEN,
+
+    [ValidateSet('Legacy', 'Modern')]
+    [string]$Mode = 'Legacy'
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Get-DAITokenFromCodexConfig {
-    $configFile = Join-Path $HOME '.codex\config.toml'
+    $codexDirectory = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+    $configFile = Join-Path $codexDirectory 'config.toml'
     if (-not (Test-Path -LiteralPath $configFile)) {
         return $null
     }
@@ -16,10 +20,11 @@ function Get-DAITokenFromCodexConfig {
     $content = Get-Content -LiteralPath $configFile -Raw
     $block = [regex]::Match(
         $content,
-        '(?s)# >>> DAI managed >>>.*?Authorization\s*=\s*"Bearer\s+([^"]+)".*?# <<< DAI managed <<<'
+        '(?s)# >>> DAI managed >>>.*?Authorization\s*=\s*("Bearer\s+(?:\\.|[^"\\])+").*?# <<< DAI managed <<<'
     )
     if ($block.Success) {
-        return $block.Groups[1].Value
+        $authorization = $block.Groups[1].Value | ConvertFrom-Json
+        return $authorization.Substring(7)
     }
 
     return $null
@@ -48,6 +53,20 @@ function Invoke-DAIMcp {
     )
 
     $requestHeaders = @{} + $headers
+    if ($Mode -eq 'Modern') {
+        $requestHeaders['Mcp-Method'] = $Payload.method
+        $requestHeaders['MCP-Protocol-Version'] = '2026-07-28'
+        if ($Payload.ContainsKey('params') -and $Payload.params.ContainsKey('name')) {
+            $requestHeaders['Mcp-Name'] = $Payload.params.name
+        }
+        if (-not $Payload.ContainsKey('params')) { $Payload.params = @{} }
+        if (-not $Payload.params.ContainsKey('_meta')) { $Payload.params._meta = @{} }
+        $Payload.params._meta['io.modelcontextprotocol/protocolVersion'] = '2026-07-28'
+        $Payload.params._meta['io.modelcontextprotocol/clientCapabilities'] = @{}
+        $Payload.params._meta['io.modelcontextprotocol/clientInfo'] = @{ name = 'DAI-Test'; version = '1.2.0' }
+    } else {
+        $requestHeaders['MCP-Protocol-Version'] = '2025-06-18'
+    }
     if (-not [string]::IsNullOrWhiteSpace($SessionId)) {
         $requestHeaders['Mcp-Session-Id'] = $SessionId
     }
@@ -64,7 +83,8 @@ function Invoke-DAIMcp {
     }
 }
 
-$initialize = Invoke-DAIMcp -Payload @{
+if ($Mode -eq 'Legacy') {
+    $initialize = Invoke-DAIMcp -Payload @{
     jsonrpc = '2.0'
     id      = 1
     method  = 'initialize'
@@ -73,17 +93,22 @@ $initialize = Invoke-DAIMcp -Payload @{
         capabilities    = @{}
         clientInfo      = @{
             name    = 'DAI-Test'
-            version = '1.1.15'
+            version = '1.2.0'
         }
     }
 }
-$sessionId = $initialize.SessionId
-$initialize.Body | ConvertTo-Json -Depth 20
+    $sessionId = $initialize.SessionId
+    $initialize.Body | ConvertTo-Json -Depth 20
 
-$null = Invoke-DAIMcp -SessionId $sessionId -Payload @{
+    $null = Invoke-DAIMcp -SessionId $sessionId -Payload @{
     jsonrpc = '2.0'
     method  = 'notifications/initialized'
     params  = @{}
+    }
+} else {
+    $sessionId = $null
+    $discover = Invoke-DAIMcp -Payload @{ jsonrpc = '2.0'; id = 1; method = 'server/discover'; params = @{} }
+    $discover.Body | ConvertTo-Json -Depth 20
 }
 
 $tools = Invoke-DAIMcp -SessionId $sessionId -Payload @{

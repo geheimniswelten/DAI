@@ -3,15 +3,23 @@
 interface
 
 uses
+  System.Generics.Collections,
   IdContext,
   IdCustomHTTPServer,
   IdHTTPServer;
 
 type
+  TDAIMCPSession = record
+    ClientName: string;
+    ProtocolVersion: string;
+  end;
+
   TDAIMCPServer = class sealed
   private
     FHTTPServer: TIdHTTPServer;
     FLastError: string;
+    FSessionLock: TObject;
+    FSessions: TDictionary<string, TDAIMCPSession>;
     procedure HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
     procedure HandleParseAuthentication(AContext: TIdContext; const AAuthType, AAuthData: string; var VUsername, VPassword: string; var VHandled: Boolean);
     procedure ResetAfterFailedStart;
@@ -31,6 +39,7 @@ uses
   System.Classes,
   System.JSON,
   System.SysUtils,
+  System.RegularExpressions,
   IdException,
   IdSocketHandle,
   h5u.DAI.Consts,
@@ -53,12 +62,9 @@ begin
 end;
 
 function IsAllowedOrigin(const AOrigin: string): Boolean;
-var
-  LOrigin: string;
 begin
-  LOrigin := LowerCase(Trim(AOrigin));
-  Result := (LOrigin = '') or LOrigin.StartsWith('http://127.0.0.1') or LOrigin.StartsWith('http://localhost') or
-    LOrigin.StartsWith('https://127.0.0.1') or LOrigin.StartsWith('https://localhost');
+  Result := (AOrigin = '') or TRegEx.IsMatch(AOrigin,
+    '^https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::[0-9]{1,5})?$', [roIgnoreCase]);
 end;
 
 function HasValidBearerToken(const ARequestInfo: TIdHTTPRequestInfo; const AExpectedToken: string): Boolean;
@@ -85,7 +91,7 @@ begin
   end;
 end;
 
-function ErrorJson(const AMessage: string): string;
+function ErrorJson(const AMessage: string; const ACode: Integer = -32603; const AId: TJSONValue = nil): string;
 var
   LError: TJSONObject;
   LRoot: TJSONObject;
@@ -93,10 +99,13 @@ begin
   LError := TJSONObject.Create;
   LRoot := TJSONObject.Create;
   try
-    LError.AddPair('code', TJSONNumber.Create(-32603));
+    LError.AddPair('code', TJSONNumber.Create(ACode));
     LError.AddPair('message', AMessage);
     LRoot.AddPair('jsonrpc', '2.0');
-    LRoot.AddPair('id', TJSONNull.Create);
+    if Assigned(AId) and ((AId is TJSONString) or (AId is TJSONNumber)) then
+      LRoot.AddPair('id', TJSONObject.ParseJSONValue(AId.ToJSON))
+    else
+      LRoot.AddPair('id', TJSONNull.Create);
     LRoot.AddPair('error', LError);
     LError := nil;
     Result := LRoot.ToJSON;
@@ -106,10 +115,53 @@ begin
   end;
 end;
 
+function JsonObject(const AObject: TJSONObject; const AName: string): TJSONObject;
+var
+  LValue: TJSONValue;
+begin
+  Result := nil;
+  if not Assigned(AObject) then
+    Exit;
+  LValue := AObject.GetValue(AName);
+  if LValue is TJSONObject then
+    Result := TJSONObject(LValue);
+end;
+
+function UnsupportedVersionJson(const AId: TJSONValue; const ARequested: string): string;
+var
+  LRoot: TJSONObject;
+  LData: TJSONObject;
+begin
+  LRoot := TJSONObject.ParseJSONValue(ErrorJson('Nicht unterstützte MCP-Protokollversion.', -32022, AId)) as TJSONObject;
+  try
+    LData := TJSONObject.Create;
+    LData.AddPair('supported', TJSONArray.Create.Add('2026-07-28').Add('2025-11-25').Add('2025-06-18'));
+    LData.AddPair('requested', ARequested);
+    (LRoot.GetValue('error') as TJSONObject).AddPair('data', LData);
+    Result := LRoot.ToJSON;
+  finally
+    LRoot.Free;
+  end;
+end;
+
+function JsonString(const AObject: TJSONObject; const AName: string): string;
+var
+  LValue: TJSONValue;
+begin
+  Result := '';
+  if not Assigned(AObject) then
+    Exit;
+  LValue := AObject.GetValue(AName);
+  if LValue is TJSONString then
+    Result := LValue.Value;
+end;
+
 constructor TDAIMCPServer.Create;
 begin
   inherited Create;
   FLastError := '';
+  FSessionLock := TObject.Create;
+  FSessions := TDictionary<string, TDAIMCPSession>.Create;
   FHTTPServer := TIdHTTPServer.Create(nil);
   FHTTPServer.ServerSoftware := CDAIDisplayName + '/' + CDAIVersion;
   FHTTPServer.OnCommandGet := HandleCommand;
@@ -121,6 +173,8 @@ destructor TDAIMCPServer.Destroy;
 begin
   Stop;
   FHTTPServer.Free;
+  FSessions.Free;
+  FSessionLock.Free;
   inherited Destroy;
 end;
 
@@ -156,9 +210,17 @@ var
   LHTTPStatus: Integer;
   LHealth: TJSONObject;
   LMessage: TJSONObject;
+  LMeta: TJSONObject;
+  LMethod: string;
+  LModern: Boolean;
+  LParams: TJSONObject;
+  LProtocolHeader: string;
+  LProtocolVersion: string;
   LOrigin: string;
   LResponseJson: TJSONObject;
   LSessionId: string;
+  LSession: TDAIMCPSession;
+  LSessionFound: Boolean;
   LText: string;
   LValue: TJSONValue;
 begin
@@ -219,11 +281,6 @@ begin
     Exit;
   end;
 
-  LSessionId := Trim(ARequestInfo.RawHeaders.Values['Mcp-Session-Id']);
-  if LSessionId = '' then
-    LSessionId := NewSessionId;
-  AResponseInfo.CustomHeaders.Values['Mcp-Session-Id'] := LSessionId;
-
   try
     LText := ReadRequestBody(ARequestInfo);
     LValue := TJSONObject.ParseJSONValue(LText);
@@ -231,18 +288,110 @@ begin
       if not (LValue is TJSONObject) then
       begin
         AResponseInfo.ResponseNo := 400;
-        AResponseInfo.ContentText := ErrorJson('Der Request-Body muss ein JSON-Objekt sein.');
+        AResponseInfo.ContentText := ErrorJson('Der Request-Body muss ein JSON-Objekt sein.', -32700);
         Exit;
       end;
 
       LMessage := TJSONObject(LValue);
-      LResponseJson := TDAIMCPProtocol.HandleMessage(LMessage, LSessionId, LHTTPStatus);
+      LMethod := JsonString(LMessage, 'method');
+      LParams := JsonObject(LMessage, 'params');
+      LMeta := JsonObject(LParams, '_meta');
+      LProtocolVersion := JsonString(LMeta, 'io.modelcontextprotocol/protocolVersion');
+      LProtocolHeader := ARequestInfo.RawHeaders.Values['MCP-Protocol-Version'];
+      if ((LProtocolVersion <> '') and (LProtocolVersion <> '2026-07-28') and (LProtocolVersion <> '2025-11-25') and
+          (LProtocolVersion <> '2025-06-18')) or
+         ((LProtocolHeader <> '') and (LProtocolHeader <> '2026-07-28') and (LProtocolHeader <> '2025-11-25') and
+          (LProtocolHeader <> '2025-06-18')) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        if LProtocolVersion = '' then
+          LProtocolVersion := LProtocolHeader;
+        AResponseInfo.ContentText := UnsupportedVersionJson(LMessage.GetValue('id'), LProtocolVersion);
+        Exit;
+      end;
+      LModern := (LProtocolVersion = '2026-07-28') or (LProtocolHeader = '2026-07-28') or (LMethod = 'server/discover');
+      LSessionId := '';
+      LSession := Default(TDAIMCPSession);
+      if LModern then
+      begin
+        if (LProtocolHeader <> '2026-07-28') or (LProtocolVersion <> LProtocolHeader) or
+           (ARequestInfo.RawHeaders.Values['Mcp-Method'] <> LMethod) or
+           ((LMethod = 'tools/call') and (ARequestInfo.RawHeaders.Values['Mcp-Name'] <> JsonString(LParams, 'name'))) then
+        begin
+          AResponseInfo.ResponseNo := 400;
+          AResponseInfo.ContentText := ErrorJson('Fehlende oder abweichende moderne MCP-HTTP-Header.', -32020, LMessage.GetValue('id'));
+          Exit;
+        end;
+        // Modern requests are stateless: do not accept or emit transport session IDs.
+      end
+      else
+      begin
+        LSessionId := Trim(ARequestInfo.RawHeaders.Values['Mcp-Session-Id']);
+        if LMethod = 'initialize' then
+        begin
+          if LSessionId <> '' then
+          begin
+            AResponseInfo.ResponseNo := 400;
+            AResponseInfo.ContentText := ErrorJson('initialize muss ohne Mcp-Session-Id gesendet werden.', -32600, LMessage.GetValue('id'));
+            Exit;
+          end;
+          LSessionId := NewSessionId;
+          LSession.ClientName := JsonString(JsonObject(LParams, 'clientInfo'), 'name');
+        end
+        else
+        begin
+          System.TMonitor.Enter(FSessionLock);
+          try
+            LSessionFound := FSessions.TryGetValue(LSessionId, LSession);
+          finally
+            System.TMonitor.Exit(FSessionLock);
+          end;
+          if not LSessionFound then
+          begin
+            if LSessionId = '' then
+              AResponseInfo.ResponseNo := 400
+            else
+              AResponseInfo.ResponseNo := 404;
+            AResponseInfo.ContentText := ErrorJson('MCP-Sitzung fehlt oder ist abgelaufen. initialize erneut senden.', -32600, LMessage.GetValue('id'));
+            Exit;
+          end;
+          if (LProtocolHeader <> '') and (LProtocolHeader <> LSession.ProtocolVersion) then
+          begin
+            AResponseInfo.ResponseNo := 400;
+            AResponseInfo.ContentText := ErrorJson('MCP-Protocol-Version stimmt nicht mit der initialisierten Sitzung überein.', -32600,
+              LMessage.GetValue('id'));
+            Exit;
+          end;
+        end;
+      end;
+      LResponseJson := TDAIMCPProtocol.HandleMessage(LMessage, LSessionId, LHTTPStatus, LSession.ClientName);
       try
+        if not LModern then
+        begin
+          if (LMethod = 'initialize') and Assigned(LResponseJson) and Assigned(LResponseJson.GetValue('result')) then
+          begin
+            LSession.ProtocolVersion := JsonString(JsonObject(LResponseJson, 'result'), 'protocolVersion');
+            System.TMonitor.Enter(FSessionLock);
+            try
+              if FSessions.Count >= 1024 then
+                FSessions.Clear;
+              FSessions.AddOrSetValue(LSessionId, LSession);
+            finally
+              System.TMonitor.Exit(FSessionLock);
+            end;
+          end;
+          if (LMethod <> 'initialize') or (LSession.ProtocolVersion <> '') then
+            AResponseInfo.CustomHeaders.Values['Mcp-Session-Id'] := LSessionId;
+        end;
         AResponseInfo.ResponseNo := LHTTPStatus;
         if Assigned(LResponseJson) then
           AResponseInfo.ContentText := LResponseJson.ToJSON
         else
+        begin
           AResponseInfo.ContentText := '';
+          // Indy otherwise replaces an empty 202 response with an HTML status page.
+          AResponseInfo.ContentLength := 0;
+        end;
       finally
         LResponseJson.Free;
       end;
@@ -326,6 +475,12 @@ begin
 
   try
     FHTTPServer.Active := False;
+    System.TMonitor.Enter(FSessionLock);
+    try
+      FSessions.Clear;
+    finally
+      System.TMonitor.Exit(FSessionLock);
+    end;
     TDAILog.Access('MCP-Server gestoppt.');
     Result := True;
   except

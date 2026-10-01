@@ -36,7 +36,7 @@ uses
   h5u.DAI.Settings,
   h5u.DAI.Types;
 
-function ConfirmWorkspaceChange(const ATitle: string; const AText: string): Boolean;
+function ConfirmWorkspaceChangeOnMainThread(const ATitle: string; const AText: string): Boolean;
 var
   LButton: TTaskDialogButtonItem;
   LDialog: TTaskDialog;
@@ -65,6 +65,29 @@ begin
   finally
     LDialog.Free;
   end;
+end;
+
+function ConfirmWorkspaceChange(const ATitle: string; const AText: string): Boolean;
+var
+  LConfirmed: Boolean;
+begin
+  LConfirmed := False;
+  TDAIOTA.RunOnMainThread(
+    procedure
+    begin
+      LConfirmed := ConfirmWorkspaceChangeOnMainThread(ATitle, AText);
+    end);
+  Result := LConfirmed;
+end;
+
+function IsProjectFile(const AFileName: string): Boolean;
+var
+  LExtension: string;
+begin
+  LExtension := TPath.GetExtension(AFileName);
+  Result := SameText(LExtension, '.dpr') or SameText(LExtension, '.dproj') or SameText(LExtension, '.dpk') or
+    SameText(LExtension, '.cbproj') or SameText(LExtension, '.bpr') or SameText(LExtension, '.bpk') or
+    SameText(LExtension, '.groupproj') or SameText(LExtension, '.bpg');
 end;
 
 function OpenProjectSummary: string;
@@ -101,6 +124,8 @@ begin
     Result := TPath.GetFullPath(TPath.Combine(TPath.GetDirectoryName(LProjectFileName), AFileName));
   if TPath.GetExtension(Result) = '' then
     Result := Result + '.pas';
+  if not SameText(TPath.GetExtension(Result), '.pas') then
+    raise EArgumentException.Create('Neue Delphi-Units müssen die Dateiendung .pas verwenden.');
 end;
 
 class function TDAIProjectService.ActivateFile(const AFileName: string): TJSONObject;
@@ -111,7 +136,11 @@ begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   LModule := TDAIOTA.FindModuleByFileName(LFileName);
   if not Assigned(LModule) then
+  begin
+    if IsProjectFile(LFileName) then
+      raise EArgumentException.Create('Projektdateien müssen mit project_open geöffnet werden.');
     Exit(OpenFile(LFileName));
+  end;
 
   TDAIOTA.RunOnMainThread(
     procedure
@@ -128,23 +157,29 @@ class function TDAIProjectService.CloseFile(const AFileName: string): TJSONObjec
 var
   LClosed: Boolean;
   LFileName: string;
+  LGroup: IOTAProjectGroup;
   LModule: IOTAModule;
+  LProject: IOTAProject;
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   LModule := TDAIOTA.FindModuleByFileName(LFileName);
   if not Assigned(LModule) then
     raise EArgumentException.Create('Die Datei ist nicht in der IDE geöffnet.');
-
   LClosed := False;
   TDAIOTA.RunOnMainThread(
     procedure
     begin
+      if Supports(LModule, IOTAProject, LProject) or Supports(LModule, IOTAProjectGroup, LGroup) then
+        raise EInvalidOperation.Create('Projektmodule und Projektgruppen können nicht mit file_close geschlossen werden.');
       LClosed := LModule.CloseModule(False);
+      if LClosed then
+        LModule := nil;
     end);
 
   Result := TJSONObject.Create;
   Result.AddPair('file', LFileName);
   Result.AddPair('closed', TJSONBool.Create(LClosed));
+  Result.AddPair('closed_entire_module', TJSONBool.Create(LClosed));
 end;
 
 class function TDAIProjectService.CreateFormUnit(const AProjectNameOrPath: string; const AFileName: string; const AFormName: string; const AAncestorName: string): TJSONObject;
@@ -160,8 +195,10 @@ begin
     raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
 
   LFileName := ResolveUnitFileName(LProject, AFileName);
-  if TFile.Exists(LFileName) then
+  if TFile.Exists(LFileName) or TDAIOTA.IsFileOpenInEditor(LFileName) then
     raise EDAIFileAlreadyExists.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
+  if TFile.Exists(ChangeFileExt(LFileName, '.dfm')) or TDAIOTA.IsFormLoadedForFile(LFileName) then
+    raise EDAIFileAlreadyExists.CreateFmt('Die Formulardatei existiert bereits: %s', [ChangeFileExt(LFileName, '.dfm')]);
   if not TDAIOTA.IsPathWithin(LFileName, TPath.GetDirectoryName(TDAIOTA.ProjectFileName(LProject))) then
     raise EDAIAccessDenied.Create('Neue Form-Units müssen innerhalb des Projektverzeichnisses liegen.');
 
@@ -204,6 +241,8 @@ begin
   LName := Trim(AName);
   if LName = '' then
     raise EArgumentException.Create('Ein Projektname ist erforderlich.');
+  if (TPath.GetFileName(LName) <> LName) or not IsValidIdent(LName) then
+    raise EArgumentException.Create('Der Projektname muss ein gültiger Delphi-Bezeichner ohne Pfadangabe sein.');
 
   LDirectory := TDAISettings.Instance.ExpandPath(ADirectory);
   if LDirectory = '' then
@@ -217,7 +256,6 @@ begin
       'Erstellen oder öffnen Sie zuerst manuell eine Projektgruppe.'
     );
 
-  ForceDirectories(LDirectory);
   LFileName := TPath.Combine(LDirectory, LName + '.dpr');
 
   if TFile.Exists(LFileName) or TFile.Exists(ChangeFileExt(LFileName, '.dproj')) then
@@ -239,6 +277,7 @@ begin
   else
     raise EArgumentException.Create('project_kind muss "console" oder "vcl" sein.');
 
+  ForceDirectories(LDirectory);
   LCreatedModule := nil;
   TDAIOTA.RunOnMainThread(
     procedure
@@ -272,7 +311,7 @@ begin
     raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
 
   LFileName := ResolveUnitFileName(LProject, AFileName);
-  if TFile.Exists(LFileName) then
+  if TFile.Exists(LFileName) or TDAIOTA.IsFileOpenInEditor(LFileName) then
     raise EDAIFileAlreadyExists.CreateFmt('Die Datei existiert bereits: %s', [LFileName]);
   if not TDAIOTA.IsPathWithin(LFileName, TPath.GetDirectoryName(TDAIOTA.ProjectFileName(LProject))) then
     raise EDAIAccessDenied.Create('Neue Units müssen innerhalb des Projektverzeichnisses liegen.');
@@ -300,6 +339,8 @@ var
   LOpened: Boolean;
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
+  if IsProjectFile(LFileName) then
+    raise EArgumentException.Create('Projektdateien müssen mit project_open geöffnet werden.');
   if not TFile.Exists(LFileName) then
     raise EDAIFileNotFound.CreateFmt('Datei nicht gefunden: %s', [LFileName]);
 
@@ -404,11 +445,13 @@ class function TDAIProjectService.RemoveProject(const AProjectNameOrPath: string
 var
   LGroup: IOTAProjectGroup;
   LProject: IOTAProject;
+  LProjectFileName: string;
   LRemoved: Boolean;
 begin
   LProject := TDAIOTA.ProjectByNameOrPath(AProjectNameOrPath);
   if not Assigned(LProject) then
     raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
+  LProjectFileName := TDAIOTA.ProjectFileName(LProject);
 
   LGroup := TDAIOTA.MainProjectGroup;
   if not Assigned(LGroup) then
@@ -416,7 +459,7 @@ begin
 
   if not ConfirmWorkspaceChange(
     'Projekt aus Projektgruppe entfernen',
-    'Projekt:' + sLineBreak + TDAIOTA.ProjectFileName(LProject) + sLineBreak + sLineBreak +
+    'Projekt:' + sLineBreak + LProjectFileName + sLineBreak + sLineBreak +
     'Das Projekt wird nur aus der aktuellen Projektgruppe entfernt. Dateien auf dem Datenträger werden nicht gelöscht.'
   ) then
     raise EAbort.Create('Das Entfernen des Projekts wurde durch den Benutzer abgebrochen.');
@@ -426,13 +469,13 @@ begin
     procedure
     begin
       LGroup.RemoveProject(LProject);
-      LRemoved := not Assigned(TDAIOTA.ProjectByNameOrPath(TDAIOTA.ProjectFileName(LProject)));
+      LRemoved := not Assigned(TDAIOTA.ProjectByNameOrPath(LProjectFileName));
       if LRemoved then
-        TDAIPermissionManager.Instance.ClearProjectSession(TDAIOTA.ProjectFileName(LProject));
+        TDAIPermissionManager.Instance.ClearProjectSession(LProjectFileName);
     end);
 
   Result := TJSONObject.Create;
-  Result.AddPair('project', TDAIOTA.ProjectFileName(LProject));
+  Result.AddPair('project', LProjectFileName);
   Result.AddPair('removed', TJSONBool.Create(LRemoved));
 end;
 
@@ -465,13 +508,17 @@ var
   LOpened: Boolean;
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
-  if SameText(TPath.GetExtension(LFileName), '.dfm') then
+  if SameText(TPath.GetExtension(LFileName), '.dfm') or SameText(TPath.GetExtension(LFileName), '.fmx') then
     LDFMFileName := LFileName
   else
+  begin
     LDFMFileName := ChangeFileExt(LFileName, '.dfm');
+    if not TFile.Exists(LDFMFileName) and TFile.Exists(ChangeFileExt(LFileName, '.fmx')) then
+      LDFMFileName := ChangeFileExt(LFileName, '.fmx');
+  end;
 
   if not TFile.Exists(LDFMFileName) and not TDAIOTA.IsFormLoadedForFile(LFileName) then
-    raise EDAIFileNotFound.CreateFmt('DFM-Datei nicht gefunden: %s', [LDFMFileName]);
+    raise EDAIFileNotFound.CreateFmt('Formulardatei nicht gefunden: %s', [LDFMFileName]);
 
   LOpened := False;
   TDAIOTA.RunOnMainThread(
