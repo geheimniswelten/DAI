@@ -16,6 +16,7 @@ type
     FilePatterns: TArray<string>;
     CaseSensitive: Boolean;
     WholeWord: Boolean;
+    InterfacesOnly: Boolean;
     MaximumResults: Integer;
     MaximumFiles: Integer;
     TimeoutMs: Integer;
@@ -37,6 +38,7 @@ uses
   System.IOUtils,
   System.SysUtils,
   Winapi.Windows,
+  h5u.DAI.Source.View,
   h5u.DAI.Text.Encoding;
 
 const
@@ -56,6 +58,7 @@ type
     FErrorsTruncated: Boolean;
     FFilesScanned: Integer;
     FFilesSkipped: Integer;
+    FImplementationFilesOmitted: Integer;
     FStopped: Boolean;
     FLimitReason: string;
     FRoots: TList<string>;
@@ -498,6 +501,8 @@ end;
 
 procedure TSourceSearchRun.SearchContent(const AFileName, AContent, ASource: string);
 var
+  LContent: string;
+  LImplementationOmitted: Boolean;
   LPosition: Integer;
   LLine: Integer;
   LLineStart: Integer;
@@ -509,31 +514,40 @@ begin
     AddError(AFileName, 'Binary, unavailable or oversized source skipped.');
     Exit;
   end;
+  LContent := AContent;
+  if FOptions.InterfacesOnly then
+  begin
+    LContent := TDAISourceView.InterfaceText(AFileName, AContent, LImplementationOmitted);
+    if LImplementationOmitted then
+      Inc(FImplementationFilesOmitted);
+  end;
+  if not BudgetAvailable then
+    Exit;
   LPosition := 1;
   LLine := 1;
   LLineStart := 1;
-  LLastMatchStart := Length(AContent) - Length(FQuery) + 1;
-  while LPosition <= Length(AContent) do
+  LLastMatchStart := Length(LContent) - Length(FQuery) + 1;
+  while LPosition <= Length(LContent) do
   begin
     if ((LPosition and 1023) = 1) and not BudgetAvailable then
       Exit;
-    if AContent[LPosition] = #13 then
+    if LContent[LPosition] = #13 then
     begin
-      if LPosition < Length(AContent) then
-        if AContent[LPosition + 1] = #10 then
+      if LPosition < Length(LContent) then
+        if LContent[LPosition + 1] = #10 then
           Inc(LPosition);
       Inc(LLine);
       LLineStart := LPosition + 1;
     end
-    else if AContent[LPosition] = #10 then
+    else if LContent[LPosition] = #10 then
     begin
       Inc(LLine);
       LLineStart := LPosition + 1;
     end
     else if LPosition <= LLastMatchStart then
-      if MatchAt(AContent, LPosition) then
+      if MatchAt(LContent, LPosition) then
       begin
-        AddMatch(AFileName, AContent, ASource, LPosition, LLine, LLineStart);
+        AddMatch(AFileName, LContent, ASource, LPosition, LLine, LLineStart);
         if FStopped then
           Exit;
       end;
@@ -711,6 +725,8 @@ begin
   end;
   FResult.AddPair('files_scanned', TJSONNumber.Create(FFilesScanned));
   FResult.AddPair('files_skipped', TJSONNumber.Create(FFilesSkipped));
+  FResult.AddPair('interfaces_only', TJSONBool.Create(FOptions.InterfacesOnly));
+  FResult.AddPair('implementation_files_omitted', TJSONNumber.Create(FImplementationFilesOmitted));
   FResult.AddPair('truncated', TJSONBool.Create(FStopped));
   FResult.AddPair('limit_reason', FLimitReason);
   FResult.AddPair('elapsed_ms', TJSONNumber.Create(FClock.ElapsedMilliseconds));

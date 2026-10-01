@@ -1,5 +1,22 @@
 # Delphi 13 OpenToolsAPI – Code Insight / LSP
 
+## Nachprüfung der installierten ToolsAPI, 1. Oktober 2026
+
+Zusätzlich wurden die lokalen Sourcen unter `C:\Program Files (x86)\Embarcadero\Studio\37.0\source\ToolsAPI` geprüft.
+`IOTAModuleErrors.GetErrors` in `ToolsAPI.pas` (Zeile 3260 ff.) liefert IDE-Moduldiagnosen. DAI verwendet diese Schnittstelle bereits in `file_diagnostics`.
+Sie bietet keine Diagnoseversion, keinen Refresh-/Completed-Parameter und keinen Dienst `Validate(file, proposed_content)`.
+DAI 1.2.4 weist deshalb `diagnostics_api` und `diagnostics_freshness: unknown` aus, beziehungsweise `unavailable`, wenn das Modul den Dienst nicht anbietet.
+
+Die asynchronen Code-Insight-Schnittstellen (Zeile 10733 ff.) bieten Completion, Parameter-/Help-Insight, Definition und Abbruch;
+ein öffentlicher Raw-LSP-Kanal oder eine Diagnoseprüfung übergebenen Inhalts wurde im installierten ToolsAPI-Quellbestand nicht gefunden.
+`PreValidateCodeInsight` prüft einen Token als Code-Insight-Abfragepunkt, nicht den Delphi-Code. `IOTACodeFormatter.FormatFile` nimmt Inhalt an,
+liefert aber Formatiererfolg und formatierten Text statt Syntax-/Semantikdiagnosen.
+
+`cmOTACheck` (Zeile 1104) ist ein Compiler-Prüfmodus für den aktuellen Projektstand. Laut API entstehen dabei keine Compiler-Ausgabedateien;
+IDE-Notifiers und mögliche Autosave-Abläufe machen daraus trotzdem keine rein lesende Vorabprüfung beliebigen Texts.
+DAI ersetzt für Codeprüfungen keinen Editorpuffer vorübergehend. Die `.pas`-Schreibprüfung ist lexikalisch; eine vollständige Syntax-/Semantikprüfung
+erfordert den Compiler. Eine leere Error-Insight-Liste bestätigt keine Prüfung des neuesten oder vorgeschlagenen Inhalts.
+
 ## Untersuchte Quelle
 
 Grundlage ist das vom Benutzer bereitgestellte Archiv `4eca849b-bdf8-4cba-9dc9-9e73f93171aa.zip` mit den Delphi-13-OpenToolsAPI-Sourcen. Das Archiv enthält

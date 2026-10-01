@@ -388,7 +388,7 @@ begin
         LFileObject := nil;
         try
           try
-            LFileObject := TDAIFileService.ReadFile(LFile, CMaximumSnapshotCharacters + 1);
+            LFileObject := TDAIFileService.ReadFile(LFile, CMaximumSnapshotCharacters + 1, False);
             if LFileObject.GetValue<Boolean>('truncated', False) then
               Inc(LSkippedSnapshots)
             else

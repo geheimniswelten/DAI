@@ -264,6 +264,7 @@ begin
     LSearchOptions.FilePatterns := ArgumentStringArray(AArguments, 'file_patterns');
     LSearchOptions.CaseSensitive := ArgumentBoolean(AArguments, 'case_sensitive', False);
     LSearchOptions.WholeWord := ArgumentBoolean(AArguments, 'whole_word', False);
+    LSearchOptions.InterfacesOnly := ArgumentBoolean(AArguments, 'interfaces_only', True);
     LSearchOptions.MaximumResults := ArgumentInteger(AArguments, 'maximum_results', 200);
     LSearchOptions.MaximumFiles := ArgumentInteger(AArguments, 'maximum_files', 10000);
     LSearchOptions.TimeoutMs := ArgumentInteger(AArguments, 'timeout_ms', 5000);
@@ -372,7 +373,8 @@ begin
   begin
     LFileName := ArgumentString(AArguments, 'file');
     RequirePermission(pcReadAccess, 'Dateiinhalt lesen', LFileName, LContext);
-    Exit(TDAIFileService.ReadFile(LFileName, ArgumentInteger(AArguments, 'maximum_characters', 0)));
+    Exit(TDAIFileService.ReadFile(LFileName, ArgumentInteger(AArguments, 'maximum_characters', 0),
+      ArgumentBoolean(AArguments, 'interfaces_only', True)));
   end;
 
   if SameText(AName, 'code_insight_status') then
@@ -792,11 +794,12 @@ begin
   );
   AddTool(Result, 'reference_roots_list', 'Listet schreibgeschützte Delphi-, Demo-, GetIt- und zusätzliche Referenzpfade.',
     '{"type":"object","additionalProperties":false}', True);
-  AddTool(Result, 'source_search', 'Sucht wörtlichen Text in Projekt, Projektgruppe und ReadOnly-Referenzen; aktuelle Editorpuffer haben Vorrang.',
+  AddTool(Result, 'source_search', 'Sucht wörtlichen Text; standardmäßig nur Unit-Interfaces. interfaces_only=false durchsucht auch Implementierungen.',
     '{"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":256},' +
     '"scope":{"type":"string","enum":["project","group","references","all"],"default":"all"},"project":{"type":"string"},' +
     '"directory":{"type":"string"},"file_patterns":{"type":"array","items":{"type":"string","minLength":1,"maxLength":256},"maxItems":100},' +
-    '"case_sensitive":{"type":"boolean"},"whole_word":{"type":"boolean"},"maximum_results":{"type":"integer","minimum":1,"maximum":1000},' +
+    '"interfaces_only":{"type":"boolean","default":true},"case_sensitive":{"type":"boolean"},"whole_word":{"type":"boolean"},' +
+    '"maximum_results":{"type":"integer","minimum":1,"maximum":1000},' +
     '"maximum_files":{"type":"integer","minimum":1,"maximum":100000},"timeout_ms":{"type":"integer","minimum":1,"maximum":30000}},' +
     '"required":["query"],"additionalProperties":false}', True);
   AddTool(Result, 'ide_windows_list', 'Liest VCL- und native Fenster der IDE; liest DAI-Berechtigungsdialoge und Eingabefeldtexte nicht aus.',
@@ -818,15 +821,17 @@ begin
   AddTool(
     Result,
     'file_read',
-    'Liest den aktuellen Editorpuffer oder ersatzweise die Datei vom Datenträger.',
-    '{"type":"object","properties":{"file":{"type":"string"},"maximum_characters":{"type":"integer","minimum":0}},"required":["file"],"additionalProperties":false}',
+    'Liest den aktuellen Inhalt, bei Pascal-Units standardmäßig bis implementation; für Änderungen interfaces_only=false verwenden.',
+    '{"type":"object","properties":{"file":{"type":"string"},"maximum_characters":{"type":"integer","minimum":0},' +
+    '"interfaces_only":{"type":"boolean","default":true}},"required":["file"],"additionalProperties":false}',
     True
   );
   AddTool(
     Result,
     'reference_file_read',
-    'Liest eine Datei aus den schreibgeschützten Referenzpfaden.',
-    '{"type":"object","properties":{"file":{"type":"string"},"maximum_characters":{"type":"integer","minimum":0}},"required":["file"],"additionalProperties":false}',
+    'Liest ReadOnly-Referenzquellen, bei Pascal-Units standardmäßig bis implementation; interfaces_only=false liefert auch Implementierungen.',
+    '{"type":"object","properties":{"file":{"type":"string"},"maximum_characters":{"type":"integer","minimum":0},' +
+    '"interfaces_only":{"type":"boolean","default":true}},"required":["file"],"additionalProperties":false}',
     True
   );
   AddTool(
@@ -857,7 +862,7 @@ begin
   AddTool(
     Result,
     'file_diagnostics',
-    'Liest die von Delphi Error Insight gemeldeten Fehler, Warnungen und Hinweise einer geladenen Datei.',
+    'Liest Error-Insight-Diagnosen einer geladenen Datei. Die IDE meldet keine Diagnoseversion; eine leere Liste beweist keine aktuelle Codeprüfung.',
     '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}',
     True
   );

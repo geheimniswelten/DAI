@@ -13,7 +13,7 @@ type
     class function ProjectFiles(const AProjectNameOrPath: string): TJSONArray; static;
     class function DirectoryFiles(const ADirectory: string; const ASearchPattern: string; const ARecursive: Boolean; const AMaximumCount: Integer): TJSONArray; static;
     class function ReferenceRoots: TJSONArray; static;
-    class function ReadFile(const AFileName: string; const AMaximumCharacters: Integer): TJSONObject; static;
+    class function ReadFile(const AFileName: string; const AMaximumCharacters: Integer; const AInterfacesOnly: Boolean = True): TJSONObject; static;
     class function WriteFile(const AFileName: string; const AContent: string; const AExpectedSha256: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean):
       TJSONObject; static;
   end;
@@ -32,6 +32,7 @@ uses
   h5u.DAI.Consts,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Settings,
+  h5u.DAI.Source.View,
   h5u.DAI.Text.Encoding,
   h5u.DAI.Types;
 
@@ -273,7 +274,7 @@ begin
   end;
 end;
 
-class function TDAIFileService.ReadFile(const AFileName: string; const AMaximumCharacters: Integer): TJSONObject;
+class function TDAIFileService.ReadFile(const AFileName: string; const AMaximumCharacters: Integer; const AInterfacesOnly: Boolean): TJSONObject;
 var
   LContent: string;
   LFileName: string;
@@ -282,7 +283,9 @@ var
   LFromEditor: Boolean;
   LHash: string;
   LOriginalLength: Integer;
+  LImplementationOmitted: Boolean;
   LTruncated: Boolean;
+  LViewLength: Integer;
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   if not FileAllowedForRead(LFileName) then
@@ -291,6 +294,10 @@ begin
   LContent := ReadCompleteText(LFileName, LFromEditor, LFormat, LFromDesigner);
   LOriginalLength := Length(LContent);
   LHash := THashSHA2.GetHashString(LContent);
+  LImplementationOmitted := False;
+  if AInterfacesOnly then
+    LContent := TDAISourceView.InterfaceText(LFileName, LContent, LImplementationOmitted);
+  LViewLength := Length(LContent);
   LTruncated := (AMaximumCharacters > 0) and (Length(LContent) > AMaximumCharacters);
   if LTruncated then
     SetLength(LContent, AMaximumCharacters);
@@ -305,6 +312,11 @@ begin
   Result.AddPair('encoding', TDAITextEncoding.EncodingName(LFormat.EncodingKind));
   Result.AddPair('line_ending', TDAITextEncoding.LineEndingName(LFormat.LineEndingKind));
   Result.AddPair('sha256', LHash);
+  Result.AddPair('sha256_scope', 'complete_content');
+  Result.AddPair('interfaces_only', TJSONBool.Create(AInterfacesOnly));
+  Result.AddPair('implementation_omitted', TJSONBool.Create(LImplementationOmitted));
+  Result.AddPair('view_characters', TJSONNumber.Create(LViewLength));
+  Result.AddPair('content_complete', TJSONBool.Create(not LImplementationOmitted and not LTruncated));
   Result.AddPair('original_characters', TJSONNumber.Create(LOriginalLength));
   Result.AddPair('truncated', TJSONBool.Create(LTruncated));
   Result.AddPair('read_only_reference', TJSONBool.Create(TDAIOTA.IsReadOnlyReferenceFile(LFileName)));
@@ -395,6 +407,7 @@ begin
   else if Trim(AExpectedSha256) <> '' then
     raise EInvalidOperation.Create('Die Datei existiert nicht mehr; expected_sha256 kann nicht erfüllt werden.');
 
+  TDAISourceView.RequireCompleteUnit(LFileName, AContent);
   LSourceEditor := EnsureFormTextEditor(LFileName);
   if Assigned(LSourceEditor) then
   begin

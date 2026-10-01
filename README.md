@@ -106,6 +106,16 @@ Für geöffnete Dateien ist immer der aktuelle `IOTASourceEditor` maßgeblich. D
 Festplattenpfad adressiert. Schreibvorgänge verwenden einen Undo-fähigen `IOTAEditWriter`; beim Speichern behandelt die IDE die Dateicodierung.
 `save: false` setzt einen vorhandenen Editorpuffer voraus. Für geschlossene Dateien ist `save: true` ausdrücklich erforderlich.
 
+`file_read` und `reference_file_read` verwenden standardmäßig `interfaces_only: true`. Bei `.pas`-Units liefern sie den Text vor dem echten
+`implementation`-Schlüsselwort. Für vollständige Änderungen immer mit `interfaces_only: false` und `maximum_characters: 0` lesen.
+`implementation_omitted` zeigt den tatsächlichen Schnitt, `truncated` ausschließlich das Zeichenlimit; nur `content_complete: true` bestätigt
+den vollständigen aktuellen Inhalt. `original_characters` und `sha256` bleiben auf diesen vollständigen Inhalt bezogen (`sha256_scope: complete_content`);
+`view_characters` zählt die gewählte Ansicht vor dem Zeichenlimit. Der Hash einer Interfaceansicht macht ihren Text nicht zum vollständigen Schreibinhalt.
+
+Vor jedem vollständigen `.pas`-Ersetzen prüft DAI lexikalisch Unit-Kopf, `interface`, `implementation` und abschließendes `end.`.
+Unvollständige Inhalte, unterminierte Kommentare/Strings und versehentlich zurückgeschriebene Interfaceansichten werden vor jeder Mutation abgewiesen.
+Leere Interfaces mit gültigem Unit-Abschluss bleiben erlaubt. Diese Strukturprüfung ersetzt keinen Delphi-Compiler und wertet keine Präprozessorsymbole aus.
+
 Geschlossene Dateien werden nur geschrieben, wenn sie innerhalb eines geöffneten Projektverzeichnisses liegen. Bei vorhandenen Dateien behält DAI
 einheitliches CRLF beziehungsweise LF bei. Für neue Dateien bleibt ein bereits einheitliches CRLF oder LF aus dem übergebenen Inhalt erhalten. Gemischte
 Zeilenenden sowie alleinstehendes CR werden auf das vorhandene einheitliche Format normalisiert; fehlt ein eindeutiges Format, wird CRLF verwendet. Es gibt
@@ -128,6 +138,11 @@ Codierung sowie die ursprüngliche und resultierende Art des Zeilenumbruchs.
 ## Quelldateien und Referenzen finden
 
 `source_search` sucht wörtlichen Text, etwa `IOTADebuggerServices` oder `TButton`, mit Datei, Zeile, Spalte und Ausschnitt als Ergebnis.
+`interfaces_only` ist standardmäßig `true`: Pascal-Units werden vor der Suche ab dem echten `implementation`-Schlüsselwort abgeschnitten.
+Treffer und Ausschnitte können deshalb keinen nachfolgenden Implementierungscode enthalten; ursprüngliche Zeilen und Spalten bleiben erhalten.
+Für Methodenrümpfe und Verwendungen dort `interfaces_only: false` setzen. Kommentare, Direktiven, Strings und escaped identifiers lösen keinen Schnitt aus.
+Andere Dateitypen sowie Inhalte ohne erkannten Unit-/Interface-Kopf bleiben unverändert. Die Filterung erfolgt lexikalisch ohne Compiler-Präprozessor.
+Die Antwort nennt den angeforderten Modus und `implementation_files_omitted`, die Zahl tatsächlich gekürzter Dateien.
 `scope` wählt `project`, `group`, `references` oder `all` (Standard); `project`, `directory` und `file_patterns` grenzen die Suche ein.
 Aktuelle Editor- und Designerpuffer haben Vorrang vor Dateien auf dem Datenträger. Die Standardmuster sind `*.pas`, `*.inc`, `*.dpr` und `*.dpk`.
 Dateimuster verwenden ausschließlich `*` und `?` auf dem Dateinamen, höchstens 100 Muster mit jeweils 256 Zeichen; Zeichenklassen werden abgelehnt.
@@ -186,6 +201,9 @@ Die Integration ist ausschließlich lesend:
 - `code_definition` ermittelt die Definition eines Symbols. `line` ist einsbasiert, `character` ist der nullbasierte Zeichenindex vor Tabulator-Expansion.
 - `code_hover` liefert das IDE-Help-Insight. `line` und `column` sind einsbasierte Editorpositionen; die Datei muss sichtbar in einem Code-Editor geöffnet sein.
 - `file_diagnostics` liest Fehler, Warnungen und Hinweise über `IOTAModuleErrors`; die Datei muss von der IDE geladen sein.
+  `diagnostics_api` nennt `IOTAModuleErrors.GetErrors`; `diagnostics_freshness` ist `unknown` bei vorhandener Schnittstelle, sonst `unavailable`.
+  Die ToolsAPI liefert keine Diagnoseversion und keine Prüfung eines beliebigen übergebenen Texts. Eine leere Liste beweist daher keine abgeschlossene
+  Prüfung des neuesten Editorpuffers; für eine verbindliche Syntax-/Semantikprüfung den aktuellen Projektstand kompilieren.
 - `project_context` liefert aktive Konfiguration, Plattform, Framework, Ziel, Projektdateien und ausgewählte ausgewertete DCC-Optionen.
 
 Code-Insight-Anfragen werden serialisiert, mit einem Timeout versehen und bei Zeitüberschreitung über `AsyncOperationCanceled` abgebrochen. Ein für Help
@@ -443,6 +461,7 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.Sessions.ps1 -Platform Win32
 .\Scripts\Test.Sessions.ps1 -Platform Win64
 .\Scripts\Test.Instance.ps1 -Platform Both
+.\Scripts\Test.SourceView.ps1 -Platform Both
 .\Scripts\Test.SourceSearch.ps1 -Platform Both
 .\Scripts\Test.SearchService.ps1 -Platform Both
 .\Scripts\Test.SourcePaths.ps1 -Platform Both -StrictSeparators

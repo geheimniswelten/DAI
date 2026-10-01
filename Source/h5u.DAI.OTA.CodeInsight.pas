@@ -762,6 +762,11 @@ begin
   Result.AddPair('file_loaded_in_ide', TJSONBool.Create(LFileOpen));
   Result.AddPair('provider_available', TJSONBool.Create(LProviderAvailable));
   Result.AddPair('source', 'IDE Error Insight');
+  Result.AddPair('diagnostics_api', 'IOTAModuleErrors.GetErrors');
+  if LProviderAvailable then
+    Result.AddPair('diagnostics_freshness', 'unknown')
+  else
+    Result.AddPair('diagnostics_freshness', 'unavailable');
   Result.AddPair('message', LReason);
   Result.AddPair('count', TJSONNumber.Create(Length(LErrors)));
   LItems := TJSONArray.Create;

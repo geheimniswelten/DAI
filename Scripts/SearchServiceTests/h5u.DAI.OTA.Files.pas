@@ -10,7 +10,7 @@ type
   public
     class function ProjectFiles(const AProject: string): TJSONArray; static;
     class function OpenFiles: TJSONArray; static;
-    class function ReadFile(const AFileName: string; const AMaximumCharacters: Integer): TJSONObject; static;
+    class function ReadFile(const AFileName: string; const AMaximumCharacters: Integer; const AInterfacesOnly: Boolean = True): TJSONObject; static;
   end;
 
 implementation
@@ -49,11 +49,14 @@ begin
     Result.Add(LFile);
 end;
 
-class function TDAIFileService.ReadFile(const AFileName: string; const AMaximumCharacters: Integer): TJSONObject;
+class function TDAIFileService.ReadFile(const AFileName: string; const AMaximumCharacters: Integer; const AInterfacesOnly: Boolean): TJSONObject;
 var
   LBuffer: TTestBuffer;
 begin
   Inc(TDAIOTA.TestReadCount);
+  // Snapshot collection must retain full content; the real search engine applies the requested view.
+  if AInterfacesOnly then
+    raise EInvalidOperation.Create('Search snapshots require interfaces_only=false.');
   if not TDAIOTA.TestBuffers.TryGetValue(TDAIOTA.NormalizeFileName(AFileName), LBuffer) or LBuffer.ReadFails then
     raise EReadError.Create('Isolated editor buffer is unavailable.');
   Result := TJSONObject.Create;

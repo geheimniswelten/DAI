@@ -317,6 +317,147 @@ begin
   TFile.WriteAllText(AFileName, AContent, AEncoding);
 end;
 
+procedure TestInterfaceSnapshots;
+var
+  LContent: string;
+  LResult: TJSONObject;
+  LOptions: TDAISourceSearchOptions;
+  LBoundary: Integer;
+begin
+  LOptions := EmptyOptions;
+  LOptions.InterfacesOnly := True;
+  LContent := 'unit Sample;' + #13#10 + 'interface' + #13#10 + '// implementation in a comment' + #13#10 +
+    'const Caption = ''implementation'';' + #13#10 + 'procedure PublicAPI;' + #13#10 + 'ImPlEmEnTaTiOn' + #13#10 +
+    'procedure PublicAPI; begin end;' + #13#10 + 'procedure PrivateAPI; begin end;' + #13#10 + 'end.';
+  LResult := SnapshotResult(LContent, 'PublicAPI', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Interface mode excludes an implementation declaration in an editor snapshot');
+    Check(Hit(LResult).GetValue<Integer>('line') = 5, 'Interface mode retains original line numbers');
+    Check(Hit(LResult).GetValue<Integer>('column') = 11, 'Interface mode retains original columns');
+    Check(Hit(LResult).GetValue<string>('excerpt') = 'procedure PublicAPI;', 'Interface declaration excerpt');
+    Check(LResult.GetValue<Boolean>('interfaces_only'), 'Interface mode disclosed in result');
+    Check(LResult.GetValue<Integer>('implementation_files_omitted') = 1, 'Filtered snapshot counted once');
+    Check(LResult.GetValue<Integer>('files_scanned') = 1, 'Interface filtering keeps file accounting');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult(LContent, 'PrivateAPI', LOptions);
+  try
+    Check(Matches(LResult).Count = 0, 'Private implementation content is not searched');
+    Check(LResult.GetValue<Integer>('implementation_files_omitted') = 1, 'Omitted implementation counted even without a hit');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult(LContent, 'implementation', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Comment and string implementations do not end the interface view');
+    Check(Hit(LResult, 1).GetValue<Integer>('line') = 4, 'String token remains in original interface line');
+  finally
+    LResult.Free;
+  end;
+  LOptions.InterfacesOnly := False;
+  LResult := SnapshotResult(LContent, 'PublicAPI', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Explicit full-text mode searches editor implementation');
+    Check(not LResult.GetValue<Boolean>('interfaces_only'), 'Full-text mode disclosed in result');
+    Check(LResult.GetValue<Integer>('implementation_files_omitted') = 0, 'Full-text mode omits no implementations');
+  finally
+    LResult.Free;
+  end;
+  LOptions.InterfacesOnly := True;
+  LContent := 'unit SameLine; interface procedure BoundaryAPI; implementation procedure SecretAPI; begin end; end.';
+  LBoundary := Pos('implementation', LContent);
+  LResult := SnapshotResult(LContent, 'BoundaryAPI', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Declaration immediately before same-line implementation retained');
+    Check(Hit(LResult).GetValue<Integer>('column') = Pos('BoundaryAPI', LContent), 'Same-line boundary retains column');
+    Check(Hit(LResult).GetValue<string>('excerpt') = Copy(LContent, 1, LBoundary - 1), 'Excerpt cannot leak same-line implementation');
+    Check(not Hit(LResult).GetValue<Boolean>('excerpt_truncated'), 'Interface boundary is a complete view, not an excerpt length limit');
+    Check(Pos('SecretAPI', LResult.ToJSON) = 0, 'Implementation never appears in interface response');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('program Example; implementation needle', 'needle', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'A non-unit Pascal source stays complete');
+    Check(LResult.GetValue<Integer>('implementation_files_omitted') = 0, 'Non-unit source counted as unfiltered');
+  finally
+    LResult.Free;
+  end;
+end;
+
+procedure TestInterfaceDiskAndFileKinds;
+var
+  LDirectory: string;
+  LUnitFile: string;
+  LContent: string;
+  LFiles: TArray<string>;
+  LFileName: string;
+  LOptions: TDAISourceSearchOptions;
+  LResult: TJSONObject;
+  LSnapshots: TDictionary<string, TDAISourceSnapshot>;
+  LSnapshot: TDAISourceSnapshot;
+begin
+  LDirectory := TPath.Combine(FixtureRoot, 'InterfaceSources');
+  LUnitFile := TPath.Combine(LDirectory, 'Disk.PAS');
+  LContent := 'unit Disk; interface procedure DiskAPI; implementation procedure DiskPrivate; begin end; end.';
+  WriteFixture(LUnitFile, LContent, TEncoding.Unicode);
+  LOptions := EmptyOptions;
+  LOptions.InterfacesOnly := True;
+  LResult := TDAISourceSearch.Search('DiskAPI', nil, TArray<string>.Create(LUnitFile), nil, nil, LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Disk UTF-16 source interface declaration found');
+    Check(Hit(LResult).GetValue<string>('source') = 'disk', 'Interface mode retains disk source');
+    Check(Hit(LResult).GetValue<Integer>('column') = Pos('DiskAPI', LContent), 'Disk interface keeps original column');
+    Check(LResult.GetValue<Integer>('implementation_files_omitted') = 1, 'Uppercase Pascal extension filtered');
+  finally
+    LResult.Free;
+  end;
+  LResult := TDAISourceSearch.Search('DiskPrivate', nil, TArray<string>.Create(LUnitFile), nil, nil, LOptions);
+  try
+    Check(Matches(LResult).Count = 0, 'Disk implementation is excluded');
+  finally
+    LResult.Free;
+  end;
+  LSnapshots := TDictionary<string, TDAISourceSnapshot>.Create;
+  try
+    LSnapshot.Content := 'unit Disk; interface procedure BufferAPI; implementation procedure BufferPrivate; begin end; end.';
+    LSnapshot.Source := 'designer_buffer';
+    LSnapshots.Add(LUnitFile, LSnapshot);
+    LResult := TDAISourceSearch.Search('API', TArray<string>.Create(LDirectory), TArray<string>.Create(LUnitFile), nil, LSnapshots, LOptions);
+    try
+      Check(Matches(LResult).Count = 1, 'Filtered authoritative snapshot supersedes disk');
+      Check(Hit(LResult).GetValue<string>('excerpt').Contains('BufferAPI'), 'Fresh snapshot interface is searched');
+      Check(Hit(LResult).GetValue<string>('source') = 'designer_buffer', 'Filtered designer source classification');
+      Check(LResult.GetValue<Integer>('implementation_files_omitted') = 1, 'Overlapping disk and snapshot filtered once');
+    finally
+      LResult.Free;
+    end;
+    LOptions.InterfacesOnly := False;
+    LResult := TDAISourceSearch.Search('BufferPrivate', nil, TArray<string>.Create(LUnitFile), nil, LSnapshots, LOptions);
+    try
+      Check(Matches(LResult).Count = 1, 'Snapshot remains available for explicit full-text search');
+    finally
+      LResult.Free;
+    end;
+  finally
+    LSnapshots.Free;
+  end;
+  LFiles := TArray<string>.Create(TPath.Combine(LDirectory, 'Include.inc'), TPath.Combine(LDirectory, 'Program.dpr'),
+    TPath.Combine(LDirectory, 'Package.dpk'), TPath.Combine(LDirectory, 'Notes.txt'));
+  for LFileName in LFiles do
+    WriteFixture(LFileName, 'unit Borrowed; interface procedure PublicAPI; implementation needle', TEncoding.UTF8);
+  LOptions.InterfacesOnly := True;
+  LOptions.FilePatterns := TArray<string>.Create('*');
+  LResult := TDAISourceSearch.Search('needle', nil, LFiles, nil, nil, LOptions);
+  try
+    Check(Matches(LResult).Count = 4, 'Include, program, package and other extensions remain complete');
+    Check(LResult.GetValue<Integer>('implementation_files_omitted') = 0, 'Other file kinds are never counted as omitted');
+  finally
+    LResult.Free;
+  end;
+end;
+
 procedure TestDiskSnapshotsAndPatterns;
 var
   LProject: string;
@@ -548,6 +689,8 @@ begin
     TestLiteralAndCoordinates;
     TestCaseAndWholeWord;
     TestExcerptsAndLimits;
+    TestInterfaceSnapshots;
+    TestInterfaceDiskAndFileKinds;
     TestDiskSnapshotsAndPatterns;
     TestBinaryAndEncoding;
     TestReparsePaths;

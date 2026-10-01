@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## 1.2.4
+
+- interfaces_only mit Standard true in source_search, file_read und reference_file_read; Pascal-Units enden in der Antwort vor implementation.
+- Gemeinsamer lexikalischer Filter berücksichtigt Kommentare, Direktiven, escaped identifiers, Unicode und Delphi-Multiline-Strings; kein Präprozessor.
+- Vollständiger Inhaltshash bleibt erhalten; Interfaceansicht, Zeichenlimit und vollständiger Inhalt werden ausdrücklich unterschieden.
+- Vor Ganzdatei-Schreibzugriffen auf .pas Strukturprüfung für Unit-Kopf, interface, implementation und end., vor Editor-/Datenträgermutationen.
+- IDE-Diagnosen nennen IOTAModuleErrors.GetErrors und unbekannte Aktualität; keine unbelegte Validierung vorgeschlagenen Texts über LSP.
+- IDE-Skill erklärt Interface-/Volltextwahl, vollständigen Schreibinhalt und Diagnosegrenzen; nativ erzeugt, validiert und mit Backup aktualisiert.
+- Native Filter-/Struktur-/Editorregressionen und vollständige Win32-/Win64-Builds ohne neue GetIt-Abhängigkeit.
+
 ## 1.2.3
 
 - Native ReadOnly-Quelltextsuche in Projekt, Projektgruppe, Delphi-/ToolsAPI-/Samples-/GetIt-Referenzen mit Zeile, Spalte, Editorpuffervorrang und Grenzen.

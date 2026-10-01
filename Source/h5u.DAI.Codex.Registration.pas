@@ -299,9 +299,12 @@ begin
     '- Beginne mit `ide_status`, `projects_list` und `open_files_list`; verwende die zurückgegebenen vollständigen Pfade.' + sLineBreak +
     '- `project_files_list` zeigt Projektmitglieder; `project_directory_files_list` weitere Dateien im Projektverzeichnis.' + sLineBreak +
     '- `project_context` liefert Plattform, Build-Konfiguration und Compileroptionen. `project` ist optional und wählt sonst das aktive Projekt.' + sLineBreak +
-    '- Lese vor Änderungen mit `file_read` (`file`, `maximum_characters: 0`) den vollständigen aktuellen Inhalt.' + sLineBreak +
-    '- Prüfe `source` (`editor_buffer`, `designer_buffer` oder `disk`) und `truncated`; verwende zum Schreiben immer vollständigen Inhalt.' + sLineBreak +
+    '- Lese vor Änderungen mit `file_read` (`file`, `interfaces_only: false`, `maximum_characters: 0`) den vollständigen aktuellen Inhalt.' + sLineBreak +
+    '- Prüfe `source`, `content_complete` und `truncated`; verwende zum Schreiben immer vollständigen Inhalt.' + sLineBreak +
+    '- `sha256` beschreibt den vollständigen aktuellen Inhalt, auch wenn `implementation_omitted` oder `truncated` nur eine Teilansicht liefern.' + sLineBreak +
     '- `file_write` erwartet `file`, den gesamten `content`, den gelesenen `sha256` als `expected_sha256` und optional `save`.' + sLineBreak +
+    '- Bei `.pas` prüft DAI vor dem Ersetzen echte Unit-, Interface-/Implementation-Abschnitte und abschließendes `end.`; der Compiler prüft die Syntax.' +
+    sLineBreak +
     '- Bei einem Hashkonflikt erneut lesen und die Änderung auf den aktuellen Inhalt anwenden. Prüfe danach `target`, `saved` und `sha256`.' + sLineBreak +
     '- Geöffnete Dateien werden im Undo-fähigen Editorpuffer geändert; `save: false` lässt Änderungen ungespeichert.' + sLineBreak +
     '- Für geschlossene Dateien erfordert Schreiben `save: true`; `save: false` darf nie stillschweigend auf den Datenträger schreiben.' + sLineBreak +
@@ -315,6 +318,10 @@ begin
     '- `reference_roots_list` liefert die tatsächlichen schreibgeschützten Delphi-, ToolsAPI-, Samples-, GetIt- und zusätzlichen Referenzpfade.' + sLineBreak +
     '- `%BDS%\Samples` ist ein Alias auf das öffentliche Samplesverzeichnis; verwende die gemeldeten Pfade statt eines vermuteten BDS-Unterordners.' + sLineBreak +
     '- Suche Deklarationen und Verwendungen mit `source_search` (`query`); `scope` ist `project`, `group`, `references` oder `all` (Standard).' + sLineBreak +
+    '- `source_search`, `file_read` und `reference_file_read` verwenden standardmäßig `interfaces_only: true`.' + sLineBreak +
+    '- Bei `.pas`-Units bleibt nur der Text vor dem echten `implementation`-Schlüsselwort; Kommentare und Strings lösen keinen Schnitt aus.' + sLineBreak +
+    '- Für Implementierungsdetails oder Verwendungen im Methodenrumpf ausdrücklich `interfaces_only: false` setzen; andere Dateitypen bleiben vollständig.' +
+    sLineBreak +
     '- Grenze mit optionalem `project`, `directory` und `file_patterns` ein, etwa `["*.pas","*.inc","*.dpr"]`.' + sLineBreak +
     '- Optional steuern `case_sensitive`, `whole_word`, `maximum_results`, `maximum_files` und `timeout_ms` die Suche und ihre Grenzen.' + sLineBreak +
     '- Beispiel ToolsAPI: `source_search` mit `{"query":"IOTADebuggerServices","scope":"references",' +
@@ -328,6 +335,9 @@ begin
     '- DFM mit `file_read` lesen und `file_write` bearbeiten; Delphi entscheidet beim Speichern über die Codierung. Designerobjekte nicht frei erfinden.' + sLineBreak +
     '- `code_definition` verwendet `line` ab 1 und `character` ab 0; `code_hover` verwendet `line` und `column` jeweils ab 1.' + sLineBreak +
     '- `code_insight_status` und `file_diagnostics` zeigen die verfügbaren IDE-Dienste und ihre Ergebnisse; nicht jeder Provider bietet alles an.' + sLineBreak +
+    '- Nach Änderungen `file_diagnostics` für die geladene Datei lesen; Error Insight meldet Fehler, Warnungen und Hinweise zum IDE-Zustand.' + sLineBreak +
+    '- Bei `diagnostics_freshness: unknown` ist die Diagnoseversion unbekannt; eine leere Liste bestätigt keine abgeschlossene Prüfung des neuesten Texts.' +
+    sLineBreak +
     '- `debugger_status`, `breakpoints_list`, `breakpoint_set`, `breakpoint_remove` und `debugger_control` nur nach ihrem aktuellen Schema verwenden.' + sLineBreak +
     '- `project_run` unterstützt `debugger` und `build_first`; `project_stop` beendet die Ausführung. Prüfe den Rückgabestatus vor weiteren Schritten.' + sLineBreak +
     '- `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; `debugger_windows_list` liest Fenster des Debuggerprozesses.' + sLineBreak +
