@@ -171,7 +171,11 @@ begin
   Result.AddPair('package_file', GetModuleName(FindHInstance(@ToolStatus)));
   Result.AddPair('package_registry_key', 'HKEY_CURRENT_USER\' + TPath.GetDirectoryName(TDAISettings.Instance.RegistryRoot).TrimLeft(['\']) + '\' +
     CDAIKnownPackagesKey);
-  Result.AddPair('port', TJSONNumber.Create(TDAISettings.Instance.Port));
+  if TDAIRuntime.ServerActive then
+    Result.AddPair('port', TJSONNumber.Create(TDAIRuntime.ServerPort))
+  else
+    Result.AddPair('port', TJSONNumber.Create(TDAISettings.Instance.Port));
+  Result.AddPair('configured_port', TJSONNumber.Create(TDAISettings.Instance.Port));
   Result.AddPair('active_project', TDAIOTA.ActiveProjectFileName);
   Result.AddPair('thread_id', AContext.ThreadId);
   Result.AddPair('transport_session_id', AContext.TransportSessionId);

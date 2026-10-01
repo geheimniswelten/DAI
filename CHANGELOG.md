@@ -1,5 +1,16 @@
 # Änderungsprotokoll
 
+## 1.2.6
+
+- „Server starten“ verwendet unmittelbar die Port-/Token-Eingaben der geöffneten Optionsseite; dauerhaftes Speichern bleibt separat.
+- Laufender Server hält eine unveränderliche Port-/Token-Konfiguration; spätere Drafts oder Settings-Zuweisungen ändern keine aktive Authentifizierung.
+- Optionsstatus und ide_status melden den tatsächlich gebundenen Port; configured_port zeigt den übernommenen Wert.
+- Übernehmen vergleicht Port und Token und startet bei Änderungen unter derselben Instanzsperre neu; Stop/Bindefehler räumen die Laufzeitwerte auf.
+- Gemeinsame Validierung für Start und Speichern; ungültige Eingaben schließen den Optionsdialog beim Speichern nicht.
+- Wechsel des Berechtigungsbereichs lädt ausschließlich Berechtigungen und erhält ungespeicherte Servereingaben.
+- Hauptthread-Stopp arbeitet wartende OTA-Synchronize-Aufrufe über Thread.WaitFor ab; Reentrancyguard schützt während des Indy-Shutdowns.
+- Native Regressionen prüfen den tatsächlichen VCL-Optionsframe und HTTP-Server mit isolierten Abhängigkeiten unter Win32/Win64.
+
 ## 1.2.5
 
 - 18 längere Text-/JSON-Vorlagen als native Delphi-Multiline-Strings mit explizitem TEXTBLOCK CRLF; dynamische Werte über Format.

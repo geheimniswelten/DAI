@@ -38,6 +38,7 @@ type
     procedure AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
     procedure PopulatePermissionCombo(const AComboBox: TComboBox);
     procedure ScopeChanged(Sender: TObject);
+    procedure LoadPermissionSettings;
     procedure StartServerClicked(Sender: TObject);
     procedure StopServerClicked(Sender: TObject);
     procedure GenerateTokenClicked(Sender: TObject);
@@ -53,6 +54,7 @@ type
     constructor Create(AOwner: TComponent); override;
     procedure LoadFromSettings;
     procedure StoreToSettings;
+    function ValidateContents: Boolean;
     procedure RefreshRegistrationStatus;
   end;
 
@@ -167,7 +169,7 @@ begin
   FStartServerButton.Parent := Self;
   FStartServerButton.SetBounds(24, LTop, 160, 28);
   FStartServerButton.Caption := 'Server starten';
-  FStartServerButton.Hint := 'Startet in dieser IDE mit den zuletzt übernommenen Servereinstellungen.';
+  FStartServerButton.Hint := 'Startet mit dem hier eingetragenen Port und Bearer-Token. „Speichern“ oder „Registrieren“ übernimmt die Werte dauerhaft.';
   FStartServerButton.ShowHint := True;
   FStartServerButton.OnClick := StartServerClicked;
 
@@ -178,7 +180,10 @@ begin
   FStopServerButton.Hint := 'Stoppt den Server dieser IDE. Danach kann eine andere IDE ihn manuell starten.';
   FStopServerButton.ShowHint := True;
   FStopServerButton.OnClick := StopServerClicked;
-  Inc(LTop, 40);
+  Inc(LTop, 36);
+  with NewLabel(Self, 'Starten/Stoppen wirkt sofort. „Speichern“ oder „Registrieren“ übernimmt Port und Token dauerhaft.', 24, LTop) do
+    Font.Color := clGrayText;
+  Inc(LTop, 28);
 
   FLoggingCheckBox := TCheckBox.Create(Self);
   FLoggingCheckBox.Parent := Self;
@@ -330,7 +335,9 @@ end;
 
 procedure TDAIOptionsFrame.StartServerClicked(Sender: TObject);
 begin
-  if not TDAIRuntime.StartServer then
+  if not ValidateContents then
+    Exit;
+  if not TDAIRuntime.StartServer(StrToIntDef(Trim(FPortEdit.Text), 0), Trim(FTokenEdit.Text)) then
     TaskMessageDlg('DAI', TDAIRuntime.LastServerError, mtInformation, [mbOK], 0);
   RefreshServerStatus;
 end;
@@ -349,10 +356,16 @@ begin
   FTokenEdit.SelectAll;
 end;
 
-procedure TDAIOptionsFrame.LoadFromSettings;
+function TDAIOptionsFrame.ValidateContents: Boolean;
 var
-  LCategory: TDAIPermissionCategory;
-  LContext: TDAIRequestContext;
+  LError: string;
+begin
+  Result := TDAIRuntime.ValidateServerConfiguration(StrToIntDef(Trim(FPortEdit.Text), 0), Trim(FTokenEdit.Text), LError);
+  if not Result then
+    TaskMessageDlg('DAI', LError, mtError, [mbOK], 0);
+end;
+
+procedure TDAIOptionsFrame.LoadFromSettings;
 begin
   FServerEnabledCheckBox.Checked := TDAISettings.Instance.Enabled;
   FLoggingCheckBox.Checked := TDAISettings.Instance.LogAccessPoints;
@@ -362,7 +375,15 @@ begin
   FDirectoriesMemo.TextHint := TDAISettings.Instance.LocalizedProjectsDirectoryHint;
   FDirectoryHintLabel.Caption := 'Vorschlag für diese IDE-Sprache: ' + TDAISettings.Instance.LocalizedProjectsDirectoryHint;
   RefreshServerStatus;
+  LoadPermissionSettings;
+  RefreshRegistrationStatus;
+end;
 
+procedure TDAIOptionsFrame.LoadPermissionSettings;
+var
+  LCategory: TDAIPermissionCategory;
+  LContext: TDAIRequestContext;
+begin
   if (FScopeComboBox.ItemIndex = 1) and (TDAIOTA.ActiveProjectFileName = '') then
     FScopeComboBox.ItemIndex := 0;
 
@@ -378,8 +399,6 @@ begin
       'Projektdatei: ' + ChangeFileExt(LContext.ProjectKey, '.dai.permissions.json')
   else
     FProjectLabel.Caption := 'Globaler Standard für Projekte ohne eigene DAI-Berechtigungsdatei.';
-
-  RefreshRegistrationStatus;
 end;
 
 function TDAIOptionsFrame.PermissionContext: TDAIRequestContext;
@@ -435,7 +454,7 @@ begin
   FStartServerButton.Enabled := not TDAIRuntime.ServerActive;
   FStopServerButton.Enabled := TDAIRuntime.ServerActive;
   if TDAIRuntime.ServerActive then
-    FServerStatusLabel.Caption := Format('Status: aktiv auf http://%s:%d%s', [CDAIDefaultBindAddress, TDAISettings.Instance.Port, CDAIMcpPath])
+    FServerStatusLabel.Caption := Format('Status: aktiv auf http://%s:%d%s', [CDAIDefaultBindAddress, TDAIRuntime.ServerPort, CDAIMcpPath])
   else
   begin
     LError := Trim(TDAIRuntime.LastServerError);
@@ -589,18 +608,25 @@ end;
 
 procedure TDAIOptionsFrame.ScopeChanged(Sender: TObject);
 begin
-  LoadFromSettings;
+  LoadPermissionSettings;
 end;
 
 procedure TDAIOptionsFrame.StoreToSettings;
 var
   LCategory: TDAIPermissionCategory;
   LContext: TDAIRequestContext;
+  LPort: Integer;
+  LToken: string;
+  LError: string;
 begin
+  LPort := StrToIntDef(Trim(FPortEdit.Text), 0);
+  LToken := Trim(FTokenEdit.Text);
+  if not TDAIRuntime.ValidateServerConfiguration(LPort, LToken, LError) then
+    raise EArgumentException.Create(LError);
   TDAISettings.Instance.Enabled := FServerEnabledCheckBox.Checked;
   TDAISettings.Instance.LogAccessPoints := FLoggingCheckBox.Checked;
-  TDAISettings.Instance.Port := StrToIntDef(FPortEdit.Text, 0);
-  TDAISettings.Instance.Token := Trim(FTokenEdit.Text);
+  TDAISettings.Instance.Port := LPort;
+  TDAISettings.Instance.Token := LToken;
   TDAISettings.Instance.CustomReadDirectories.Assign(FDirectoriesMemo.Lines);
   TDAISettings.Instance.Save;
 

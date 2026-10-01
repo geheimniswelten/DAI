@@ -14,12 +14,15 @@ uses
 type
   TDAIHTTPServer = class(TIdHTTPServer)
   private
+    FDeactivating: Boolean;
     FShutdownPending: Boolean;
+    function GetShutdownPending: Boolean;
   protected
     procedure Startup; override;
     procedure Shutdown; override;
   public
-    property ShutdownPending: Boolean read FShutdownPending;
+    procedure Deactivate;
+    property ShutdownPending: Boolean read GetShutdownPending;
   end;
 
   TDAIMCPServer = class sealed
@@ -28,22 +31,29 @@ type
     FInstanceLease: TDAIMCPInstanceLease;
     FStateLock: TObject;
     FLastError: string;
+    // Immutable while Indy workers run; replace only after complete shutdown.
+    FPort: Integer;
+    FToken: string;
     FSessions: TDAIMCPSessions;
     procedure HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
     procedure HandleParseAuthentication(AContext: TIdContext; const AAuthType, AAuthData: string; var VUsername, VPassword: string; var VHandled: Boolean);
     procedure HandleDeleteSession(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
     procedure ResetAfterFailedStart;
-    function StartUnlocked: Boolean;
+    function GetPort: Integer;
+    function StartUnlocked(const APort: Integer; const AToken: string): Boolean;
     function StopUnlocked(const AReleaseOwnership: Boolean = True): Boolean;
   public
     constructor Create(AIdleTimeoutMs: UInt64 = CDAIMCPSessionIdleTimeoutMs; AMaximumSessions: Integer = CDAIMCPMaximumSessions;
       const AClock: TFunc<UInt64> = nil; const AInstanceName: string = '');
     destructor Destroy; override;
-    function Start: Boolean;
+    class function ValidateConfiguration(const APort: Integer; const AToken: string; out AError: string): Boolean; static;
+    function Start: Boolean; overload;
+    function Start(const APort: Integer; const AToken: string): Boolean; overload;
     function Stop: Boolean;
     function ApplySettings: Boolean;
     function Active: Boolean;
     property LastError: string read FLastError;
+    property Port: Integer read GetPort;
   end;
 
 implementation
@@ -53,6 +63,7 @@ uses
   System.RegularExpressions,
   IdException,
   IdSocketHandle,
+  Winapi.Windows,
   h5u.DAI.Consts,
   h5u.DAI.Log,
   h5u.DAI.MCP.Protocol,
@@ -70,6 +81,60 @@ begin
   inherited;
   // Indy clears Active before Shutdown; only successful cleanup releases ownership.
   FShutdownPending := False;
+end;
+
+function TDAIHTTPServer.GetShutdownPending: Boolean;
+begin
+  // A Synchronize callback may run after Indy shutdown but before WaitFor returns.
+  Result := FShutdownPending or FDeactivating;
+end;
+
+procedure TDAIHTTPServer.Deactivate;
+var
+  LThread: TThread;
+  LFailureClass: string;
+  LFailureMessage: string;
+begin
+  if FDeactivating then
+    raise EInvalidOperation.Create('Die MCP-Serverbereinigung läuft bereits.');
+  if not Active then
+    Exit;
+
+  FDeactivating := True;
+  try
+    if GetCurrentThreadId <> MainThreadID then
+    begin
+      Active := False;
+      Exit;
+    end;
+
+    // Main-thread WaitFor processes Synchronize requests from retiring HTTP workers.
+    LThread := TThread.CreateAnonymousThread(
+      procedure
+      begin
+        Self.Active := False;
+      end
+    );
+    LThread.FreeOnTerminate := False;
+    try
+      LThread.Start;
+      LThread.WaitFor;
+      if Assigned(LThread.FatalException) then
+      begin
+        LFailureClass := LThread.FatalException.ClassName;
+        if LThread.FatalException is Exception then
+          LFailureMessage := Exception(LThread.FatalException).Message
+        else
+          LFailureMessage := 'Unbekannter Fehler bei der Serverbereinigung.';
+        // The thread owns FatalException; propagate copied data in a new exception.
+        raise EInvalidOperation.CreateFmt('MCP-Serverbereinigung im Hintergrund fehlgeschlagen: %s: %s', [LFailureClass, LFailureMessage]);
+      end;
+    finally
+      LThread.Free;
+    end;
+  finally
+    FDeactivating := False;
+  end;
 end;
 
 function NewSessionId: string;
@@ -265,19 +330,54 @@ begin
   Result := Assigned(FHTTPServer) and FHTTPServer.Active;
 end;
 
+function TDAIMCPServer.GetPort: Integer;
+begin
+  // HTTP status calls must not wait for the lock held during Indy shutdown.
+  if Active then
+    Result := FPort
+  else
+    Result := 0;
+end;
+
+class function TDAIMCPServer.ValidateConfiguration(const APort: Integer; const AToken: string; out AError: string): Boolean;
+var
+  LCharacter: Char;
+begin
+  AError := '';
+  if (APort < 1024) or (APort > 65535) then
+    AError := 'Der Port muss zwischen 1024 und 65535 liegen.'
+  else if Trim(AToken) = '' then
+    AError := 'Der Bearer-Token darf nicht leer sein.'
+  else
+    for LCharacter in AToken do
+      if (Ord(LCharacter) < 32) or (Ord(LCharacter) = 127) then
+      begin
+        AError := 'Der Bearer-Token darf keine Steuerzeichen enthalten.';
+        Break;
+      end;
+  Result := AError = '';
+end;
+
 function TDAIMCPServer.ApplySettings: Boolean;
+var
+  LPort: Integer;
+  LToken: string;
 begin
   System.TMonitor.Enter(FStateLock);
   try
     // Autostart is evaluated once by Runtime.Start. Preserve manual Start/Stop here.
     if not Active then
       Exit(not FHTTPServer.ShutdownPending);
-    if (FHTTPServer.Bindings.Count > 0) and (FHTTPServer.Bindings[0].Port = TDAISettings.Instance.Port) then
+    LPort := TDAISettings.Instance.Port;
+    LToken := TDAISettings.Instance.Token;
+    if not ValidateConfiguration(LPort, LToken, FLastError) then
+      Exit(False);
+    if (FPort = LPort) and SameStr(FToken, Trim(LToken)) then
       Exit(True);
     // Rebinding the owner's endpoint retains the lease throughout the restart.
     if not StopUnlocked(False) then
       Exit(False);
-    Result := StartUnlocked;
+    Result := StartUnlocked(LPort, LToken);
   finally
     System.TMonitor.Exit(FStateLock);
   end;
@@ -343,7 +443,7 @@ begin
     Exit;
   end;
 
-  if not HasValidBearerToken(ARequestInfo, TDAISettings.Instance.Token) then
+  if not HasValidBearerToken(ARequestInfo, FToken) then
   begin
     AResponseInfo.ResponseNo := 401;
     AResponseInfo.CustomHeaders.Values['WWW-Authenticate'] := 'Bearer realm="DAI"';
@@ -494,7 +594,7 @@ procedure TDAIMCPServer.ResetAfterFailedStart;
 begin
   try
     if Assigned(FHTTPServer) then
-      FHTTPServer.Active := False;
+      FHTTPServer.Deactivate;
   except
   end;
   if Assigned(FHTTPServer) and FHTTPServer.ShutdownPending then
@@ -504,6 +604,8 @@ begin
       FHTTPServer.Bindings.Clear;
   except
   end;
+  FPort := 0;
+  FToken := '';
   FInstanceLease.Release;
 end;
 
@@ -511,22 +613,43 @@ function TDAIMCPServer.Start: Boolean;
 begin
   System.TMonitor.Enter(FStateLock);
   try
-    Result := StartUnlocked;
+    if Active then
+    begin
+      FLastError := '';
+      Exit(True);
+    end;
+    Result := StartUnlocked(TDAISettings.Instance.Port, TDAISettings.Instance.Token);
   finally
     System.TMonitor.Exit(FStateLock);
   end;
 end;
 
-function TDAIMCPServer.StartUnlocked: Boolean;
+function TDAIMCPServer.Start(const APort: Integer; const AToken: string): Boolean;
+begin
+  System.TMonitor.Enter(FStateLock);
+  try
+    Result := StartUnlocked(APort, AToken);
+  finally
+    System.TMonitor.Exit(FStateLock);
+  end;
+end;
+
+function TDAIMCPServer.StartUnlocked(const APort: Integer; const AToken: string): Boolean;
 var
   LBinding: TIdSocketHandle;
   LOwnerDescription: string;
-  LPort: Integer;
 begin
+  if not ValidateConfiguration(APort, AToken, FLastError) then
+    Exit(False);
   if Active then
   begin
-    FLastError := '';
-    Exit(True);
+    if (FPort = APort) and SameStr(FToken, Trim(AToken)) then
+    begin
+      FLastError := '';
+      Exit(True);
+    end;
+    FLastError := 'Der MCP-Server ist bereits aktiv. Zum Ändern von Port oder Token zuerst den Server stoppen.';
+    Exit(False);
   end;
 
   FLastError := '';
@@ -541,24 +664,25 @@ begin
     TDAILog.Access(FLastError);
     Exit(False);
   end;
-  LPort := TDAISettings.Instance.Port;
   try
     FHTTPServer.Bindings.Clear;
     LBinding := FHTTPServer.Bindings.Add;
     LBinding.IP := CDAIDefaultBindAddress;
-    LBinding.Port := LPort;
+    LBinding.Port := APort;
+    FPort := APort;
+    FToken := Trim(AToken);
     FHTTPServer.Active := True;
-    TDAILog.Access(Format('MCP-Server gestartet: http://%s:%d%s', [CDAIDefaultBindAddress, LPort, CDAIMcpPath]));
+    TDAILog.Access(Format('MCP-Server gestartet: http://%s:%d%s', [CDAIDefaultBindAddress, APort, CDAIMcpPath]));
     Result := True;
   except
     on E: EIdCouldNotBindSocket do
     begin
       ResetAfterFailedStart;
-      LOwnerDescription := TDAITCPListener.DescribeIPv4Owner(LPort);
+      LOwnerDescription := TDAITCPListener.DescribeIPv4Owner(APort);
       FLastError := Format(
         'Der MCP-Server konnte nicht an %s:%d gebunden werden. Der Port ist bereits belegt. %s ' +
         'Das DAI-Package bleibt geladen; wählen Sie in den DAI-Einstellungen einen freien Port. Indy: %s',
-        [CDAIDefaultBindAddress, LPort, LOwnerDescription, E.Message]
+        [CDAIDefaultBindAddress, APort, LOwnerDescription, E.Message]
       );
       TDAILog.Error(FLastError);
       Result := False;
@@ -566,7 +690,7 @@ begin
     on E: Exception do
     begin
       ResetAfterFailedStart;
-      FLastError := Format('Der MCP-Server konnte auf %s:%d nicht gestartet werden: %s: %s', [CDAIDefaultBindAddress, LPort, E.ClassName, E.Message]);
+      FLastError := Format('Der MCP-Server konnte auf %s:%d nicht gestartet werden: %s: %s', [CDAIDefaultBindAddress, APort, E.ClassName, E.Message]);
       TDAILog.Error(FLastError);
       Result := False;
     end;
@@ -592,10 +716,12 @@ begin
     Exit(True);
   end;
   try
-    FHTTPServer.Active := False;
+    FHTTPServer.Deactivate;
     if FHTTPServer.ShutdownPending then
       raise EInvalidOperation.Create('Die vorherige Serverbereinigung ist nicht abgeschlossen. Diese IDE neu starten.');
     FSessions.Clear;
+    FPort := 0;
+    FToken := '';
     if AReleaseOwnership then
       FInstanceLease.Release;
     FLastError := '';

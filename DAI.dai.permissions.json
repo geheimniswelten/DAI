@@ -1,10 +1,10 @@
 ﻿{
   "permissions": {
-    "read": "ask",
-    "edit_inside_ide": "ask",
-    "edit_outside_ide": "ask",
-    "compile": "ask",
-    "execute": "ask"
+    "read": "always",
+    "edit_inside_ide": "always",
+    "edit_outside_ide": "always",
+    "compile": "always",
+    "execute": "always"
   },
   "version": 1
 }

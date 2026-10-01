@@ -10,7 +10,9 @@ uses
   System.JSON,
   System.Net.HttpClient,
   System.Net.URLClient,
+  System.SyncObjs,
   System.SysUtils,
+  Winapi.Windows,
   IdHTTPServer,
   h5u.DAI.MCP.Server,
   h5u.DAI.MCP.Sessions,
@@ -39,11 +41,14 @@ begin
 end;
 
 function Post(const ABody: string; const ASession: string = ''; const AVersion: string = ''; const AMethod: string = '';
-  const AName: string = ''; const AOrigin: string = ''; const AAuthenticate: Boolean = True): IHTTPResponse;
+  const AName: string = ''; const AOrigin: string = ''; const AAuthenticate: Boolean = True;
+  AOverridePort: Integer = 0; const AOverrideToken: string = ''): IHTTPResponse;
 var
   Body: TStringStream;
   Headers: TNetHeaders;
   Count: Integer;
+  LPort: Integer;
+  LToken: string;
 
   procedure AddHeader(const AKey, AValue: string);
   begin
@@ -54,8 +59,14 @@ var
 
 begin
   Count := 0;
+  LPort := AOverridePort;
+  if LPort = 0 then
+    LPort := TDAISettings.Instance.Port;
+  LToken := AOverrideToken;
+  if LToken = '' then
+    LToken := 'isolated-test-token';
   if AAuthenticate then
-    AddHeader('Authorization', 'Bearer isolated-test-token');
+    AddHeader('Authorization', 'Bearer ' + LToken);
   AddHeader('Content-Type', 'application/json');
   AddHeader('Accept', 'application/json, text/event-stream');
   if ASession <> '' then
@@ -70,7 +81,7 @@ begin
     AddHeader('Origin', AOrigin);
   Body := TStringStream.Create(ABody, TEncoding.UTF8);
   try
-    Result := Client.Post('http://127.0.0.1:' + IntToStr(TDAISettings.Instance.Port) + '/mcp', Body, nil, Headers);
+    Result := Client.Post('http://127.0.0.1:' + IntToStr(LPort) + '/mcp', Body, nil, Headers);
   finally
     Body.Free;
   end;
@@ -274,6 +285,195 @@ begin
   end;
 end;
 
+function ExplicitPing(APort: Integer; const AToken: string): IHTTPResponse;
+begin
+  Result := Post('{"jsonrpc":"2.0","id":"explicit","method":"ping","params":{' + CModernMeta + '}}',
+    '', '2026-07-28', 'ping', '', '', True, APort, AToken);
+end;
+
+function StartOnFreePort(AServer: TDAIMCPServer; AFirstPort: Integer; const AToken: string): Integer;
+begin
+  for Result := AFirstPort to AFirstPort + 10 do
+    if AServer.Start(Result, AToken) then
+      Exit;
+  raise Exception.Create('No isolated test port available: ' + AServer.LastError);
+end;
+
+procedure RunExplicitSettingsChecks;
+const
+  CTemporaryToken = 'isolated-temporary-token';
+  CRotatedToken = 'isolated-rotated-token';
+var
+  LOriginalPort: Integer;
+  LOriginalToken: string;
+  LTemporaryPort: Integer;
+  LLegacySession: string;
+  LOther: TDAIMCPServer;
+  LBlocker: TIdHTTPServer;
+begin
+  LOriginalPort := TDAISettings.Instance.Port;
+  LOriginalToken := TDAISettings.Instance.Token;
+  LOther := TDAIMCPServer.Create(CDAIMCPSessionIdleTimeoutMs, 3, nil, InstanceName);
+  LBlocker := TIdHTTPServer.Create(nil);
+  try
+    Check(Server.Stop and (Server.Port = 0), 'explicit start test begins with stopped endpoint');
+    Check(not Server.Start(1023, CTemporaryToken) and not Server.Active, 'explicit start rejects reserved port');
+    Check(not Server.Start(65536, CTemporaryToken) and not Server.Active, 'explicit start rejects overflowing port');
+    Check(not Server.Start(LOriginalPort + 60, '') and not Server.Active, 'explicit start rejects empty token');
+    Check(not Server.Start(LOriginalPort + 60, 'invalid' + #13#10 + 'token') and not Server.Active, 'explicit start rejects control characters in token');
+    LTemporaryPort := StartOnFreePort(Server, LOriginalPort + 60, CTemporaryToken);
+    Check(Server.Active and (Server.Port = LTemporaryPort), 'explicit startup exposes actual listener port');
+    Check((TDAISettings.Instance.Port = LOriginalPort) and (TDAISettings.Instance.Token = LOriginalToken), 'explicit startup retains stored settings');
+    Response := ExplicitPing(LTemporaryPort, CTemporaryToken);
+    Check(Response.StatusCode = 200, 'explicit endpoint accepts temporary token');
+    Response := ExplicitPing(LTemporaryPort, LOriginalToken);
+    Check(Response.StatusCode = 401, 'explicit endpoint rejects stored token');
+    Check(Server.Start(LTemporaryPort, CTemporaryToken) and Server.Start and (Server.Port = LTemporaryPort),
+      'same explicit settings and parameterless start remain idempotent');
+    Check(not Server.Start(LTemporaryPort + 1, CTemporaryToken) and (Server.LastError <> ''), 'different explicit port cannot silently replace active endpoint');
+    Check(not Server.Start(LTemporaryPort, CRotatedToken) and (Server.LastError <> ''), 'different explicit token cannot silently replace active endpoint');
+    Response := ExplicitPing(LTemporaryPort, CTemporaryToken);
+    Check(Response.StatusCode = 200, 'rejected explicit reconfiguration preserves running endpoint');
+    Response := Post('{"jsonrpc":"2.0","id":"explicit-session","method":"initialize","params":' +
+      '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ExplicitTest","version":"1"}}}',
+      '', '', '', '', '', True, LTemporaryPort, CTemporaryToken);
+    LLegacySession := Response.HeaderValue['Mcp-Session-Id'];
+    Check((Response.StatusCode = 200) and (LLegacySession <> ''), 'explicit endpoint creates isolated legacy session');
+    TDAISettings.Instance.Port := LTemporaryPort;
+    TDAISettings.Instance.Token := CRotatedToken;
+    Response := ExplicitPing(LTemporaryPort, CTemporaryToken);
+    Check(Response.StatusCode = 200, 'settings mutation cannot change active auth snapshot');
+    Response := ExplicitPing(LTemporaryPort, CRotatedToken);
+    Check(Response.StatusCode = 401, 'unapplied settings token remains invalid');
+    Check(Server.ApplySettings and Server.Active and (Server.Port = LTemporaryPort), 'apply updates token at unchanged port');
+    Response := ExplicitPing(LTemporaryPort, CRotatedToken);
+    Check(Response.StatusCode = 200, 'applied token accepted');
+    Response := ExplicitPing(LTemporaryPort, CTemporaryToken);
+    Check(Response.StatusCode = 401, 'old temporary token rejected after apply');
+    Response := Post('{"jsonrpc":"2.0","id":"old-session","method":"ping"}', LLegacySession,
+      '', '', '', '', True, LTemporaryPort, CRotatedToken);
+    Check(Response.StatusCode = 404, 'token restart clears previous legacy sessions');
+    TDAISettings.Instance.Port := LOriginalPort;
+    TDAISettings.Instance.Token := LOriginalToken;
+    Check(Server.Stop and not Server.Active and (Server.Port = 0), 'stop clears explicit active endpoint port');
+    LBlocker.Bindings.Add.IP := '127.0.0.1';
+    LBlocker.Bindings[0].Port := LTemporaryPort;
+    LBlocker.Active := True;
+    Check(not Server.Start(LTemporaryPort, CTemporaryToken) and not Server.Active and (Server.Port = 0) and (Server.LastError <> ''),
+      'failed explicit bind clears listener state');
+    Check((TDAISettings.Instance.Port = LOriginalPort) and (TDAISettings.Instance.Token = LOriginalToken), 'failed explicit bind retains stored settings');
+    Check(StartOnFreePort(LOther, LTemporaryPort + 20, CTemporaryToken) > 0, 'failed explicit bind releases instance ownership');
+    if not LOther.Stop then
+      raise Exception.Create(LOther.LastError);
+    LBlocker.Active := False;
+    Check(Server.Start(LOriginalPort, LOriginalToken) and (Server.Port = LOriginalPort), 'explicit start recovers after failed bind');
+  finally
+    TDAISettings.Instance.Port := LOriginalPort;
+    TDAISettings.Instance.Token := LOriginalToken;
+    LOther.Free;
+    LBlocker.Free;
+  end;
+end;
+
+procedure RunSynchronizedShutdownChecks;
+var
+  LRequestThread: TThread;
+  LWatchdog: TThread;
+  LRequestFinished: TEvent;
+  LTestFinished: TEvent;
+  LOther: TDAIMCPServer;
+  LPort: Integer;
+  LToken: string;
+  LMainThreadId: Cardinal;
+  LReentrantStartRejected: Boolean;
+  LReentrantStartError: string;
+begin
+  LPort := Server.Port;
+  LToken := TDAISettings.Instance.Token;
+  LMainThreadId := GetCurrentThreadId;
+  LReentrantStartRejected := False;
+  LReentrantStartError := '';
+  LRequestFinished := TEvent.Create(nil, True, False, '');
+  LTestFinished := TEvent.Create(nil, True, False, '');
+  TDAIMCPTools.SynchronizeEntered := TEvent.Create(nil, True, False, '');
+  TDAIMCPTools.SynchronizeCompleted := 0;
+  TDAIMCPTools.SynchronizeCallbackThreadId := 0;
+  TDAIMCPTools.SynchronizeCallback :=
+    procedure
+    begin
+      LReentrantStartRejected := not Server.Start(LPort + 1, LToken);
+      LReentrantStartError := Server.LastError;
+    end;
+  LOther := TDAIMCPServer.Create(CDAIMCPSessionIdleTimeoutMs, 3, nil, InstanceName);
+  LRequestThread := TThread.CreateAnonymousThread(
+    procedure
+    var
+      LClient: THTTPClient;
+      LBody: TStringStream;
+      LHeaders: TNetHeaders;
+      LResponse: IHTTPResponse;
+    begin
+      try
+        LClient := THTTPClient.Create;
+        LBody := TStringStream.Create('{"jsonrpc":"2.0","id":"sync-stop","method":"tools/call","params":' +
+          '{"name":"sync-stop","arguments":{},' + CModernMeta + '}}', TEncoding.UTF8);
+        try
+          LClient.ConnectionTimeout := 2000;
+          LClient.ResponseTimeout := 5000;
+          LHeaders := [TNameValuePair.Create('Authorization', 'Bearer ' + LToken),
+            TNameValuePair.Create('Content-Type', 'application/json'), TNameValuePair.Create('MCP-Protocol-Version', '2026-07-28'),
+            TNameValuePair.Create('Mcp-Method', 'tools/call'), TNameValuePair.Create('Mcp-Name', 'sync-stop')];
+          try
+            LResponse := LClient.Post('http://127.0.0.1:' + IntToStr(LPort) + '/mcp', LBody, nil, LHeaders);
+          except
+            // Deactivation may close the HTTP connection before the synchronized tool sends its response.
+          end;
+        finally
+          LResponse := nil;
+          LBody.Free;
+          LClient.Free;
+        end;
+      finally
+        LRequestFinished.SetEvent;
+      end;
+    end);
+  LRequestThread.FreeOnTerminate := False;
+  LWatchdog := TThread.CreateAnonymousThread(
+    procedure
+    begin
+      if LTestFinished.WaitFor(10000) <> wrSignaled then
+      begin
+        Writeln('FAIL: synchronized HTTP shutdown exceeded the isolated 10-second watchdog');
+        Flush(Output);
+        ExitProcess(1);
+      end;
+    end);
+  LWatchdog.FreeOnTerminate := False;
+  try
+    LWatchdog.Start;
+    LRequestThread.Start;
+    Check(TDAIMCPTools.SynchronizeEntered.WaitFor(5000) = wrSignaled, 'HTTP worker reaches main-thread synchronization before shutdown');
+    Check(Server.Stop and not Server.Active and (Server.Port = 0), 'main-thread shutdown completes with synchronized HTTP worker');
+    Check(TDAIMCPTools.SynchronizeCompleted = 1, 'shutdown executes pending synchronized tool before returning');
+    Check(TDAIMCPTools.SynchronizeCallbackThreadId = LMainThreadId, 'shutdown executes synchronized tool on owning main thread');
+    Check(LReentrantStartRejected and (LReentrantStartError <> ''), 'synchronized callback cannot restart listener during shutdown');
+    Check(LRequestFinished.WaitFor(5000) = wrSignaled, 'synchronized request client finishes within bounded wait');
+    LRequestThread.WaitFor;
+    Check(StartOnFreePort(LOther, LPort + 80, LToken) > 0, 'synchronized shutdown releases instance lease after worker joins');
+  finally
+    LRequestThread.WaitFor;
+    LTestFinished.SetEvent;
+    LWatchdog.WaitFor;
+    LRequestThread.Free;
+    LWatchdog.Free;
+    LOther.Free;
+    TDAIMCPTools.SynchronizeCallback := nil;
+    FreeAndNil(TDAIMCPTools.SynchronizeEntered);
+    LRequestFinished.Free;
+    LTestFinished.Free;
+  end;
+end;
+
 begin
   CreateGUID(InstanceGuid);
   InstanceName := 'Local\DAI.ProtocolTests.' + GUIDToString(InstanceGuid);
@@ -295,6 +495,8 @@ begin
       end;
       RunChecks;
       RunInstanceChecks;
+      RunExplicitSettingsChecks;
+      RunSynchronizedShutdownChecks;
       Writeln('PASS: ', CheckCount, ' isolated native MCP HTTP checks');
     except
       on E: Exception do

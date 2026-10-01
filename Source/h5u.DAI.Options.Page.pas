@@ -79,7 +79,10 @@ end;
 
 function TDAIOptionsPage.ValidateContents: Boolean;
 begin
-  Result := True;
+  if FFrame is TDAIOptionsFrame then
+    Result := TDAIOptionsFrame(FFrame).ValidateContents
+  else
+    Result := True;
 end;
 
 procedure RegisterDAIOptionsPage;

@@ -56,7 +56,10 @@ Die Umsetzung liegt vollständig in Delphi: Ein globales benanntes Windows-Kerne
 Ein normaler Stop gibt es nach vollständiger Listenerbereinigung frei; beim Prozessende schließt Windows die Handles. Wartende IDEs übernehmen nicht automatisch.
 
 Zum Wechseln unter `Tools → Options → Third Party → DAI` in der aktiven IDE **Server stoppen**, danach in der gewünschten IDE **Server starten** wählen.
-Die Schaltflächen verändern weder die gespeicherte Autostart-Einstellung noch die Clientregistrierungen und verwenden die zuletzt übernommenen Servereinstellungen.
+**Server starten** verwendet den aktuell eingetragenen Port und Bearer-Token, ohne den Optionsdialog zu schließen. Bei einem belegten Port kann direkt
+im selben Dialog ein anderer Wert ausprobiert werden. Der Status zeigt den tatsächlich laufenden Port. Port und Token werden mit **Speichern** oder **Registrieren**
+dauerhaft übernommen; Starten/Stoppen wirkt sofort und wird durch **Abbrechen** nicht rückgängig gemacht.
+Die Schaltflächen verändern weder die gespeicherte Autostart-Einstellung noch Berechtigungen oder Clientregistrierungen.
 **MCP-Server beim IDE-Start automatisch starten** gilt nur beim Start der IDE bzw. beim Laden des Packages. Das Übernehmen der Optionen bewahrt den manuellen
 Laufzustand. Bei einem laufenden Server wird nur eine Portänderung mit einem Neustart des Listeners angewendet; dabei bleibt die Instanzsperre gehalten.
 

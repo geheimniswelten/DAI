@@ -11,7 +11,10 @@ type
     class procedure Start; static;
     class function ApplySettings: Boolean; static;
     class procedure Stop; static;
-    class function StartServer: Boolean; static;
+    class function ValidateServerConfiguration(const APort: Integer; const AToken: string; out AError: string): Boolean; static;
+    class function StartServer: Boolean; overload; static;
+    class function StartServer(const APort: Integer; const AToken: string): Boolean; overload; static;
+    class function ServerPort: Integer; static;
     class function StopServer: Boolean; static;
     class function ServerActive: Boolean; static;
     class function LastServerError: string; static;
@@ -49,13 +52,28 @@ begin
   end;
 end;
 
+class function TDAIRuntime.ValidateServerConfiguration(const APort: Integer; const AToken: string; out AError: string): Boolean;
+begin
+  Result := TDAIMCPServer.ValidateConfiguration(APort, AToken, AError);
+end;
+
 class function TDAIRuntime.StartServer: Boolean;
 begin
   FLastServerError := '';
+  if ServerActive then
+    Exit(True);
+  Result := StartServer(TDAISettings.Instance.Port, TDAISettings.Instance.Token);
+end;
+
+class function TDAIRuntime.StartServer(const APort: Integer; const AToken: string): Boolean;
+begin
+  FLastServerError := '';
+  if not ValidateServerConfiguration(APort, AToken, FLastServerError) then
+    Exit(False);
   try
     if not Assigned(FServer) then
       FServer := TDAIMCPServer.Create;
-    Result := TDAIMCPServer(FServer).Start;
+    Result := TDAIMCPServer(FServer).Start(APort, AToken);
     FLastServerError := TDAIMCPServer(FServer).LastError;
   except
     on E: Exception do
@@ -65,6 +83,14 @@ begin
       Result := False;
     end;
   end;
+end;
+
+class function TDAIRuntime.ServerPort: Integer;
+begin
+  if Assigned(FServer) then
+    Result := TDAIMCPServer(FServer).Port
+  else
+    Result := 0;
 end;
 
 class function TDAIRuntime.StopServer: Boolean;
