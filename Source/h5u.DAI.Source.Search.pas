@@ -165,7 +165,7 @@ begin
       LPatternWidth := UnicodeCharacterWidth(APattern, LPatternIndex);
       if LNameWidth = LPatternWidth then
         LMatched := CompareStringOrdinal(PChar(AFileName) + LNameIndex - 1, LNameWidth,
-          PChar(APattern) + LPatternIndex - 1, LPatternWidth, 1) = CSTR_EQUAL;
+          PChar(APattern) + LPatternIndex - 1, LPatternWidth, {$IF CompilerVersion >= 37}Ord{$IFEND}(True)) = CSTR_EQUAL;
     end;
     if LMatched then
     begin
@@ -431,7 +431,8 @@ end;
 
 function TSourceSearchRun.MatchAt(const AContent: string; APosition: Integer): Boolean;
 begin
-  Result := CompareStringOrdinal(PChar(AContent) + APosition - 1, Length(FQuery), PChar(FQuery), Length(FQuery), Ord(not FOptions.CaseSensitive)) = CSTR_EQUAL;
+  Result := CompareStringOrdinal(PChar(AContent) + APosition - 1, Length(FQuery), PChar(FQuery), Length(FQuery),
+    {$IF CompilerVersion >= 37}Ord{$IFEND}(not FOptions.CaseSensitive)) = CSTR_EQUAL;
   if Result and FOptions.WholeWord then
     Result := not IsWordCharacter(AContent, APosition - 1) and not IsWordCharacter(AContent, APosition + Length(FQuery));
 end;

@@ -101,7 +101,11 @@ begin
   LOffset := 0;
   if (Length(ABytes) >= 3) and (ABytes[0] = $EF) and (ABytes[1] = $BB) and (ABytes[2] = $BF) then
     LOffset := 3;
+  {$IF CompilerVersion >= 36.0}  // Delphi 12+
   LEncoding := TUTF8Encoding.Create(False);
+  {$ELSE}
+  LEncoding := TUTF8Encoding.Create;
+  {$IFEND}
   try
     try
       Result := LEncoding.GetString(ABytes, LOffset, Length(ABytes) - LOffset);

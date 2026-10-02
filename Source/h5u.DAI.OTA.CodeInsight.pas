@@ -584,7 +584,6 @@ begin
     procedure
     var
       LAsync: IOTAAsyncCodeInsightManager;
-      LAsyncDefinitionEx: IOTAAsyncCodeInsightManager290;
       LCurrent: IOTACodeInsightManager;
       LCurrentId: string;
       LIndex: Integer;
@@ -636,7 +635,7 @@ begin
           LManagerObject.AddPair('completion', TJSONBool.Create(False));
           LManagerObject.AddPair('signature_help', TJSONBool.Create(False));
         end;
-        LManagerObject.AddPair('definition_character_supported', TJSONBool.Create(Supports(LManager, IOTAAsyncCodeInsightManager290, LAsyncDefinitionEx)));
+        LManagerObject.AddPair('definition_character_supported', TJSONBool.Create({$IF Declared(IOTAAsyncCodeInsightManager290)}True{$ELSE}False{$IFEND}));
         LManagers.AddElement(LManagerObject);
       end;
 
@@ -652,7 +651,9 @@ end;
 class function TDAICodeInsightService.Definition(const AFileName: string; const ALine: Integer; const ACharacter: Integer; const ATimeoutMs: Integer): TJSONObject;
 var
   LAsync: IOTAAsyncCodeInsightManager;
+  {$IF Declared(IOTAAsyncCodeInsightManager290)}
   LAsyncEx: IOTAAsyncCodeInsightManager290;
+  {$IFEND}
   LBroker: IDAICodeInsightCallbackBroker;
   LCallbackLifetime: IInterface;
   LCallbacks: TDAICodeInsightCallbacks;
@@ -701,16 +702,13 @@ begin
             LProviderName := ManagerName(LManager);
             LBroker.RetainCallback(LCallbacks);
             LRetained := True;
-            if Supports(LManager, IOTAAsyncCodeInsightManager290, LAsyncEx) then
-            begin
-              LPublished := True;
+            LPublished := True;
+            {$IF Declared(IOTAAsyncCodeInsightManager290)}
+              LAsyncEx := LAsync as IOTAAsyncCodeInsightManager290;
               LRequestId := LAsyncEx.AsyncGotoDefinitionEx(LExpandedFileName, ALine, ACharacter, LCallbacks.DefinitionCallbackEx);
-            end
-            else
-            begin
-              LPublished := True;
+            {$ELSE}
               LRequestId := LAsync.AsyncGotoDefinition(LExpandedFileName, ALine, ACharacter, LCallbacks.DefinitionCallback);
-            end;
+            {$IFEND}
             if LRequestId < 0 then
             begin
               LErrorMessage := 'Der Code-Insight-Provider hat keine gültige Request-ID zurückgegeben.';
@@ -725,7 +723,9 @@ begin
         finally
           if LRetained and not LPublished then
             LBroker.ReleaseCallback(LCallbacks);
+          {$IF Declared(IOTAAsyncCodeInsightManager290)}
           LAsyncEx := nil;
+          {$IFEND}
           LManager := nil;
           LServices := nil;
         end;
