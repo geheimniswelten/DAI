@@ -1,7 +1,6 @@
 ﻿package DAI;
 
 {$R *.res}
-{$DESIGNONLY}
 {$IFDEF IMPLICITBUILDING This IFDEF should not be used by users}
 {$ALIGN 8}
 {$ASSERTIONS ON}
@@ -26,7 +25,8 @@
 {$IMAGEBASE $400000}
 {$DEFINE DEBUG}
 {$ENDIF IMPLICITBUILDING}
-{$IMPLICITBUILD ON}
+{$LIBSUFFIX AUTO}
+{$IMPLICITBUILD OFF}
 
 requires
   rtl,
@@ -58,7 +58,7 @@ contains
   h5u.DAI.MCP.Server in 'Source\h5u.DAI.MCP.Server.pas',
   h5u.DAI.MCP.Sessions in 'Source\h5u.DAI.MCP.Sessions.pas',
   h5u.DAI.MCP.Tools in 'Source\h5u.DAI.MCP.Tools.pas',
-  h5u.DAI.Options.Frame in 'Source\h5u.DAI.Options.Frame.pas',
+  h5u.DAI.Options.Frame in 'Source\h5u.DAI.Options.Frame.pas' {DAIOptionsFrame: TFrame},
   h5u.DAI.Options.Page in 'Source\h5u.DAI.Options.Page.pas',
   h5u.DAI.OTA.Build in 'Source\h5u.DAI.OTA.Build.pas',
   h5u.DAI.OTA.CodeInsight in 'Source\h5u.DAI.OTA.CodeInsight.pas',

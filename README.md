@@ -3,7 +3,7 @@
 DAI ist ein Design-Time-Package für Delphi 13 / RAD Studio 13 (`BDS 37.0`). Es stellt lokal laufenden KI-Clients einen MCP-Server zur Verfügung und
 vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
 
-Zum Betrieb benötigt DAI sein zur IDE-Architektur passendes `DAI.bpl` und die mit Delphi installierten Runtime-/Design-Time-Packages.
+Zum Betrieb benötigt DAI sein zur IDE-Version und -Architektur passendes Package (bei Delphi 13: `DAI370.bpl`) und die mit Delphi installierten Runtime-/Design-Time-Packages.
 Eigene PAS/DCU/DCP-Dateien oder GetIt-Packages werden nicht benötigt. Port, Token, Berechtigungsdateien und die Clientregistrierung bleiben Konfiguration.
 Für Clients mit stdio-Anbindung wird zusätzlich die eigenständige `DAI.McpBridge.exe` neben der BPL bereitgestellt: Sie liest zeilenweise JSON-RPC von
 stdin, sendet authentifizierte HTTP-Anfragen an den MCP-Server der laufenden IDE und gibt Antworten über stdout zurück. Die Brücke startet keine IDE
@@ -436,7 +436,7 @@ Vor vorhandenen Änderungen wird eine Sicherung angelegt. JSON-, JSON5- und unte
 Unmarkierte DAI-Einträge und nachträglich geänderte verwaltete Einträge gelten als Konflikt. Ein Eigent-Pfad wird nicht aus dem Firefox-Vorbild übernommen, ohne dessen Schema zu belegen.
 Neue Dateien und Sicherungen mit Token erhalten private Windows-Dateirechte. Der Status enthält keine Tokenwerte.
 
-Die native Delphi-Brücke muss **neben `DAI.bpl`** liegen. `Build.ps1` baut beide. Claude Desktop erhält den Token als Umgebungsvariable, nicht als Befehlszeilenargument.
+Die native Delphi-Brücke muss **neben dem DAI-Package** liegen. `Build.ps1` baut beide. Claude Desktop erhält den Token als Umgebungsvariable, nicht als Befehlszeilenargument.
 Nach Änderungen von Port, Token oder Registrierung die betroffenen MCP-Verbindungen neu laden bzw. den KI-Client neu starten.
 
 Dokumentation: [Codex](https://developers.openai.com/codex/mcp/), [Claude Code](https://code.claude.com/docs/en/mcp),
@@ -509,17 +509,20 @@ Mit explizitem BDS-Verzeichnis:
   -BdsRoot 'C:\Program Files (x86)\Embarcadero\Studio\37.0'
 ```
 
-Erwartete Ausgaben:
+Erwartete Ausgaben mit Delphi 13 / BDS 37.0:
 
 ```text
-Build\Win32\Release\Bpl\DAI.bpl
+Build\Win32\Release\Bpl\DAI370.bpl
 Build\Win32\Release\Bpl\DAI.McpBridge.exe
-Build\Win64\Release\Bpl\DAI.bpl
+Build\Win64\Release\Bpl\DAI370.bpl
 Build\Win64\Release\Bpl\DAI.McpBridge.exe
 ```
 
 Win32 und Win64 sind im DPROJ aktiviert. Mit `-Platform Win32` oder `-Platform Win64` kann auch nur eine Architektur gebaut werden.
-`Build.ps1` prüft nach jedem Build PE-Signatur, Zielarchitektur und DLL-/EXE-Typ der Ausgaben.
+`DllSuffix=$(Auto)` im DPROJ und `{$LIBSUFFIX AUTO}` im DPK verwenden automatisch das Package-Versionssuffix des Compilers.
+Die Ausgabeverzeichnisse bleiben gleich; BPLs verschiedener Delphi-Versionen erhalten unterschiedliche Namen. DCP-/DCU-Dateien bleiben ohne Versionssuffix.
+`Build.ps1` prüft die beim aktuellen Build neu geschriebene versionierte BPL sowie die Bridge auf PE-Signatur, Zielarchitektur und DLL-/EXE-Typ.
+Eine vorhandene alte `DAI.bpl` oder eine unveränderte BPL eines früheren Builds zählt dabei nicht als erfolgreiches Build-Ergebnis.
 
 ## Installation in der 32- und 64-Bit-IDE
 
@@ -527,8 +530,8 @@ Das Design-Time-Package muss zur Architektur der **IDE** passen. Die Zielplattfo
 
 | IDE | Programm relativ zu `%BDS%` | Package relativ zum DAI-Projekt | Package-Schlüssel unter dem BDS-Benutzerprofil |
 | --- | --- | --- | --- |
-| 32 Bit | `bin\bds.exe` | `Build\Win32\Release\Bpl\DAI.bpl` | `Known Packages` |
-| 64 Bit | `bin64\bds.exe` | `Build\Win64\Release\Bpl\DAI.bpl` | `Known Packages x64` |
+| 32 Bit | `bin\bds.exe` | `Build\Win32\Release\Bpl\DAI370.bpl` | `Known Packages` |
+| 64 Bit | `bin64\bds.exe` | `Build\Win64\Release\Bpl\DAI370.bpl` | `Known Packages x64` |
 
 Bei der vorliegenden Installation lauten die Schlüssel:
 
@@ -537,7 +540,9 @@ HKEY_CURRENT_USER\Software\Embarcadero\BDS\37.0\Known Packages
 HKEY_CURRENT_USER\Software\Embarcadero\BDS\37.0\Known Packages x64
 ```
 
-In der jeweiligen IDE über `Component → Install Packages → Add` das passende BPL auswählen. Die native Bridge aus demselben Buildverzeichnis neben dem BPL belassen.
+Die Tabelle zeigt Delphi 13; andere Compiler erzeugen ihr eigenes AUTO-Suffix.
+In der jeweiligen IDE über `Component → Install Packages → Add` das passende BPL auswählen. Eine zuvor installierte unsuffigierte `DAI.bpl` dabei ersetzen,
+damit DAI nicht doppelt geladen wird. Die native Bridge aus demselben Buildverzeichnis neben dem BPL belassen.
 Die Package-Zuordnung erfolgt über die verschiedenen Schlüsselnamen; ein Wechsel der Registry-View allein ersetzt sie nicht. DAI verändert diese Schlüssel nicht selbst.
 Beide vollständigen Package-Builds wurden mit Delphi 13 / BDS 37.0 geprüft. Packages für andere Delphi-Versionen müssen mit deren passender Toolchain gebaut werden;
 deren API-Kompatibilität ist hier nicht verifiziert. Die globale Instanzsperre selbst ist versionsunabhängig.

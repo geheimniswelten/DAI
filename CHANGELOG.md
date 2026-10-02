@@ -2,6 +2,7 @@
 
 ## 1.2.13
 
+- Package verwendet LIBSUFFIX AUTO: BPL-Namen enthalten die Compiler-Package-Version; der Build prüft ausschließlich die tatsächlich neu geschriebene versionierte BPL.
 - Nach Buttonaufbau, Wiederverwendung und Altlastenbereinigung erhält die Fehlersuche-Toolbar den fehlenden horizontalen Platz bis zum tatsächlichen nativen DAI-Buttonrechteck.
 - Die Anpassung prüft die native Buttonidentität und respektiert DPI und Größenbeschränkungen. Position, Höhe und bereits größere Breiten bleiben erhalten; normale Refreshes verändern die Breite nicht.
 - ReadOnly-Fensterinspektion nennt bei unsensiblen ToolButtons VCL-/Native-Rechtecke, Clientbereich, native Sichtbarkeit und Bildbestand. Vorhandene HWNDs werden gelesen; die Diagnose erzeugt keine neuen Handles.

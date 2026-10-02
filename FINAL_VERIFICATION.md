@@ -1,4 +1,25 @@
-﻿# DAI 1.2.13 – tatsächliche Toolbar-Darstellung nach Packagebuild, 2. Oktober 2026
+﻿# DAI 1.2.13 – automatische Package-Versionssuffixe, 2. Oktober 2026
+
+Die vom Nutzer gesetzten DllSuffix=$(Auto) im DPROJ und LIBSUFFIX AUTO im DPK bleiben erhalten. Delphi 13 / BDS 37.0 erzeugt
+jetzt DAI370.bpl. Ausgabeverzeichnisse und Bridge-Dateiname bleiben unverändert; die Bridge wird weiterhin neben dem tatsächlich
+geladenen Package gesucht. Die entsprechende Statusmeldung und die aktuellen Installationshinweise sind suffixunabhängig formuliert.
+
+Build.ps1 akzeptiert ausschließlich genau eine beim aktuellen Build neu geschriebene versionierte DAI-BPL. Vorhandene unsuffigierte
+DAI.bpl und unveränderte BPLs früherer Builds werden nicht als aktuelles Ergebnis geprüft. Release und Debug für Win32/Win64 sowie
+ein wiederholter Win32-Release-Build sind erfolgreich; die jeweiligen BPL-/Bridge-Ausgaben bestehen die PE-Architektur-/Typprüfung.
+Die zusätzlichen statischen Prüfungen für DPROJ/DPK-AUTO, XML, BOM, Zeilenenden und GetIt-Unabhängigkeit bestehen.
+
+Bei geschlossener IDE wurden beide vorhandenen BDS-37.0-Registrierungen von Build/Win32 bzw. Win64/Debug/Bpl/DAI.bpl auf die
+jeweilige DAI370.bpl umgestellt und nachgelesen. Beschreibung und Architekturzuordnung bleiben erhalten; die alten Einträge wurden
+entfernt. Vorherige Werte liegen im Codex-Workspace in package-registration-before-auto-suffix.json. Die neue Registrierung ist
+noch nicht durch einen weiteren tatsächlichen IDE-Start geprüft. Delphi 11 ist hier nicht installiert und wurde nicht binär geprüft.
+
+Die vollständige statische Gesamtprüfung meldet weiterhin sieben bereits in HEAD d4b8071 vorhandene Befunde: eine 182-Zeichen-Zeile
+im Delphi-11-Fallback (Projects.pas:349), vier Schema-Argumentzählungen und eine Klammerprüfung, deren Scanner beide alternativen
+CompilerVersion-Zweige zugleich verarbeitet, sowie eine Versionsprüfung der deaktivierten WinARM64EC-Konfiguration.
+Keiner dieser Befunde wurde durch die Suffixänderung eingeführt. Der Manifeststand wurde auf die aktuellen Dateien aktualisiert.
+
+# DAI 1.2.13 – tatsächliche Toolbar-Darstellung nach Packagebuild, 2. Oktober 2026
 
 ## Ergebnis in der laufenden Win64-IDE
 

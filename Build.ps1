@@ -12,6 +12,20 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+function Get-PackageSnapshot {
+    param([string]$Directory)
+
+    $snapshot = @{}
+    if (Test-Path -LiteralPath $Directory -PathType Container) {
+        foreach ($file in Get-ChildItem -LiteralPath $Directory -File) {
+            if ($file.Name -match '^DAI[0-9]+\.bpl$') {
+                $snapshot[$file.FullName] = "$($file.LastWriteTimeUtc.Ticks):$($file.Length)"
+            }
+        }
+    }
+    return $snapshot
+}
+
 function Assert-TargetBinary {
     param([string]$Path, [string]$TargetPlatform, [bool]$IsPackage)
 
@@ -74,6 +88,8 @@ $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platfor
 
 foreach ($currentPlatform in $platforms) {
     Write-Host "Baue DAI: Configuration=$Configuration Platform=$currentPlatform"
+    $bridgeOutput = Join-Path $projectRoot "Build\$currentPlatform\$Configuration\Bpl"
+    $previousPackages = Get-PackageSnapshot -Directory $bridgeOutput
 
     $command = @(
         'call'
@@ -93,7 +109,18 @@ foreach ($currentPlatform in $platforms) {
         throw "Der DAI-Build für $currentPlatform ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
     }
 
-    $bridgeOutput = Join-Path $projectRoot "Build\$currentPlatform\$Configuration\Bpl"
+    # LIBSUFFIX AUTO is resolved by the compiler. Accept only its current output,
+    # never an older unsuffixed BPL or an unchanged build from another compiler.
+    $currentPackages = Get-PackageSnapshot -Directory $bridgeOutput
+    $builtPackages = @($currentPackages.Keys | Where-Object {
+        -not $previousPackages.ContainsKey($_) -or $previousPackages[$_] -ne $currentPackages[$_]
+    })
+    if ($builtPackages.Count -ne 1) {
+        throw "Der Build muss genau eine versionierte DAI-BPL neu schreiben; gefunden: $($builtPackages.Count)."
+    }
+    $packageFile = $builtPackages[0]
+    Assert-TargetBinary -Path $packageFile -TargetPlatform $currentPlatform -IsPackage $true
+
     $bridgeDcu = Join-Path $projectRoot "Build\$currentPlatform\$Configuration\BridgeDcu"
     New-Item -ItemType Directory -Path $bridgeOutput, $bridgeDcu -Force | Out-Null
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
@@ -112,9 +139,8 @@ foreach ($currentPlatform in $platforms) {
         throw "Der Delphi-MCP-Bridge-Build für $currentPlatform ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
     }
 
-    Assert-TargetBinary -Path (Join-Path $bridgeOutput 'DAI.bpl') -TargetPlatform $currentPlatform -IsPackage $true
     Assert-TargetBinary -Path (Join-Path $bridgeOutput 'DAI.McpBridge.exe') -TargetPlatform $currentPlatform -IsPackage $false
-    Write-Host "Package und Bridge als $currentPlatform geprüft."
+    Write-Host "Package $([System.IO.Path]::GetFileName($packageFile)) und Bridge als $currentPlatform geprüft."
 }
 
 Write-Host 'DAI wurde erfolgreich gebaut.'

@@ -69,6 +69,9 @@
         <DCC_BplOutput>.\Build\$(Platform)\$(Config)\Bpl</DCC_BplOutput>
         <DCC_DcuOutput>.\Build\$(Platform)\$(Config)\Dcu</DCC_DcuOutput>
         <DCC_DcpOutput>.\Build\$(Platform)\$(Config)\Dcp</DCC_DcpOutput>
+        <VerInfo_Locale>1031</VerInfo_Locale>
+        <DllSuffix>$(Auto)</DllSuffix>
+        <DCC_OutputNeverBuildDcps>true</DCC_OutputNeverBuildDcps>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Android)'!=''">
         <DCC_UsePackage>rtl;IndySystem;IndyProtocols;IndyCore;$(DCC_UsePackage)</DCC_UsePackage>
@@ -190,6 +193,10 @@
                 <Source>
                     <Source Name="MainSource">DAI.dpk</Source>
                 </Source>
+                <Excluded_Packages>
+                    <Excluded_Packages Name="$(BDSBIN)\dcloffice2k370.bpl">Microsoft Office 2000 Beispiele für gekapselte Komponenten für Automatisierungsserver</Excluded_Packages>
+                    <Excluded_Packages Name="$(BDSBIN)\dclofficexp370.bpl">Microsoft Office XP Beispiele für gekapselte Komponenten für Automation Server</Excluded_Packages>
+                </Excluded_Packages>
             </Delphi.Personality>
             <Platforms>
                 <Platform value="Android">False</Platform>

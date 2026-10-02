@@ -350,6 +350,11 @@ def check_dproj(errors: list[str]) -> None:
         if reference.lower() not in text.lower():
             fail(errors, f"DAI.dproj referenziert {path.name} nicht")
     ns = {"msbuild": "http://schemas.microsoft.com/developer/msbuild/2003"}
+    suffix = tree.find("msbuild:PropertyGroup[@Condition=\"'$(Base)'!=''\"]/msbuild:DllSuffix", ns)
+    if suffix is None or (suffix.text or "").lower() != "$(auto)":
+        fail(errors, "DAI.dproj: DllSuffix muss $(Auto) für versionsgetrennte Packages verwenden")
+    if not re.search(r"\{\$LIBSUFFIX\s+AUTO\s*\}", read_project_text(ROOT / "DAI.dpk"), re.IGNORECASE):
+        fail(errors, "DAI.dpk: LIBSUFFIX AUTO fehlt")
     target = tree.find("msbuild:PropertyGroup/msbuild:TargetedPlatforms", ns)
     if target is None or target.text != "3":
         fail(errors, "DAI.dproj: TargetedPlatforms muss Win32 und Win64 enthalten (3)")

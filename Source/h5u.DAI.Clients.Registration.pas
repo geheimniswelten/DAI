@@ -462,7 +462,7 @@ begin
     end;
     if (AClient.Id = 'claude-desktop') and not TFile.Exists(BridgeFileName) and (AAction <> 'unregister') then
     begin
-      SetStatus(Result, 'missing_bridge', 'DAI.McpBridge.exe fehlt neben der DAI.bpl; native Delphi-Bridge zuerst bauen bzw. installieren.', LOwned);
+      SetStatus(Result, 'missing_bridge', 'DAI.McpBridge.exe fehlt neben dem DAI-Package; native Delphi-Bridge zuerst bauen bzw. installieren.', LOwned);
       Exit;
     end;
     if AAction = 'status' then
