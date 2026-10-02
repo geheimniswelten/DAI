@@ -13,14 +13,21 @@ type
     FPort: Integer;
     FLastError: string;
     FDrainSucceeded: Boolean;
+    FDeactivating: Boolean;
+    FToken: string;
   public
     class var CreatedCount, DestroyedCount, UnsafeDestroyedCount, StopCount: Integer;
     class var FailureMode: Integer;
+    class var DefaultStartCount, ExplicitStartCount: Integer;
+    class var LastAppliedPort: Integer;
+    class var LastAppliedToken: string;
+    class var RaiseDefaultStart: Boolean;
     class var OnStop, OnDestroy: TProc;
     constructor Create;
     destructor Destroy; override;
     class function ValidateConfiguration(const APort: Integer; const AToken: string; out AError: string): Boolean; static;
-    function Start(const APort: Integer; const AToken: string): Boolean;
+    function Start: Boolean; overload;
+    function Start(const APort: Integer; const AToken: string): Boolean; overload;
     function Stop: Boolean;
     function Active: Boolean;
     function ApplySettings: Boolean;
@@ -31,7 +38,8 @@ type
 implementation
 
 uses
-  DAI.Runtime.TestState;
+  DAI.Runtime.TestState,
+  h5u.DAI.Settings;
 
 constructor TDAIMCPServer.Create;
 begin
@@ -66,11 +74,48 @@ begin
   Result := Start(7777, 'isolated-runtime-fixture');
 end;
 
+function TDAIMCPServer.Start: Boolean;
+begin
+  Inc(DefaultStartCount);
+  if RaiseDefaultStart then
+    raise EInvalidOperation.Create('isolated default start exception');
+  if FDeactivating then
+  begin
+    FLastError := 'Der MCP-Server wird gerade gestoppt.';
+    Exit(False);
+  end;
+  if FActive then
+  begin
+    FLastError := '';
+    Exit(True);
+  end;
+  Result := Start(TDAISettings.Instance.Port, TDAISettings.Instance.Token);
+end;
+
 function TDAIMCPServer.Start(const APort: Integer; const AToken: string): Boolean;
 begin
+  Inc(ExplicitStartCount);
+  if FDeactivating then
+  begin
+    FLastError := 'Der MCP-Server wird gerade gestoppt.';
+    Exit(False);
+  end;
+  if FActive then
+  begin
+    Result := (FPort = APort) and (FToken = AToken);
+    if Result then
+      FLastError := ''
+    else
+      FLastError := 'Already active with a different configuration.';
+    Exit;
+  end;
   FActive := True;
   FDrainSucceeded := False;
   FPort := APort;
+  FToken := AToken;
+  LastAppliedPort := APort;
+  LastAppliedToken := AToken;
+  FLastError := '';
   Result := True;
 end;
 
@@ -78,18 +123,24 @@ function TDAIMCPServer.Stop: Boolean;
 begin
   Inc(StopCount);
   Events.Add('server-stop');
-  if Assigned(OnStop) then
-    OnStop();
-  case FailureMode of
-    1: begin FLastError := 'isolated drain failure'; Exit(False); end;
-    2: raise EInvalidOperation.Create('isolated drain exception');
-    3: begin FLastError := ''; Exit(False); end;
+  FDeactivating := True;
+  try
+    if Assigned(OnStop) then
+      OnStop();
+    case FailureMode of
+      1: begin FLastError := 'isolated drain failure'; Exit(False); end;
+      2: raise EInvalidOperation.Create('isolated drain exception');
+      3: begin FLastError := ''; Exit(False); end;
+    end;
+    FDrainSucceeded := True;
+    FActive := False;
+    FPort := 0;
+    FToken := '';
+    FLastError := '';
+    Result := True;
+  finally
+    FDeactivating := False;
   end;
-  FDrainSucceeded := True;
-  FActive := False;
-  FPort := 0;
-  FLastError := '';
-  Result := True;
 end;
 
 end.

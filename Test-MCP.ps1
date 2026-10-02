@@ -93,7 +93,7 @@ if ($Mode -eq 'Legacy') {
         capabilities    = @{}
         clientInfo      = @{
             name    = 'DAI-Test'
-            version = '1.2.7'
+        version = '1.2.13'
         }
     }
 }

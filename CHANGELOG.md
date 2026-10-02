@@ -1,5 +1,52 @@
 # Änderungsprotokoll
 
+## 1.2.13
+
+- Nach Buttonaufbau, Wiederverwendung und Altlastenbereinigung erhält die Fehlersuche-Toolbar den fehlenden horizontalen Platz bis zum tatsächlichen nativen DAI-Buttonrechteck.
+- Die Anpassung prüft die native Buttonidentität und respektiert DPI und Größenbeschränkungen. Position, Höhe und bereits größere Breiten bleiben erhalten; normale Refreshes verändern die Breite nicht.
+- ReadOnly-Fensterinspektion nennt bei unsensiblen ToolButtons VCL-/Native-Rechtecke, Clientbereich, native Sichtbarkeit und Bildbestand. Vorhandene HWNDs werden gelesen; die Diagnose erzeugt keine neuen Handles.
+
+## 1.2.12
+
+- Ein öffentlicher ToolsAPI-Toolbar-Lesenotifier erfasst den ursprünglich benannten DAI-Button vor Delphis Namensnormalisierung; Aktion und Menü werden nach dem Lesen erneut zugeordnet.
+- Beim Desktoprestore wird genau der erfasste eigene Button wiederverwendet. Ein weiterer anonymer DAI-Button entsteht dadurch nicht; Objektidentität, Besitzer und offizielle Debug-Toolbar werden geprüft.
+- Ein einzelner bestätigter Altrest wird nur unmittelbar nach erfolgreicher Wiederverwendung des ursprünglich benannten DAI-Eintrags bereinigt. Die allgemeine Altlastenmigration bleibt auf drei bis fünf begrenzt.
+- Schwache VCL-Freigabebenachrichtigungen und vor der Abmeldung getrennte Notifier verhindern Rückrufe auf bereits freigegebene Controller; mehrdeutige oder fremd verknüpfte Controls bleiben erhalten.
+
+## 1.2.11
+
+- Altbutton-Migration verwendet die eindeutige Rückkehr-Aktion aus der offiziellen IDE-ActionList; die IDE stellt Standardbuttons ohne Komponentennamen wieder her.
+- Drei bis fünf verifizierte vollständig inerte Altbuttons direkt vor dem eigenen DAI-Button werden entfernt; Objektidentität, Nachbarschaft und alle Schutzbedingungen bleiben erforderlich.
+- Dieselbe begrenzte Prüfung erfolgt auch nach späterem Desktoprestore bei erhaltenen Controls. Im Abbau befindliche Toolbars, Actionlisten, Buttons und Aktionen werden ausgespart.
+
+## 1.2.10
+
+- Listener- und angenommene HTTP-Sockets werden über geprüftes SetHandleInformation nicht vererbbar gesetzt. IDE-Kindprozesse behalten nach Stop keine geerbten DAI-Sockets.
+- Echter Kindprozess-Regressionsfall reproduziert den alten Listener trotz geschlossenem Parent-Handle; nach Fix ist derselbe Port bei lebendem Kind sofort frei.
+- Toolbar-Aktion gehört dem stabilen Besitzer der IDE-ActionList; VCL-Streaming kann sie ohne unauflösbaren .Owner-Pfad wiederfinden.
+- Beim Entfernen werden alle Toolbar-Clients derselben DAI-Action-Objektidentität beseitigt. Eng begrenzte Migration der bestätigten drei/vier inerten Altbuttons hinter RunUntilReturn.
+- ReadOnly-Fensterinspektion nennt Eltern/Besitzer und bei nicht sensiblen ToolButtons Action, Bild und Dropdown-Verknüpfung; sensible Controls bleiben ausgespart.
+
+## 1.2.9
+
+- Toolbar erhält transparente Serversymbole für inaktiv, aktiv und Fehler; native 16×16-Glyphen und größere Auflösungen über INTAServices280.AddImage.
+- ActionList wird vor dem ImageIndex zugeordnet, damit die IDE-Bildliste den initialen Bildnamen korrekt setzt; isolierter BPL-Unload-/Reload-Vertrag geprüft.
+- Listener wird auf dem IDE-Hauptthread geschlossen, danach werden wartende HTTP-Arbeiter mit Synchronize-Verarbeitung vollständig beendet.
+- Reentrante Start-/Übernahmeaufrufe während Stop werden auch vor idempotenten Kurzschlüssen abgewiesen; Socketbindungen erst nach vollständigem Drain freigeben.
+- Stop prüft die eigenen ehemaligen Socket-Handles; Fehler nennen Listenerzustand und die zugrunde liegende Winsock-Exception. Fremde Handles werden nicht geschlossen.
+- Native Server-Lifecycle-Regressionen mit echtem HTTP-Verkehr, sofortigem Wiederbinden und Instanzwechsel, statisch sowie mit Hersteller-/IDE-Indy-Packages.
+- PNG-Glyphen verwenden Delphis vorhandenes Standardpackage vclimg; weiterhin keine GetIt-Abhängigkeit.
+
+## 1.2.8
+
+- Fensterschließbefehle werden vor der Berechtigungsprüfung normalisiert; auch Großschreibung und umgebende Leerzeichen verlangen die zusätzliche Ausführungsfreigabe.
+- Threadlisten und Stacktrace wählen OS-Prozess-/Thread-IDs aus den von Delphi gedebuggten Prozessen; mehrere Prozesse und gedebuggte Subprozesse werden berücksichtigt.
+- Stacktrace eines angehaltenen aktuellen oder ausgewählten Debuggerthreads mit Frame-/Zeichenlimit über die öffentliche ToolsAPI auslesen.
+- Compiler- und Debuggerlog getrennt lesen: letzte 50 Einträge als Standard, Anzahl begrenzen oder einzelnen Index auswählen; Zeichenlimit und Kürzungsstatus.
+- DAI-Schaltfläche in Delphis bestehender Fehlersuche-Toolbar zeigt Serverzustand und Port; Klick startet/stoppt, Dropdown öffnet Optionen oder setzt Sitzungsfreigaben zurück.
+- IDE-Fenster minimieren, wiederherstellen, Vorder-/Hintergrund anfordern und normal schließen; der HTTP-Schließauftrag wird vor WM_CLOSE bestätigt.
+- Optionsseite zeigt Skill und dynamischen MCP-Werkzeugkatalog; Clientdetails sind ohne zusätzliche Leerzeilen um vier Leerzeichen eingerückt.
+
 ## 1.2.7
 
 - Package-Abschluss sperrt neue LSP-Anfragen; eigene Callbackbroker und gehaltenes Callbackmodul schützen noch ausstehende Rückrufe. Package-Austausch nach Code Insight erfordert IDE-Neustart.

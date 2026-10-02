@@ -1,6 +1,8 @@
 ﻿unit h5u.DAI.OTA.Creators;
 
+{$IF CompilerVersion >= 36.0}  // Delphi 12+
 {$TEXTBLOCK CRLF}
+{$IFEND}
 
 interface
 
@@ -218,6 +220,7 @@ end;
 function TDAIModuleCreatorImpl.BuildDefaultUnitSource: string;
 begin
   Result := Format(
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     unit %s;
 
@@ -228,6 +231,16 @@ begin
     end.
 
     ''', [FUnitName]
+    {$ELSE}
+    'unit %s;' + sLineBreak +
+    '' + sLineBreak +
+    'interface' + sLineBreak +
+    '' + sLineBreak +
+    'implementation' + sLineBreak +
+    '' + sLineBreak +
+    'end.' + sLineBreak
+    , [FUnitName]
+    {$IFEND}
   );
 end;
 
@@ -237,6 +250,7 @@ var
 begin
   LFormName := EffectiveFormName(AFormIdent);
   Result := Format(
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     object %s: %s
       Left = 0
@@ -255,6 +269,24 @@ begin
     end
 
     ''', [LFormName, FormClassName(LFormName), EscapePascalString(LFormName)]
+    {$ELSE}
+    'object %s: %s' + sLineBreak +
+    '  Left = 0' + sLineBreak +
+    '  Top = 0' + sLineBreak +
+    '  Caption = ''%s''' + sLineBreak +
+    '  ClientHeight = 480' + sLineBreak +
+    '  ClientWidth = 640' + sLineBreak +
+    '  Color = clBtnFace' + sLineBreak +
+    '  Font.Charset = DEFAULT_CHARSET' + sLineBreak +
+    '  Font.Color = clWindowText' + sLineBreak +
+    '  Font.Height = -12' + sLineBreak +
+    '  Font.Name = ''Segoe UI''' + sLineBreak +
+    '  Font.Style = []' + sLineBreak +
+    '  Position = poScreenCenter' + sLineBreak +
+    '  TextHeight = 15' + sLineBreak +
+    'end' + sLineBreak
+    , [LFormName, FormClassName(LFormName), EscapePascalString(LFormName)]
+    {$IFEND}
   );
 end;
 
@@ -266,6 +298,7 @@ begin
   LAncestorName := EffectiveAncestorName(AAncestorIdent);
   LFormName := EffectiveFormName(AFormIdent);
   Result := Format(
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     unit %s;
 
@@ -290,6 +323,30 @@ begin
     end.
 
     ''', [FUnitName, FormClassName(LFormName), LAncestorName, LFormName, FormClassName(LFormName)]
+    {$ELSE}
+    'unit %s;' + sLineBreak +
+    '' + sLineBreak +
+    'interface' + sLineBreak +
+    '' + sLineBreak +
+    'uses' + sLineBreak +
+    '  System.Classes,' + sLineBreak +
+    '  Vcl.Controls,' + sLineBreak +
+    '  Vcl.Forms;' + sLineBreak +
+    '' + sLineBreak +
+    'type' + sLineBreak +
+    '  %s = class(%s)' + sLineBreak +
+    '  end;' + sLineBreak +
+    '' + sLineBreak +
+    'var' + sLineBreak +
+    '  %s: %s;' + sLineBreak +
+    '' + sLineBreak +
+    'implementation' + sLineBreak +
+    '' + sLineBreak +
+    '{$R *.dfm}' + sLineBreak +
+    '' + sLineBreak +
+    'end.' + sLineBreak
+    , [FUnitName, FormClassName(LFormName), LAncestorName, LFormName, FormClassName(LFormName)]
+    {$IFEND}
   );
 end;
 
@@ -610,6 +667,7 @@ begin
     LProjectName := FProjectName;
   if FKind = pkVCL then
     LSource := Format(
+      {$IF CompilerVersion >= 36.0}  // Delphi 12+
       '''
       program %s;
 
@@ -623,9 +681,23 @@ begin
       end.
 
       ''', [LProjectName]
+      {$ELSE}
+      'program %s;' + sLineBreak +
+      '' + sLineBreak +
+      'uses' + sLineBreak +
+      '  Vcl.Forms;' + sLineBreak +
+      '' + sLineBreak +
+      'begin' + sLineBreak +
+      '  Application.Initialize;' + sLineBreak +
+      '  Application.MainFormOnTaskbar := True;' + sLineBreak +
+      '  Application.Run;' + sLineBreak +
+      'end.' + sLineBreak
+      , [LProjectName]
+      {$IFEND}
     )
   else
     LSource := Format(
+      {$IF CompilerVersion >= 36.0}  // Delphi 12+
       '''
       program %s;
 
@@ -635,6 +707,15 @@ begin
       end.
 
       ''', [LProjectName]
+      {$ELSE}
+      'program %s;' + sLineBreak +
+      '' + sLineBreak +
+      '{$APPTYPE CONSOLE}' + sLineBreak +
+      '' + sLineBreak +
+      'begin' + sLineBreak +
+      'end.' + sLineBreak
+      , [LProjectName]
+      {$IFEND}
     );
   Result := TDAIStringFile.Create(LSource);
 end;

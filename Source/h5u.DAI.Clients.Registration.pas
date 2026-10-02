@@ -1,6 +1,8 @@
 ﻿unit h5u.DAI.Clients.Registration;
 
+{$IF CompilerVersion >= 36.0}  // Delphi 12+
 {$TEXTBLOCK CRLF}
+{$IFEND}
 
 interface
 
@@ -261,6 +263,7 @@ begin
       raise EDAIClientConfigConflict.Create('Steuerzeichen im Bearer-Token werden nicht registriert.');
   if AClient.Format = 'yaml' then
     Exit(Format(
+      {$IF CompilerVersion >= 36.0}  // Delphi 12+
       '''
       dai:
         url: %s
@@ -268,6 +271,14 @@ begin
           Authorization: %s
         timeout: 180
       ''',
+      {$ELSE}
+      'dai:' + sLineBreak +
+      '  url: %s' + sLineBreak +
+      '  headers:' + sLineBreak +
+      '    Authorization: %s' + sLineBreak +
+      '  timeout: 180'
+      ,
+      {$IFEND}
       [JsonString(Endpoint), JsonString('Bearer ' + TDAISettings.Instance.Token)]));
   LEntry := TJSONObject.Create;
   try

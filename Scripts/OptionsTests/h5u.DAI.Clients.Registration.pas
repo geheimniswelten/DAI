@@ -10,6 +10,8 @@ type
   public
     class var RegisterCount: Integer;
     class var UnregisterCount: Integer;
+    class var StatusCount: Integer;
+    class var StatusJSON: string;
     class function Status(const AClient: string): TJSONObject; static;
     class function RegisterFiles(const AClient: string): TJSONObject; static;
     class function UnregisterFiles(const AClient: string): TJSONObject; static;
@@ -25,6 +27,9 @@ end;
 
 class function TDAIClientRegistration.Status(const AClient: string): TJSONObject;
 begin
+  Inc(StatusCount);
+  if StatusJSON <> '' then
+    Exit(TJSONObject.ParseJSONValue(StatusJSON) as TJSONObject);
   Result := TJSONObject.Create;
   Result.AddPair('clients', TJSONArray.Create);
 end;

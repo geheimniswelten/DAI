@@ -1,6 +1,8 @@
 ﻿unit h5u.DAI.MCP.Tools;
 
+{$IF CompilerVersion >= 36.0}  // Delphi 12+
 {$TEXTBLOCK CRLF JSON}
+{$IFEND}
 
 interface
 
@@ -25,6 +27,7 @@ uses
   ToolsAPI,
   Winapi.Windows,
   h5u.DAI.Consts,
+  h5u.DAI.IDE.Control,
   h5u.DAI.Runtime,
   h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
@@ -35,8 +38,11 @@ uses
   h5u.DAI.OTA.Designer,
   h5u.DAI.OTA.Files,
   h5u.DAI.OTA.Helpers,
+  h5u.DAI.OTA.Messages,
   h5u.DAI.OTA.Projects,
   h5u.DAI.OTA.Search,
+  h5u.DAI.OTA.Stack,
+  h5u.DAI.OTA.Threads,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
   h5u.DAI.Source.Search,
@@ -110,6 +116,26 @@ begin
   LValue := AArguments.GetValue(AName);
   if Assigned(LValue) and TryStrToFloat(LValue.Value, LNumber, TFormatSettings.Invariant) then
     Result := Trunc(LNumber);
+end;
+
+function ArgumentUInt32(const AArguments: TJSONObject; const AName: string; const ADefault: Cardinal = 0): Cardinal;
+var
+  LNumber: UInt64;
+  LValue: TJSONValue;
+begin
+  Result := ADefault;
+  if not Assigned(AArguments) then
+    Exit;
+  LValue := AArguments.GetValue(AName);
+  if not Assigned(LValue) then
+    Exit;
+  if not (LValue is TJSONNumber) then
+    raise EArgumentException.Create(AName + ' muss eine vorzeichenlose 32-Bit-Ganzzahl sein.');
+  if not TryStrToUInt64(LValue.Value, LNumber) then
+    raise EArgumentException.Create(AName + ' muss eine vorzeichenlose 32-Bit-Ganzzahl sein.');
+  if LNumber > High(Cardinal) then
+    raise EArgumentOutOfRangeException.Create(AName + ' überschreitet eine 32-Bit-ID.');
+  Result := Cardinal(LNumber);
 end;
 
 function ArgumentStringArray(const AArguments: TJSONObject; const AName: string): TArray<string>;
@@ -230,6 +256,7 @@ end;
 
 class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
 var
+  LAction: string;
   LBuildFirst: Boolean;
   LCompileResult: TJSONObject;
   LContext: TDAIRequestContext;
@@ -251,6 +278,22 @@ begin
   begin
     RequirePermission(pcReadAccess, 'Status der Delphi-IDE lesen', '', LContext);
     Exit(ToolStatus(LContext));
+  end;
+
+  if SameText(AName, 'ide_window_control') then
+  begin
+    LAction := LowerCase(Trim(ArgumentString(AArguments, 'action')));
+    RequirePermission(pcEditInsideIDE, 'Delphi-IDE-Fenster steuern: ' + LAction, '', LContext);
+    if LAction = 'close' then
+      RequirePermission(pcExecute, 'Delphi-IDE normal schließen', '', LContext);
+    Exit(TDAIIDEControl.Control(LAction));
+  end;
+
+  if SameText(AName, 'ide_logs_read') then
+  begin
+    RequirePermission(pcReadAccess, 'IDE-Compiler- oder Debuggerlog lesen', '', LContext);
+    Exit(TDAIMessageService.Read(ArgumentString(AArguments, 'source', 'build'), ArgumentInteger(AArguments, 'last_count', 50),
+      ArgumentInteger(AArguments, 'index', -1), ArgumentInteger(AArguments, 'maximum_characters', 20000)));
   end;
 
   if SameText(AName, 'ide_windows_list') or SameText(AName, 'debugger_windows_list') then
@@ -577,6 +620,21 @@ begin
     Exit(TDAIDebuggerService.Status);
   end;
 
+  if SameText(AName, 'debugger_stacktrace') then
+  begin
+    RequirePermission(pcReadAccess, 'Stacktrace eines angehaltenen Debuggerthreads lesen', '', LContext);
+    Exit(TDAIStackService.Read(ArgumentUInt32(AArguments, 'process_id'), ArgumentUInt32(AArguments, 'thread_id'),
+      ArgumentInteger(AArguments, 'maximum_frames', 50),
+      ArgumentInteger(AArguments, 'maximum_characters', 20000)));
+  end;
+
+  if SameText(AName, 'debugger_threads_list') then
+  begin
+    RequirePermission(pcReadAccess, 'Threads der ausgewählten Debuggerprozesse lesen', '', LContext);
+    Exit(TDAIThreadService.List(ArgumentUInt32(AArguments, 'process_id'), ArgumentBoolean(AArguments, 'all_processes', False),
+      ArgumentInteger(AArguments, 'maximum_threads', 200)));
+  end;
+
   if SameText(AName, 'breakpoints_list') then
   begin
     RequirePermission(pcReadAccess, 'Quellhaltepunkte lesen', '', LContext);
@@ -792,6 +850,66 @@ begin
   Result := TJSONArray.Create;
 
   AddTool(Result, 'ide_status', 'Liefert Server-, IDE-, Projekt-, Chat- und Berechtigungsstatus.', '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'ide_window_control', 'Minimiert/restauriert die IDE, fordert Vorder-/Hintergrund an oder schließt normal mit Speicherrückfragen.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
+    '''
+    {"type":"object","required":["action"],"properties":{
+      "action":{"type":"string","enum":["minimize","restore","foreground","background","close"]}},"additionalProperties":false}
+    ''', False);
+    {$ELSE}
+    '{"type":"object","required":["action"],"properties":{' + sLineBreak +
+    '  "action":{"type":"string","enum":["minimize","restore","foreground","background","close"]}},"additionalProperties":false}'
+    , False);
+    {$IFEND}
+  AddTool(Result, 'ide_logs_read', 'Liest die letzten X Compiler-/Debuggerlogzeilen oder einen einzelnen Eintrag; verändert keine Logansicht.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
+    '''
+    {"type":"object","properties":{
+      "source":{"type":"string","enum":["build","events"],"default":"build"},
+      "last_count":{"type":"integer","minimum":1,"maximum":1000,"default":50},
+      "index":{"type":"integer","minimum":0},
+      "maximum_characters":{"type":"integer","minimum":1,"maximum":200000,"default":20000}},"additionalProperties":false}
+    ''', True);
+    {$ELSE}
+    '{"type":"object","properties":{' + sLineBreak +
+    '  "source":{"type":"string","enum":["build","events"],"default":"build"},' + sLineBreak +
+    '  "last_count":{"type":"integer","minimum":1,"maximum":1000,"default":50},' + sLineBreak +
+    '  "index":{"type":"integer","minimum":0},' + sLineBreak +
+    '  "maximum_characters":{"type":"integer","minimum":1,"maximum":200000,"default":20000}},"additionalProperties":false}'
+    , True);
+    {$IFEND}
+  AddTool(Result, 'debugger_stacktrace', 'Liest den Stack eines angehaltenen Debuggerthreads über ToolsAPI; setzt die Ausführung nicht fort.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
+    '''
+    {"type":"object","properties":{
+      "process_id":{"type":"integer","minimum":0,"maximum":4294967295,"default":0,"description":"OS-Prozess-ID; 0 wählt den aktuellen Debuggerprozess."},
+      "thread_id":{"type":"integer","minimum":0,"maximum":4294967295,"default":0,"description":"OS-Thread-ID; 0 wählt den aktuellen Thread."},
+      "maximum_frames":{"type":"integer","minimum":1,"maximum":500,"default":50},
+      "maximum_characters":{"type":"integer","minimum":1,"maximum":200000,"default":20000}},"additionalProperties":false}
+    ''', True);
+    {$ELSE}
+    '{"type":"object","properties":{' + sLineBreak +
+    '  "process_id":{"type":"integer","minimum":0,"maximum":4294967295,"default":0,"description":"OS-Prozess-ID; 0 wählt den aktuellen Debuggerprozess."},' + sLineBreak +
+    '  "thread_id":{"type":"integer","minimum":0,"maximum":4294967295,"default":0,"description":"OS-Thread-ID; 0 wählt den aktuellen Thread."},' + sLineBreak +
+    '  "maximum_frames":{"type":"integer","minimum":1,"maximum":500,"default":50},' + sLineBreak +
+    '  "maximum_characters":{"type":"integer","minimum":1,"maximum":200000,"default":20000}},"additionalProperties":false}'
+    , True);
+    {$IFEND}
+  AddTool(Result, 'debugger_threads_list', 'Listet Threads des aktuellen, ausgewählten oder aller Debuggerprozesse, einschließlich gedebuggter Subprozesse.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
+    '''
+    {"type":"object","properties":{
+      "process_id":{"type":"integer","minimum":0,"maximum":4294967295,"default":0,"description":"OS-Prozess-ID; 0 wählt den aktuellen Debuggerprozess."},
+      "all_processes":{"type":"boolean","default":false},
+      "maximum_threads":{"type":"integer","minimum":1,"maximum":5000,"default":200}},"additionalProperties":false}
+    ''', True);
+    {$ELSE}
+    '{"type":"object","properties":{' + sLineBreak +
+    '  "process_id":{"type":"integer","minimum":0,"maximum":4294967295,"default":0,"description":"OS-Prozess-ID; 0 wählt den aktuellen Debuggerprozess."},' + sLineBreak +
+    '  "all_processes":{"type":"boolean","default":false},' + sLineBreak +
+    '  "maximum_threads":{"type":"integer","minimum":1,"maximum":5000,"default":200}},"additionalProperties":false}'
+    , True);
+    {$IFEND}
   AddTool(Result, 'open_files_list', 'Listet aktuell in der IDE geöffnete Dateien.', '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'projects_list', 'Listet Projekte und Projektpfade der aktuellen Gruppe oder das einzelne Projekt.', '{"type":"object","additionalProperties":false}', True);
 
@@ -821,6 +939,7 @@ begin
   AddTool(Result, 'reference_roots_list', 'Listet schreibgeschützte Delphi-, Demo-, GetIt- und zusätzliche Referenzpfade.',
     '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'source_search', 'Sucht wörtlichen Text; standardmäßig nur Unit-Interfaces. interfaces_only=false durchsucht auch Implementierungen.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     {
       "type": "object",
@@ -887,7 +1006,75 @@ begin
       "additionalProperties": false
     }
     ''', True);
+    {$ELSE}
+    '{' + sLineBreak +
+    '  "type": "object",' + sLineBreak +
+    '  "properties": {' + sLineBreak +
+    '    "query": {' + sLineBreak +
+    '      "type": "string",' + sLineBreak +
+    '      "minLength": 1,' + sLineBreak +
+    '      "maxLength": 256' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "scope": {' + sLineBreak +
+    '      "type": "string",' + sLineBreak +
+    '      "enum": [' + sLineBreak +
+    '        "project",' + sLineBreak +
+    '        "group",' + sLineBreak +
+    '        "references",' + sLineBreak +
+    '        "all"' + sLineBreak +
+    '      ],' + sLineBreak +
+    '      "default": "all"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "project": {' + sLineBreak +
+    '      "type": "string"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "directory": {' + sLineBreak +
+    '      "type": "string"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "file_patterns": {' + sLineBreak +
+    '      "type": "array",' + sLineBreak +
+    '      "items": {' + sLineBreak +
+    '        "type": "string",' + sLineBreak +
+    '        "minLength": 1,' + sLineBreak +
+    '        "maxLength": 256' + sLineBreak +
+    '      },' + sLineBreak +
+    '      "maxItems": 100' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "interfaces_only": {' + sLineBreak +
+    '      "type": "boolean",' + sLineBreak +
+    '      "default": true' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "case_sensitive": {' + sLineBreak +
+    '      "type": "boolean"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "whole_word": {' + sLineBreak +
+    '      "type": "boolean"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "maximum_results": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 1000' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "maximum_files": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 100000' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "timeout_ms": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 30000' + sLineBreak +
+    '    }' + sLineBreak +
+    '  },' + sLineBreak +
+    '  "required": [' + sLineBreak +
+    '    "query"' + sLineBreak +
+    '  ],' + sLineBreak +
+    '  "additionalProperties": false' + sLineBreak +
+    '}'
+    , True);
+    {$IFEND}
   AddTool(Result, 'ide_windows_list', 'Liest VCL- und native Fenster der IDE; liest DAI-Berechtigungsdialoge und Eingabefeldtexte nicht aus.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     {
       "type": "object",
@@ -914,7 +1101,35 @@ begin
       "additionalProperties": false
     }
     ''', True);
+    {$ELSE}
+    '{' + sLineBreak +
+    '  "type": "object",' + sLineBreak +
+    '  "properties": {' + sLineBreak +
+    '    "include_children": {' + sLineBreak +
+    '      "type": "boolean"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "maximum_windows": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 100' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "maximum_controls": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 500' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "timeout_ms": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 2000' + sLineBreak +
+    '    }' + sLineBreak +
+    '  },' + sLineBreak +
+    '  "additionalProperties": false' + sLineBreak +
+    '}'
+    , True);
+    {$IFEND}
   AddTool(Result, 'debugger_windows_list', 'Liest native Fenster des aktuellen Debuggerprozesses ohne ihn fortzusetzen; angehaltene Fenstertexte können fehlen.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     {
       "type": "object",
@@ -941,6 +1156,33 @@ begin
       "additionalProperties": false
     }
     ''', True);
+    {$ELSE}
+    '{' + sLineBreak +
+    '  "type": "object",' + sLineBreak +
+    '  "properties": {' + sLineBreak +
+    '    "include_children": {' + sLineBreak +
+    '      "type": "boolean"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "maximum_windows": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 100' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "maximum_controls": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 500' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "timeout_ms": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 2000' + sLineBreak +
+    '    }' + sLineBreak +
+    '  },' + sLineBreak +
+    '  "additionalProperties": false' + sLineBreak +
+    '}'
+    , True);
+    {$IFEND}
   AddTool(
     Result,
     'reference_files_list',
@@ -976,6 +1218,7 @@ begin
     Result,
     'code_definition',
     'Ermittelt die Definition eines Symbols über den bereits von Delphi verwendeten Code-Insight-/LSP-Provider.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     {
       "type": "object",
@@ -1005,12 +1248,43 @@ begin
       "additionalProperties": false
     }
     ''',
+    {$ELSE}
+    '{' + sLineBreak +
+    '  "type": "object",' + sLineBreak +
+    '  "properties": {' + sLineBreak +
+    '    "file": {' + sLineBreak +
+    '      "type": "string"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "line": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "character": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 0' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "timeout_ms": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 100,' + sLineBreak +
+    '      "maximum": 60000' + sLineBreak +
+    '    }' + sLineBreak +
+    '  },' + sLineBreak +
+    '  "required": [' + sLineBreak +
+    '    "file",' + sLineBreak +
+    '    "line",' + sLineBreak +
+    '    "character"' + sLineBreak +
+    '  ],' + sLineBreak +
+    '  "additionalProperties": false' + sLineBreak +
+    '}'
+    ,
+    {$IFEND}
     True
   );
   AddTool(
     Result,
     'code_hover',
     'Liest Help Insight an einer Editorposition; die Datei muss in einem Code-Editor geöffnet sein.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     {
       "type": "object",
@@ -1040,6 +1314,36 @@ begin
       "additionalProperties": false
     }
     ''',
+    {$ELSE}
+    '{' + sLineBreak +
+    '  "type": "object",' + sLineBreak +
+    '  "properties": {' + sLineBreak +
+    '    "file": {' + sLineBreak +
+    '      "type": "string"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "line": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "column": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "timeout_ms": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 100,' + sLineBreak +
+    '      "maximum": 60000' + sLineBreak +
+    '    }' + sLineBreak +
+    '  },' + sLineBreak +
+    '  "required": [' + sLineBreak +
+    '    "file",' + sLineBreak +
+    '    "line",' + sLineBreak +
+    '    "column"' + sLineBreak +
+    '  ],' + sLineBreak +
+    '  "additionalProperties": false' + sLineBreak +
+    '}'
+    ,
+    {$IFEND}
     True
   );
   AddTool(
@@ -1053,6 +1357,7 @@ begin
     Result,
     'project_context',
     'Liest den aktiven Delphi-Projekt-, Plattform-, Build-Konfigurations- und Compilerkontext.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     {
       "type": "object",
@@ -1075,6 +1380,29 @@ begin
       "additionalProperties": false
     }
     ''',
+    {$ELSE}
+    '{' + sLineBreak +
+    '  "type": "object",' + sLineBreak +
+    '  "properties": {' + sLineBreak +
+    '    "project": {' + sLineBreak +
+    '      "type": "string"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "include_files": {' + sLineBreak +
+    '      "type": "boolean"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "maximum_files": {' + sLineBreak +
+    '      "type": "integer",' + sLineBreak +
+    '      "minimum": 1,' + sLineBreak +
+    '      "maximum": 50000' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "include_compiler_options": {' + sLineBreak +
+    '      "type": "boolean"' + sLineBreak +
+    '    }' + sLineBreak +
+    '  },' + sLineBreak +
+    '  "additionalProperties": false' + sLineBreak +
+    '}'
+    ,
+    {$IFEND}
     True
   );
   AddTool(
@@ -1089,6 +1417,7 @@ begin
     Result,
     'project_create',
     'Erstellt Console- oder VCL-Projekt, bei VCL mit Hauptformular. save=false erzeugt ungespeicherte OTA-Module.',
+    {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     {
       "type": "object",
@@ -1118,6 +1447,36 @@ begin
       "additionalProperties": false
     }
     ''',
+    {$ELSE}
+    '{' + sLineBreak +
+    '  "type": "object",' + sLineBreak +
+    '  "properties": {' + sLineBreak +
+    '    "name": {' + sLineBreak +
+    '      "type": "string"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "directory": {' + sLineBreak +
+    '      "type": "string"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "project_kind": {' + sLineBreak +
+    '      "type": "string",' + sLineBreak +
+    '      "enum": [' + sLineBreak +
+    '        "console",' + sLineBreak +
+    '        "vcl"' + sLineBreak +
+    '      ]' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "save": {' + sLineBreak +
+    '      "type": "boolean",' + sLineBreak +
+    '      "default": true' + sLineBreak +
+    '    }' + sLineBreak +
+    '  },' + sLineBreak +
+    '  "required": [' + sLineBreak +
+    '    "name",' + sLineBreak +
+    '    "directory"' + sLineBreak +
+    '  ],' + sLineBreak +
+    '  "additionalProperties": false' + sLineBreak +
+    '}'
+    ,
+    {$IFEND}
     False
   );
   AddTool(

@@ -1,0 +1,12 @@
+﻿package vclide370;
+
+{$RUNONLY}
+
+requires
+  rtl,
+  vcl;
+
+contains
+  IDEVirtualTrees in 'IDEVirtualTrees.pas';
+
+end.

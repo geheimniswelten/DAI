@@ -14,10 +14,14 @@ MAX_LINE_LENGTH = 180
 REQUIRED_TOOLS = {
     "source_search",
     "ide_windows_list",
+    "ide_window_control",
+    "ide_logs_read",
     "ide_dialog_inspect",
     "ide_dialog_click",
     "ide_dialog_close",
     "debugger_windows_list",
+    "debugger_stacktrace",
+    "debugger_threads_list",
     "form_designer_inspect",
     "form_show_designer",
     "debugger_status",
@@ -308,7 +312,7 @@ def check_no_getit_dependencies(errors: list[str]) -> None:
     """DAI uses its own MCP implementation and the Delphi/Indy standard packages."""
     dpk, _ = strip_pascal_strings_and_comments(read_project_text(ROOT / "DAI.dpk"))
     match = re.search(r"\brequires\s+(.*?);", dpk, flags=re.IGNORECASE | re.DOTALL)
-    expected = {"rtl", "vcl", "vclie", "designide", "indysystem", "indycore", "indyprotocols"}
+    expected = {"rtl", "vcl", "vclimg", "vclie", "designide", "indysystem", "indycore", "indyprotocols"}
     actual = {name.strip().lower() for name in match.group(1).split(",")} if match else set()
     if actual != expected:
         fail(errors, "DAI.dpk: ausschließlich die dokumentierten Delphi-/Indy-Standardpakete sind erlaubt")
@@ -705,7 +709,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.7"
+    expected = "1.2.13"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")

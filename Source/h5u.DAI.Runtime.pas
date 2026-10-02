@@ -62,9 +62,21 @@ end;
 class function TDAIRuntime.StartServer: Boolean;
 begin
   FLastServerError := '';
-  if ServerActive then
-    Exit(True);
-  Result := StartServer(TDAISettings.Instance.Port, TDAISettings.Instance.Token);
+  try
+    if not Assigned(FServer) then
+      FServer := TDAIMCPServer.Create;
+    // The server checks shutdown before idempotence and preserves an active
+    // temporary configuration instead of applying the persisted settings.
+    Result := TDAIMCPServer(FServer).Start;
+    FLastServerError := TDAIMCPServer(FServer).LastError;
+  except
+    on E: Exception do
+    begin
+      FLastServerError := 'Der MCP-Server konnte nicht gestartet werden: ' + E.Message;
+      TDAILog.Error(FLastServerError);
+      Result := False;
+    end;
+  end;
 end;
 
 class function TDAIRuntime.StartServer(const APort: Integer; const AToken: string): Boolean;

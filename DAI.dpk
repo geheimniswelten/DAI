@@ -31,6 +31,7 @@
 requires
   rtl,
   vcl,
+  vclimg,
   vclie,
   designide,
   IndySystem,
@@ -38,6 +39,11 @@ requires
   IndyProtocols;
 
 contains
+  h5u.DAI.OTA.Threads in 'Source\h5u.DAI.OTA.Threads.pas',
+  h5u.DAI.OTA.Stack in 'Source\h5u.DAI.OTA.Stack.pas',
+  h5u.DAI.OTA.Messages in 'Source\h5u.DAI.OTA.Messages.pas',
+  h5u.DAI.IDE.Control in 'Source\h5u.DAI.IDE.Control.pas',
+  h5u.DAI.IDE.Toolbar in 'Source\h5u.DAI.IDE.Toolbar.pas',
   h5u.DAI.OTA.Designer in 'Source\h5u.DAI.OTA.Designer.pas',
   h5u.DAI.OTA.Debugger in 'Source\h5u.DAI.OTA.Debugger.pas',
   h5u.DAI.Clients.Registration in 'Source\h5u.DAI.Clients.Registration.pas',

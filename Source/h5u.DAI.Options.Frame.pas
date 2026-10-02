@@ -32,6 +32,7 @@ type
     FSkillStatusLabel: TLabel;
     FRegisterButton: TButton;
     FUnregisterButton: TButton;
+    FShowToolsButton: TButton;
     procedure BuildControls;
     procedure RefreshServerStatus;
     procedure DisplayClientStatus(const AStatus: TJSONObject);
@@ -46,6 +47,7 @@ type
     function SelectedClient: string;
     procedure RegisterClicked(Sender: TObject);
     procedure UnregisterClicked(Sender: TObject);
+    procedure ShowToolsClicked(Sender: TObject);
     function SelectedPermissionScope: TDAIPermissionScope;
     function PermissionLevelFromCombo(const AComboBox: TComboBox): TDAIPermissionLevel;
     procedure SetPermissionComboLevel(const AComboBox: TComboBox; const ALevel: TDAIPermissionLevel);
@@ -72,10 +74,27 @@ uses
   h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
   h5u.DAI.Consts,
+  h5u.DAI.MCP.Tools,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
   h5u.DAI.Settings;
+
+procedure AddIndentedLines(const ALines: TStrings; const AText: string);
+var
+  LLine: string;
+  LParts: TStringList;
+begin
+  LParts := TStringList.Create;
+  try
+    LParts.Text := AText;
+    for LLine in LParts do
+      if Trim(LLine) <> '' then
+        ALines.Add('    ' + Trim(LLine));
+  finally
+    LParts.Free;
+  end;
+end;
 
 function NewLabel(const AParent: TWinControl; const ACaption: string; const ALeft: Integer; const ATop: Integer): TLabel;
 begin
@@ -280,8 +299,8 @@ begin
   FClientStatusMemo.Width := 736;
   FClientStatusMemo.Height := 154;
   FClientStatusMemo.ReadOnly := True;
-  FClientStatusMemo.ScrollBars := ssVertical;
-  FClientStatusMemo.WordWrap := True;
+  FClientStatusMemo.ScrollBars := ssBoth;
+  FClientStatusMemo.WordWrap := False;
   Inc(LTop, 164);
 
   FCodexStatusLabel := NewLabel(Self, '', 24, LTop);
@@ -312,6 +331,13 @@ begin
   FUnregisterButton.Width := 160;
   FUnregisterButton.Caption := 'Deregistrieren';
   FUnregisterButton.OnClick := UnregisterClicked;
+
+  FShowToolsButton := TButton.Create(Self);
+  FShowToolsButton.Parent := Self;
+  FShowToolsButton.Name := 'DAIFunctionsButton';
+  FShowToolsButton.SetBounds(368, LTop, 280, 28);
+  FShowToolsButton.Caption := 'Skill und MCP-Werkzeuge';
+  FShowToolsButton.OnClick := ShowToolsClicked;
   Inc(LTop, 48);
 
   LInfoLabel := NewLabel(
@@ -331,6 +357,69 @@ begin
 
   Align := alTop;
   Height := LTop;
+end;
+
+procedure TDAIOptionsFrame.ShowToolsClicked(Sender: TObject);
+var
+  LDialog: TForm;
+  LMemo: TMemo;
+  LOKButton: TButton;
+  LTool: TJSONValue;
+  LTools: TJSONArray;
+  LObject: TJSONObject;
+begin
+  LTools := TDAIMCPTools.ListTools;
+  try
+    LDialog := TForm.CreateNew(nil);
+    try
+      LDialog.Name := 'DAIToolCatalogDialog';
+      LDialog.Caption := 'DAI – Skill und MCP-Werkzeuge';
+      LDialog.Position := poScreenCenter;
+      LDialog.BorderStyle := bsSizeable;
+      LDialog.ClientWidth := 820;
+      LDialog.ClientHeight := 560;
+      LDialog.Constraints.MinWidth := 520;
+      LDialog.Constraints.MinHeight := 320;
+      LDialog.Font.Name := 'Segoe UI';
+      LDialog.Font.Size := 9;
+
+      LMemo := TMemo.Create(LDialog);
+      LMemo.Name := 'DAIToolCatalogMemo';
+      LMemo.Parent := LDialog;
+      LMemo.SetBounds(16, 16, LDialog.ClientWidth - 32, LDialog.ClientHeight - 72);
+      LMemo.Anchors := [akLeft, akTop, akRight, akBottom];
+      LMemo.ReadOnly := True;
+      LMemo.ScrollBars := ssBoth;
+      LMemo.WordWrap := False;
+      LMemo.Font.Name := 'Consolas';
+      LMemo.Font.Size := 10;
+      LMemo.Clear;
+      LMemo.Lines.Add('Skill: ' + CDAISkillDirectoryName);
+      LMemo.Lines.Add('MCP-Werkzeuge: ' + IntToStr(LTools.Count));
+      for LTool in LTools do
+        if LTool is TJSONObject then
+        begin
+          LObject := TJSONObject(LTool);
+          LMemo.Lines.Add(LObject.GetValue<string>('name', ''));
+          AddIndentedLines(LMemo.Lines, LObject.GetValue<string>('description', ''));
+        end;
+
+      LOKButton := TButton.Create(LDialog);
+      LOKButton.Parent := LDialog;
+      LOKButton.SetBounds(LDialog.ClientWidth - 112, LDialog.ClientHeight - 44, 96, 28);
+      LOKButton.Anchors := [akRight, akBottom];
+      LOKButton.Caption := 'OK';
+      LOKButton.Default := True;
+      LOKButton.Cancel := True;
+      LOKButton.ModalResult := mrOK;
+      LDialog.ActiveControl := LOKButton;
+      LDialog.ShowModal;
+    finally
+      LDialog.Free;
+    end;
+  finally
+    LTools.Free;
+  end;
 end;
 
 procedure TDAIOptionsFrame.StartServerClicked(Sender: TObject);
@@ -533,13 +622,14 @@ begin
       else if LText = 'conflict' then LText := 'Konflikt'
       else if LText = 'missing_bridge' then LText := 'Delphi-Brücke fehlt'
       else if LText = 'error' then LText := 'Fehler';
-      FClientStatusMemo.Lines.Add(LObject.GetValue<string>('label', '') + ': ' + LText);
+      FClientStatusMemo.Lines.Add(LObject.GetValue<string>('label', ''));
+      AddIndentedLines(FClientStatusMemo.Lines, 'Status: ' + LText);
       LText := LObject.GetValue<string>('path', '');
-      if LText <> '' then FClientStatusMemo.Lines.Add('  ' + LText);
+      AddIndentedLines(FClientStatusMemo.Lines, LText);
       LText := LObject.GetValue<string>('message', '');
-      if LText <> '' then FClientStatusMemo.Lines.Add('  ' + LText);
+      AddIndentedLines(FClientStatusMemo.Lines, LText);
       LText := LObject.GetValue<string>('backup', '');
-      if LText <> '' then FClientStatusMemo.Lines.Add('  Sicherung: ' + LText);
+      if LText <> '' then AddIndentedLines(FClientStatusMemo.Lines, 'Sicherung: ' + LText);
     end;
   finally
     FClientStatusMemo.Lines.EndUpdate;

@@ -14,6 +14,7 @@ uses
   System.SysUtils,
   Winapi.Windows,
   IdHTTPServer,
+  h5u.DAI.IDE.Control,
   h5u.DAI.MCP.Server,
   h5u.DAI.MCP.Sessions,
   h5u.DAI.MCP.Tools,
@@ -120,6 +121,39 @@ function InitializeSession: IHTTPResponse;
 begin
   Result := Post('{"jsonrpc":"2.0","id":"capacity","method":"initialize","params":' +
     '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"CapacityTest","version":"1"}}}');
+end;
+
+procedure RunDeferredCloseChecks;
+var
+  LContent: string;
+  LJson: TJSONValue;
+  LUntil: UInt64;
+begin
+  TDAIIDEControl.Completed := 0;
+  Response := Post('{"jsonrpc":"2.0","id":301,"method":"tools/call","params":{"name":"deferred-close","arguments":{},' +
+    CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'deferred-close');
+  LContent := Response.ContentAsString;
+  LJson := TJSONObject.ParseJSONValue(LContent);
+  try
+    Check((Response.StatusCode = 200) and (LJson is TJSONObject), 'deferred close receives one complete JSON response');
+    Check(LJson.GetValue<Integer>('id') = 301, 'deferred close acknowledgement matches request');
+    Check(Pos('deferred-close', LContent) > 0, 'deferred close response contains tool result');
+    Check(Response.HeaderValue['Content-Length'] = IntToStr(TEncoding.UTF8.GetByteCount(LContent)),
+      'deferred close response is not duplicated or truncated');
+  finally
+    LJson.Free;
+  end;
+  LUntil := GetTickCount64 + 1000;
+  while (TDAIIDEControl.Completed = 0) and (GetTickCount64 < LUntil) do
+    Sleep(1);
+  Check(TDAIIDEControl.Completed = 1, 'server completes deferred close exactly once after acknowledgement');
+  Response := Post('{"jsonrpc":"2.0","id":302,"method":"tools/call","params":{"name":"failed-deferred-close","arguments":{},' +
+    CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'failed-deferred-close');
+  Check(Pos('"isError":true', Response.ContentAsString) > 0, 'failed tool returns error result');
+  Check(TDAIIDEControl.Completed = 1, 'failed tool does not complete prepared close');
+  Response := Post('{"jsonrpc":"2.0","id":303,"method":"ping","params":{' + CModernMeta + '}}',
+    '', '2026-07-28', 'ping');
+  Check((Response.StatusCode = 200) and (TDAIIDEControl.Completed = 1), 'next request cannot inherit failed close');
 end;
 
 procedure RunChecks;
@@ -272,6 +306,7 @@ begin
     Blocker.Bindings[0].Port := OriginalPort;
     Blocker.Active := True;
     Check(not Server.Start, 'occupied port rejects startup');
+    Check(Pos('Winsock=10048', Server.LastError) > 0, 'occupied-port error preserves the actual inner Winsock address-in-use code');
     TDAISettings.Instance.Port := OriginalPort + 20;
     Check(Other.Start, 'failed bind releases ownership after cleanup');
     Check(Other.Stop, 'stop takeover after failed bind');
@@ -387,12 +422,25 @@ var
   LMainThreadId: Cardinal;
   LReentrantStartRejected: Boolean;
   LReentrantStartError: string;
+  LReentrantDefaultStartRejected: Boolean;
+  LReentrantDefaultStartError: string;
+  LReentrantSameStartRejected: Boolean;
+  LReentrantSameStartError: string;
+  LReentrantApplyRejected: Boolean;
+  LReentrantApplyError: string;
 begin
   LPort := Server.Port;
   LToken := TDAISettings.Instance.Token;
   LMainThreadId := GetCurrentThreadId;
   LReentrantStartRejected := False;
   LReentrantStartError := '';
+  LReentrantDefaultStartRejected := False;
+  LReentrantDefaultStartError := '';
+  LReentrantSameStartRejected := False;
+  LReentrantSameStartError := '';
+  LReentrantApplyRejected := False;
+  LReentrantApplyError := '';
+  Check(TDAISettings.Instance.Port = LPort, 'shutdown fixture uses the same saved and active port');
   LRequestFinished := TEvent.Create(nil, True, False, '');
   LTestFinished := TEvent.Create(nil, True, False, '');
   TDAIMCPTools.SynchronizeEntered := TEvent.Create(nil, True, False, '');
@@ -403,6 +451,12 @@ begin
     begin
       LReentrantStartRejected := not Server.Start(LPort + 1, LToken);
       LReentrantStartError := Server.LastError;
+      LReentrantDefaultStartRejected := not Server.Start;
+      LReentrantDefaultStartError := Server.LastError;
+      LReentrantSameStartRejected := not Server.Start(LPort, LToken);
+      LReentrantSameStartError := Server.LastError;
+      LReentrantApplyRejected := not Server.ApplySettings;
+      LReentrantApplyError := Server.LastError;
     end;
   LOther := TDAIMCPServer.Create(CDAIMCPSessionIdleTimeoutMs, 3, nil, InstanceName);
   LRequestThread := TThread.CreateAnonymousThread(
@@ -457,6 +511,12 @@ begin
     Check(TDAIMCPTools.SynchronizeCompleted = 1, 'shutdown executes pending synchronized tool before returning');
     Check(TDAIMCPTools.SynchronizeCallbackThreadId = LMainThreadId, 'shutdown executes synchronized tool on owning main thread');
     Check(LReentrantStartRejected and (LReentrantStartError <> ''), 'synchronized callback cannot restart listener during shutdown');
+    Check(LReentrantDefaultStartRejected, 'synchronized callback cannot report parameterless Start success during shutdown');
+    Check(Pos('gerade gestoppt', LReentrantDefaultStartError) > 0, 'parameterless Start explicitly reports deactivation in progress');
+    Check(LReentrantSameStartRejected, 'synchronized callback cannot report identical explicit Start success during shutdown');
+    Check(Pos('gerade gestoppt', LReentrantSameStartError) > 0, 'identical explicit Start reports deactivation in progress');
+    Check(LReentrantApplyRejected, 'synchronized callback cannot report identical ApplySettings success during shutdown');
+    Check(Pos('gerade gestoppt', LReentrantApplyError) > 0, 'identical ApplySettings reports deactivation in progress');
     Check(LRequestFinished.WaitFor(5000) = wrSignaled, 'synchronized request client finishes within bounded wait');
     LRequestThread.WaitFor;
     Check(StartOnFreePort(LOther, LPort + 80, LToken) > 0, 'synchronized shutdown releases instance lease after worker joins');
@@ -494,6 +554,7 @@ begin
           raise Exception.Create(Server.LastError);
       end;
       RunChecks;
+      RunDeferredCloseChecks;
       RunInstanceChecks;
       RunExplicitSettingsChecks;
       RunSynchronizedShutdownChecks;

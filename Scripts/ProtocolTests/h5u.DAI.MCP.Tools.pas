@@ -13,12 +13,16 @@ type
     class function CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject; static;
   end;
 implementation
-uses System.Classes, Winapi.Windows;
+uses System.Classes, Winapi.Windows, h5u.DAI.IDE.Control;
 class function TDAIMCPTools.ListTools: TJSONArray;
 begin Result := TJSONArray.Create; end;
 class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
 begin
   InterlockedIncrement(CallCount);
+  if SameText(AName, 'deferred-close') or SameText(AName, 'failed-deferred-close') then
+    TDAIIDEControl.PrepareFixtureClose;
+  if SameText(AName, 'failed-deferred-close') then
+    raise EInvalidOperation.Create('Isolated tool failure after preparation');
   if SameText(AName, 'sync-stop') and Assigned(SynchronizeEntered) then
   begin
     SynchronizeEntered.SetEvent;

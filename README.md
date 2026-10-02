@@ -3,6 +3,39 @@
 DAI ist ein Design-Time-Package für Delphi 13 / RAD Studio 13 (`BDS 37.0`). Es stellt lokal laufenden KI-Clients einen MCP-Server zur Verfügung und
 vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
 
+Zum Betrieb benötigt DAI sein zur IDE-Architektur passendes `DAI.bpl` und die mit Delphi installierten Runtime-/Design-Time-Packages.
+Eigene PAS/DCU/DCP-Dateien oder GetIt-Packages werden nicht benötigt. Port, Token, Berechtigungsdateien und die Clientregistrierung bleiben Konfiguration.
+Für Clients mit stdio-Anbindung wird zusätzlich die eigenständige `DAI.McpBridge.exe` neben der BPL bereitgestellt: Sie liest zeilenweise JSON-RPC von
+stdin, sendet authentifizierte HTTP-Anfragen an den MCP-Server der laufenden IDE und gibt Antworten über stdout zurück. Die Brücke startet keine IDE
+und keinen Server; Clients mit direkter HTTP-Anbindung verwenden sie nicht.
+
+Die bestehende Fehlersuche-Toolbar (`sDebugToolBar`) erhält einen DAI-Schalter mit Serverzustand und Port im Tooltip. Ein Klick startet/stoppt den Server;
+das Dropdown öffnet die DAI-Optionen/Berechtigungen oder setzt Sitzungsfreigaben zurück. DAI erstellt dafür keine eigene Toolbar.
+Transparente Serversymbole zeigen eine graue Pause für inaktiv, ein grünes Startdreieck für aktiv und ein rotes Warndreieck bei Fehlern.
+Die primäre Größe beträgt 16×16; weitere Auflösungen werden der IDE über `INTAServices280.AddImage` angeboten. Dafür wird Delphis Standardpackage `vclimg` verwendet.
+Die DAI-Aktion hat denselben stabilen Besitzer wie die IDE-ActionList. Beim Entfernen werden auch Toolbar-Klone derselben Aktion beseitigt.
+Ein öffentlicher ToolsAPI-Lesenotifier erfasst den ursprünglich benannten DAI-Button beim Toolbarrestore. Nach dem Lesen wird dieses
+eigene Objekt wieder mit Aktion und Menü verbunden; auch ein Restore vor dem ersten UI-Aufbau erzeugt damit keinen zusätzlichen Button.
+Nur unmittelbar nach dieser bestätigten Wiederverwendung darf außerdem ein einzelner vollständig inerter historischer Altrest entfernt werden.
+Eine begrenzte Migration entfernt die bestätigten alten drei bis fünf vollständig inerten Dropdown-Buttons unmittelbar zwischen „Rückkehr“
+und dem eigenen DAI-Button. Der Rückkehr-Button wird über die konkrete Aktion der offiziellen IDE-ActionList erkannt, da Delphi die
+Komponentennamen beim Wiederherstellen verlieren kann. Die Prüfung berücksichtigt auch spätere Desktoprestores bei erhaltenen Controls;
+abweichende Controls, fremde Aktionen und Objekte im Abbau bleiben erhalten.
+Nach Einbinden und Bereinigen ergänzt DAI den fehlenden horizontalen Platz bis zum rechten Rand seines tatsächlichen nativen Buttonrechtecks.
+Die feste Breite der IDE-Toolbar kann sonst einen vorhandenen VCL-sichtbaren Button vollständig abschneiden. Position, Höhe, DPI,
+Größenbeschränkungen und bereits größere Breiten werden berücksichtigt; gewöhnliche Refreshes verändern die Breite nicht.
+Die ReadOnly-Fensterinspektion liefert dafür Button-/Clientrechtecke, native Sichtbarkeit und Bildbestand. `visible` allein bezeichnet
+die VCL-Eigenschaft; der native Clientbereich entscheidet, ob der Button tatsächlich Platz hat.
+Die Optionsseite zeigt über „Skill und MCP-Werkzeuge“ den aktuellen dynamischen Katalog; Details zur Clientregistrierung sind um vier Leerzeichen eingerückt.
+
+`ide_window_control(action)` bietet `minimize`, `restore`, `foreground`, `background` und `close`. Windows kann eine Vordergrundanforderung ablehnen;
+die Antwort meldet den tatsächlichen Fensterzustand. `close` bestätigt vor `WM_CLOSE` den normalen Schließauftrag, keine abgeschlossene Beendigung.
+Delphi behält seine Speicherrückfragen und kann das Schließen abbrechen. Das Werkzeug benötigt IDE-Bearbeitungsrechte, `close` zusätzlich Ausführungsrechte.
+
+Die Debugger-ToolsAPI liefert die Windows-Prozess-ID, Threads, Debuggerzustand und Speicherzugriff. Fenster und Dialoge des Debuggees werden mit
+`debugger_windows_list` über diese PID und die WinAPI gelesen; direkte fremde VCL-Formobjekte werden nicht angeboten. `Screen.ActiveCustomForm` gehört
+zum VCL-Prozess der IDE. Beim angehaltenen Debuggee können dessen Controltexte wegen blockierter Nachrichtenverarbeitung fehlen.
+
 ## Benennung
 
 - Package und Projekt: `DAI`
@@ -60,8 +93,19 @@ Zum Wechseln unter `Tools → Options → Third Party → DAI` in der aktiven ID
 im selben Dialog ein anderer Wert ausprobiert werden. Der Status zeigt den tatsächlich laufenden Port. Port und Token werden mit **Speichern** oder **Registrieren**
 dauerhaft übernommen; Starten/Stoppen wirkt sofort und wird durch **Abbrechen** nicht rückgängig gemacht.
 Die Schaltflächen verändern weder die gespeicherte Autostart-Einstellung noch Berechtigungen oder Clientregistrierungen.
+
+Start/Stop kehren erst nach Abschluss zurück. Während Stop werden erneute Start-/Übernahmeaufrufe abgewiesen. Auf dem IDE-Hauptthread schließt DAI
+zuerst den Listener; ein Hilfsthread beendet danach die HTTP-Arbeiter, während `WaitFor` wartende `Synchronize`-Aufrufe verarbeitet. Socketbindungen
+und die Instanzsperre werden erst nach vollständigem Abschluss freigegeben. Fehler enthalten den tatsächlichen Winsock-Code und, sofern vorhanden,
+die eigenen Socketzustände vor/nach dem letzten Stop. Bei eingeschaltetem Zugriffslogging werden auch erfolgreiche Stopdiagnosen angezeigt.
+
+Listener und angenommene HTTP-Sockets werden vor ihrer Verwendung als nicht vererbbar markiert und geprüft (`SetHandleInformation`).
+Damit behalten IDE-Kindprozesse wie LSP-/Hilfsprogramme keinen DAI-Socket nach dessen Stop. Bereits von älteren Versionen vererbte Sockets
+werden erst mit dem Ende der betreffenden Prozesse freigegeben; nach dem Package-Austausch ist deshalb eine frische IDE-Sitzung erforderlich.
+Windows-Sockets sind standardmäßig vererbbar; siehe [Microsoft WSASocket](https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsasocketw)
+und [SetHandleInformation](https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-sethandleinformation).
 **MCP-Server beim IDE-Start automatisch starten** gilt nur beim Start der IDE bzw. beim Laden des Packages. Das Übernehmen der Optionen bewahrt den manuellen
-Laufzustand. Bei einem laufenden Server wird nur eine Portänderung mit einem Neustart des Listeners angewendet; dabei bleibt die Instanzsperre gehalten.
+Laufzustand. Bei einem laufenden Server werden Port- und Tokenänderungen mit einem Neustart des Listeners angewendet; dabei bleibt die Instanzsperre gehalten.
 
 Win32 und Win64 verwenden bei gleichem BDS-Benutzerprofil weiterhin dieselben DAI-Einstellungen für Port und Token. Andere Delphi-Versionen bzw. eigene
 IDE-Profile können andere Einstellungen besitzen. Nach einem Wechsel müssen die Clientregistrierungen zum Port, Token und Bridge-Pfad der neuen aktiven IDE passen.
@@ -186,6 +230,16 @@ Option zum automatischen Speichern. Die tatsächliche Projektdatei und Hauptform
 
 ## IDE- und Anwendungsfenster lesen
 
+`ide_logs_read` liest die vorhandenen Compilerzeilen mit `source: "build"` und das Debugger-Ereignislog mit `source: "events"` getrennt.
+Standard sind die letzten 50 Einträge; `last_count` begrenzt auf 1–1000, `index` wählt stattdessen genau eine Zeile mit Index ab 0.
+`maximum_characters` begrenzt den übertragenen Text, standardmäßig auf 20.000 Zeichen. `total_count` beschreibt die vorhandene Liste;
+`returned_count`, Zeilenindizes, `truncated`, `text_truncated` und `timed_out` zeigen den Umfang und die Grenzen der Antwort.
+Die Zeilen bleiben chronologisch. Nicht erstellte oder nicht unterstützte Logkontrollen melden `available: false` und einen Grund, keine angeblich leere Liste.
+
+Die installierten öffentlichen OTA-Interfaces liefern Gruppenmetadaten und Ereignisbenachrichtigungen, aber keine Enumeration bestehender Logzeilen.
+DAI liest deshalb die bekannten VCL-Logkontrollen über verifizierte öffentliche Baum-Getter der bereits geladenen Delphi-13-IDE-Bibliothek.
+Der Adapter prüft Klassen und Exporte zur Laufzeit, behandelt Nodes nur als opaque Handles und verändert weder Tabwahl, Filter, Auswahl noch Loginhalt.
+
 `ide_windows_list` liest native Fenster der IDE einschließlich MessageBox und TaskDialog sowie verfügbare VCL-Form-/Controlmetadaten.
 `debugger_windows_list` verwendet die Windows-Prozess-ID des aktuellen OTA-Debuggerprozesses und liest dessen native Fenster.
 Die ToolsAPI liefert keinen allgemeinen Katalog der Fenster des Debuggees; dafür verwendet DAI die WinAPI.
@@ -292,6 +346,10 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 
 ### Lesen
 
+- `debugger_stacktrace`: Stack des angehaltenen Threads, standardmäßig maximal 50 Frames; optional eine OS-Thread-ID auswählen.
+- `debugger_threads_list`: Threads eines ausgewählten oder aller Debuggerprozesse; `debugger_status` listet die Prozesse einschließlich gedebuggter Subprozesse.
+- `ide_logs_read`: Compiler-/Debuggerlog mit Anzahl-, Index- und Zeichenlimit.
+
 - `ide_status`
 - `open_files_list`
 - `projects_list`
@@ -314,6 +372,8 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `breakpoints_list`
 
 ### Bearbeiten und IDE-Steuerung
+
+- `ide_window_control`: IDE-Fenster steuern; normaler Schließauftrag bewahrt Speicherrückfragen.
 
 - `file_write`
 - `project_create`
@@ -418,6 +478,14 @@ Ein vorhandener fremder `dai-delphi-ide`-Skill wird nicht überschrieben. Die au
 DFM-/FMX-Inhalte können bei geladenem Designer auch dessen ungespeicherten Zustand liefern (`source: designer_buffer`). Für Änderungen weiterhin den IDE-Textpuffer verwenden.
 
 `debugger_status` liefert Prozess-/Threadzustände; `breakpoints_list` die Quellhaltepunkte.
+`debugger_threads_list` liest standardmäßig den aktuellen Debuggerprozess; `process_id` wählt eine gelistete Windows-Prozess-ID,
+`all_processes: true` alle von Delphi gedebuggten Prozesse einschließlich gedebuggter Subprozesse. `maximum_threads` begrenzt die gesamte
+Antwort auf standardmäßig 200 Threads, höchstens 5000; Gesamtzahlen und `truncated` bleiben sichtbar.
+`debugger_stacktrace` verwendet den angehaltenen aktuellen Thread oder optional `process_id` und `thread_id` aus diesen Listen.
+`maximum_frames` begrenzt auf standardmäßig 50 Frames (höchstens 500), `maximum_characters` auf standardmäßig 20.000 Zeichen.
+Die Frame-Indizes beginnen bei 1. Fehlender beziehungsweise noch nicht zugänglicher Stack wird erklärt; `retryable` erlaubt erneutes Lesen.
+Beide Werkzeuge verändern weder die aktuelle Prozess-/Threadauswahl noch die Ausführung. Per-Frame-Modul und -Adresse bleiben `null`,
+weil die verwendeten öffentlichen ToolsAPI-Getter diese Angaben nicht liefern.
 `breakpoint_set` erwartet `file`, eine einsbasierte `line`, optional `enabled` (Standard `true`), `condition` und `pass_count` (Standard `0`).
 `breakpoint_remove(file, line)` entfernt passende Quellhaltepunkte. Änderungen sind auf Workspace-Dateien beschränkt.
 `debugger_control(action)` unterstützt `pause`, `continue`, `step_into`, `step_over` und `step_out` mit Prüfung des aktuellen Prozesszustands.
@@ -497,6 +565,7 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.Sessions.ps1 -Platform Win32
 .\Scripts\Test.Sessions.ps1 -Platform Win64
 .\Scripts\Test.Instance.ps1 -Platform Both
+.\Scripts\Test.ServerLifecycle.ps1 -Platform Both -Linkage Both -HostPeers
 .\Scripts\Test.SourceView.ps1 -Platform Both
 .\Scripts\Test.SourceSearch.ps1 -Platform Both
 .\Scripts\Test.SearchService.ps1 -Platform Both
@@ -510,6 +579,13 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.Dialogs.ps1 -Platform Both
 .\Scripts\Test.Log.ps1 -Platform Both
 .\Scripts\Test.Runtime.ps1 -Platform Both
+.\Scripts\Test.Options.ps1 -Platform Both
+.\Scripts\Test.Toolbar.ps1 -Platform Both
+.\Scripts\Test.IDEControl.ps1 -Platform Both
+.\Scripts\Test.Messages.ps1 -Platform Both
+.\Scripts\Test.Stack.ps1 -Platform Both
+.\Scripts\Test.Threads.ps1 -Platform Both
+.\Scripts\Test.ToolDispatch.ps1 -Platform Both
 python .\Scripts\test_bridge.py
 ```
 

@@ -1,0 +1,17 @@
+﻿package DAI.Toolbar.TestPackage;
+
+requires
+  rtl,
+  vcl,
+  vclimg;
+
+contains
+  DAI.Toolbar.PackageProbe in 'DAI.Toolbar.PackageProbe.pas',
+  h5u.DAI.IDE.Toolbar in '..\..\Source\h5u.DAI.IDE.Toolbar.pas',
+  h5u.DAI.Runtime in 'h5u.DAI.Runtime.pas',
+  h5u.DAI.Settings in 'h5u.DAI.Settings.pas',
+  h5u.DAI.Permissions.Manager in 'h5u.DAI.Permissions.Manager.pas',
+  h5u.DAI.Log in 'h5u.DAI.Log.pas',
+  ToolsAPI in 'ToolsAPI.pas';
+
+end.

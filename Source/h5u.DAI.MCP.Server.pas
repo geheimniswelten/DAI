@@ -9,20 +9,26 @@ uses
   h5u.DAI.MCP.Sessions,
   IdContext,
   IdCustomHTTPServer,
-  IdHTTPServer;
+  IdHTTPServer,
+  IdSocketHandle;
 
 type
   TDAIHTTPServer = class(TIdHTTPServer)
   private
     FDeactivating: Boolean;
     FShutdownPending: Boolean;
+    FLastStopDiagnostics: string;
     function GetShutdownPending: Boolean;
   protected
+    procedure DoBeforeBind(AHandle: TIdSocketHandle); override;
+    procedure DoConnect(AContext: TIdContext); override;
     procedure Startup; override;
     procedure Shutdown; override;
   public
     procedure Deactivate;
     property ShutdownPending: Boolean read GetShutdownPending;
+    property Deactivating: Boolean read FDeactivating;
+    property LastStopDiagnostics: string read FLastStopDiagnostics;
   end;
 
   TDAIMCPServer = class sealed
@@ -62,13 +68,117 @@ uses
   System.JSON,
   System.RegularExpressions,
   IdException,
-  IdSocketHandle,
+  IdStack,
   Winapi.Windows,
+  Winapi.WinSock2,
   h5u.DAI.Consts,
+  h5u.DAI.IDE.Control,
   h5u.DAI.Log,
   h5u.DAI.MCP.Protocol,
   h5u.DAI.Settings,
   h5u.DAI.WinAPI.TCP;
+
+type
+  TDAIListenerSnapshot = record
+    Handle: TSocket;
+    Address: TSockAddrIn;
+    Listening: Boolean;
+    ReadSucceeded: Boolean;
+    SocketError: Integer;
+    InheritanceKnown: Boolean;
+    Inheritable: Boolean;
+  end;
+
+function ReadListenerSnapshot(const AHandle: TSocket): TDAIListenerSnapshot;
+var
+  LAcceptConnections: Integer;
+  LSize: Integer;
+  LHandleFlags: DWORD;
+begin
+  Result := Default(TDAIListenerSnapshot);
+  Result.Handle := AHandle;
+  Result.InheritanceKnown := GetHandleInformation(THandle(AHandle), LHandleFlags);
+  if Result.InheritanceKnown then
+    Result.Inheritable := (LHandleFlags and HANDLE_FLAG_INHERIT) <> 0;
+  LAcceptConnections := 0;
+  LSize := SizeOf(LAcceptConnections);
+  if getsockopt(AHandle, SOL_SOCKET, SO_ACCEPTCONN, MarshaledAString(@LAcceptConnections), LSize) = SOCKET_ERROR then
+  begin
+    Result.SocketError := WSAGetLastError;
+    Exit;
+  end;
+  LSize := SizeOf(Result.Address);
+  if getsockname(AHandle, TSockAddr(Result.Address), LSize) = SOCKET_ERROR then
+  begin
+    Result.SocketError := WSAGetLastError;
+    Exit;
+  end;
+  Result.ReadSucceeded := True;
+  Result.Listening := (LAcceptConnections <> 0) and (Result.Address.sin_family = AF_INET);
+end;
+
+function ListenerSnapshotText(const ASnapshot: TDAIListenerSnapshot): string;
+var
+  LInheritance: string;
+begin
+  if not ASnapshot.ReadSucceeded then
+    Exit(Format('Socket=%s, nicht lesbar, Winsock=%d', [IntToHex(NativeUInt(ASnapshot.Handle), SizeOf(TSocket) * 2), ASnapshot.SocketError]));
+  if ASnapshot.InheritanceKnown then
+    LInheritance := BoolToStr(ASnapshot.Inheritable, True)
+  else
+    LInheritance := 'unbekannt';
+  Result := Format('Socket=%s, LISTEN=%s, Port=%d, vererbbar=%s', [IntToHex(NativeUInt(ASnapshot.Handle), SizeOf(TSocket) * 2),
+    BoolToStr(ASnapshot.Listening, True), ntohs(ASnapshot.Address.sin_port), LInheritance]);
+end;
+
+function IndyExceptionText(const AException: Exception): string;
+var
+  LCurrent: Exception;
+  LDepth: Integer;
+begin
+  Result := '';
+  LCurrent := AException;
+  LDepth := 0;
+  while Assigned(LCurrent) and (LDepth < 8) do
+  begin
+    if Result <> '' then
+      Result := Result + '; ';
+    Result := Result + LCurrent.ClassName + ': ' + LCurrent.Message;
+    if LCurrent is EIdSocketError then
+      Result := Result + Format(' (Winsock=%d)', [EIdSocketError(LCurrent).LastError]);
+    LCurrent := LCurrent.InnerException;
+    Inc(LDepth);
+  end;
+end;
+
+procedure MakeSocketNonInheritable(const ABinding: TIdSocketHandle);
+var
+  LFlags: DWORD;
+begin
+  if not Assigned(ABinding) then
+    raise EInvalidOperation.Create('Der DAI-Socket ist vor dem Vererbungsschutz nicht verfügbar.');
+  if not ABinding.HandleAllocated then
+    raise EInvalidOperation.Create('Der DAI-Socket ist vor dem Vererbungsschutz nicht verfügbar.');
+  // IDE child processes (LSP/debuggee/helpers) must not retain our socket object.
+  if not SetHandleInformation(THandle(ABinding.Handle), HANDLE_FLAG_INHERIT, 0) then
+    RaiseLastOSError(GetLastError, 'Der DAI-Socket konnte nicht gegen Handlevererbung geschützt werden.');
+  if not GetHandleInformation(THandle(ABinding.Handle), LFlags) then
+    RaiseLastOSError(GetLastError, 'Der Vererbungsschutz des DAI-Sockets konnte nicht geprüft werden.');
+  if (LFlags and HANDLE_FLAG_INHERIT) <> 0 then
+    raise EInvalidOperation.Create('Der DAI-Socket bleibt trotz Vererbungsschutz vererbbar.');
+end;
+
+procedure TDAIHTTPServer.DoBeforeBind(AHandle: TIdSocketHandle);
+begin
+  MakeSocketNonInheritable(AHandle);
+  inherited;
+end;
+
+procedure TDAIHTTPServer.DoConnect(AContext: TIdContext);
+begin
+  MakeSocketNonInheritable(AContext.Binding);
+  inherited;
+end;
 
 procedure TDAIHTTPServer.Startup;
 begin
@@ -94,44 +204,87 @@ var
   LThread: TThread;
   LFailureClass: string;
   LFailureMessage: string;
+  LBefore: TArray<TDAIListenerSnapshot>;
+  LAfter: TDAIListenerSnapshot;
+  LIndex: Integer;
+  LStackClass: string;
 begin
   if FDeactivating then
     raise EInvalidOperation.Create('Die MCP-Serverbereinigung läuft bereits.');
   if not Active then
     Exit;
 
+  SetLength(LBefore, Bindings.Count);
+  if Assigned(GStack) then
+    LStackClass := GStack.ClassName
+  else
+    LStackClass := 'nil';
+  FLastStopDiagnostics := Format('Server=%s, Thread=%d, Stack=%s', [IntToHex(NativeUInt(Self), SizeOf(Pointer) * 2),
+    GetCurrentThreadId, LStackClass]);
+  for LIndex := 0 to Bindings.Count - 1 do
+  begin
+    LBefore[LIndex] := ReadListenerSnapshot(TSocket(Bindings[LIndex].Handle));
+    FLastStopDiagnostics := FLastStopDiagnostics + '; vorher: ' + ListenerSnapshotText(LBefore[LIndex]);
+  end;
+
   FDeactivating := True;
   try
     if GetCurrentThreadId <> MainThreadID then
     begin
       Active := False;
-      Exit;
+    end
+    else
+    begin
+      // Close the listener on the IDE thread before draining workers in the helper.
+      // Indy Shutdown calls StopListening again; its listener list is already empty.
+      StopListening;
+
+      // Main-thread WaitFor processes Synchronize requests from retiring HTTP workers.
+      LThread := TThread.CreateAnonymousThread(
+        procedure
+        begin
+          Self.Active := False;
+        end
+      );
+      LThread.FreeOnTerminate := False;
+      try
+        LThread.Start;
+        LThread.WaitFor;
+        if Assigned(LThread.FatalException) then
+        begin
+          LFailureClass := LThread.FatalException.ClassName;
+          if LThread.FatalException is Exception then
+            LFailureMessage := Exception(LThread.FatalException).Message
+          else
+            LFailureMessage := 'Unbekannter Fehler bei der Serverbereinigung.';
+          // The thread owns FatalException; propagate copied data in a new exception.
+          raise EInvalidOperation.CreateFmt('MCP-Serverbereinigung im Hintergrund fehlgeschlagen: %s: %s', [LFailureClass, LFailureMessage]);
+        end;
+      finally
+        LThread.Free;
+      end;
     end;
 
-    // Main-thread WaitFor processes Synchronize requests from retiring HTTP workers.
-    LThread := TThread.CreateAnonymousThread(
-      procedure
+    // Inspect only our saved handles. Never close a raw handle which may have been reused.
+    for LIndex := 0 to High(LBefore) do
+    begin
+      LAfter := ReadListenerSnapshot(LBefore[LIndex].Handle);
+      FLastStopDiagnostics := FLastStopDiagnostics + '; danach: ' + ListenerSnapshotText(LAfter);
+      if LBefore[LIndex].Listening and LAfter.Listening and
+        (LBefore[LIndex].Address.sin_addr.S_addr = LAfter.Address.sin_addr.S_addr) and
+        (LBefore[LIndex].Address.sin_port = LAfter.Address.sin_port) then
       begin
-        Self.Active := False;
-      end
-    );
-    LThread.FreeOnTerminate := False;
-    try
-      LThread.Start;
-      LThread.WaitFor;
-      if Assigned(LThread.FatalException) then
-      begin
-        LFailureClass := LThread.FatalException.ClassName;
-        if LThread.FatalException is Exception then
-          LFailureMessage := Exception(LThread.FatalException).Message
-        else
-          LFailureMessage := 'Unbekannter Fehler bei der Serverbereinigung.';
-        // The thread owns FatalException; propagate copied data in a new exception.
-        raise EInvalidOperation.CreateFmt('MCP-Serverbereinigung im Hintergrund fehlgeschlagen: %s: %s', [LFailureClass, LFailureMessage]);
+        FShutdownPending := True;
+        raise EInvalidOperation.Create('Ein bisheriger MCP-Socket ist nach Stop noch aktiv oder wurde für denselben Endpunkt wiederverwendet. ' + FLastStopDiagnostics);
       end;
-    finally
-      LThread.Free;
     end;
+    for LIndex := 0 to Bindings.Count - 1 do
+      if Bindings[LIndex].HandleAllocated then
+      begin
+        FShutdownPending := True;
+        raise EInvalidOperation.Create('Indy hält nach dem Stoppen noch eine Socketbindung. ' + FLastStopDiagnostics);
+      end;
+    TDAILog.Access('MCP-Stop abgeschlossen. ' + FLastStopDiagnostics);
   finally
     FDeactivating := False;
   end;
@@ -365,6 +518,11 @@ var
 begin
   System.TMonitor.Enter(FStateLock);
   try
+    if FHTTPServer.Deactivating then
+    begin
+      FLastError := 'Der MCP-Server wird gerade gestoppt. Erst den vollständigen Abschluss abwarten.';
+      Exit(False);
+    end;
     // Autostart is evaluated once by Runtime.Start. Preserve manual Start/Stop here.
     if not Active then
       Exit(not FHTTPServer.ShutdownPending);
@@ -381,6 +539,21 @@ begin
   finally
     System.TMonitor.Exit(FStateLock);
   end;
+end;
+
+function SuccessfulToolResponse(const AResponse: TJSONObject; const AHTTPStatus: Integer): Boolean;
+var
+  LResult: TJSONObject;
+begin
+  Result := False;
+  if (AHTTPStatus <> 200) or not Assigned(AResponse) then
+    Exit;
+  if Assigned(AResponse.GetValue('error')) then
+    Exit;
+  LResult := JsonObject(AResponse, 'result');
+  if not Assigned(LResult) then
+    Exit;
+  Result := not LResult.GetValue<Boolean>('isError', False);
 end;
 
 procedure TDAIMCPServer.HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
@@ -402,6 +575,7 @@ var
   LText: string;
   LValue: TJSONValue;
 begin
+  TDAIIDEControl.ResetDeferredClose;
   AResponseInfo.ContentType := 'application/json';
   AResponseInfo.CharSet := 'utf-8';
   AResponseInfo.CustomHeaders.Values['Cache-Control'] := 'no-store';
@@ -572,7 +746,18 @@ begin
           // Indy otherwise replaces an empty 202 response with an HTML status page.
           AResponseInfo.ContentLength := 0;
         end;
+        if TDAIIDEControl.HasDeferredClose then
+        begin
+          if SuccessfulToolResponse(LResponseJson, LHTTPStatus) then
+          begin
+            // Send the acknowledgement before WM_CLOSE can start IDE/server teardown.
+            // Indy clears ContentText after WriteContent and will not send it twice.
+            AResponseInfo.WriteContent;
+            TDAIIDEControl.CompleteDeferredClose;
+          end;
+        end;
       finally
+        TDAIIDEControl.ResetDeferredClose;
         LResponseJson.Free;
       end;
     finally
@@ -583,6 +768,7 @@ begin
   except
     on E: Exception do
     begin
+      TDAIIDEControl.ResetDeferredClose;
       TDAILog.Error('HTTP-MCP: ' + E.ClassName + ': ' + E.Message);
       AResponseInfo.ResponseNo := 500;
       AResponseInfo.ContentText := ErrorJson(E.ClassName + ': ' + E.Message);
@@ -613,6 +799,11 @@ function TDAIMCPServer.Start: Boolean;
 begin
   System.TMonitor.Enter(FStateLock);
   try
+    if FHTTPServer.Deactivating then
+    begin
+      FLastError := 'Der MCP-Server wird gerade gestoppt. Erst den vollständigen Abschluss abwarten.';
+      Exit(False);
+    end;
     if Active then
     begin
       FLastError := '';
@@ -638,7 +829,14 @@ function TDAIMCPServer.StartUnlocked(const APort: Integer; const AToken: string)
 var
   LBinding: TIdSocketHandle;
   LOwnerDescription: string;
+  LOwner: TDAITCPListenerOwner;
+  LExceptionDescription: string;
 begin
+  if FHTTPServer.Deactivating then
+  begin
+    FLastError := 'Der MCP-Server wird gerade gestoppt. Erst den vollständigen Abschluss abwarten.';
+    Exit(False);
+  end;
   if not ValidateConfiguration(APort, AToken, FLastError) then
     Exit(False);
   if Active then
@@ -677,13 +875,19 @@ begin
   except
     on E: EIdCouldNotBindSocket do
     begin
+      LExceptionDescription := IndyExceptionText(E);
       ResetAfterFailedStart;
-      LOwnerDescription := TDAITCPListener.DescribeIPv4Owner(APort);
+      if TDAITCPListener.TryFindIPv4Owner(APort, LOwner) then
+        LOwnerDescription := 'Der Port ist bereits belegt. ' + TDAITCPListener.DescribeIPv4Owner(APort)
+      else
+        LOwnerDescription := 'In der Windows-TCP-Tabelle wurde kein lokaler Listener gefunden.';
       FLastError := Format(
-        'Der MCP-Server konnte nicht an %s:%d gebunden werden. Der Port ist bereits belegt. %s ' +
+        'Der MCP-Server konnte nicht an %s:%d gebunden werden. %s ' +
         'Das DAI-Package bleibt geladen; wählen Sie in den DAI-Einstellungen einen freien Port. Indy: %s',
-        [CDAIDefaultBindAddress, APort, LOwnerDescription, E.Message]
+        [CDAIDefaultBindAddress, APort, LOwnerDescription, LExceptionDescription]
       );
+      if FHTTPServer.LastStopDiagnostics <> '' then
+        FLastError := FLastError + ' Letzter Stop: ' + FHTTPServer.LastStopDiagnostics;
       TDAILog.Error(FLastError);
       Result := False;
     end;
@@ -719,6 +923,7 @@ begin
     FHTTPServer.Deactivate;
     if FHTTPServer.ShutdownPending then
       raise EInvalidOperation.Create('Die vorherige Serverbereinigung ist nicht abgeschlossen. Diese IDE neu starten.');
+    FHTTPServer.Bindings.Clear;
     FSessions.Clear;
     FPort := 0;
     FToken := '';

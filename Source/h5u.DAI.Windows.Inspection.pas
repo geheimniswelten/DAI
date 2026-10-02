@@ -29,8 +29,11 @@ uses
   System.Generics.Collections,
   System.SyncObjs,
   System.SysUtils,
+  Vcl.ComCtrls,
   Vcl.Controls,
   Vcl.Forms,
+  Vcl.ImgList,
+  Winapi.CommCtrl,
   Winapi.Messages;
 
 const
@@ -220,6 +223,126 @@ begin
   Result := (TInterlocked.CompareExchange(FCancelled, 0, 0) <> 0) or (GetTickCount64 >= FDeadline);
 end;
 
+function RectangleJson(const ARect: TRect): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  Result.AddPair('left', TJSONNumber.Create(ARect.Left));
+  Result.AddPair('top', TJSONNumber.Create(ARect.Top));
+  Result.AddPair('right', TJSONNumber.Create(ARect.Right));
+  Result.AddPair('bottom', TJSONNumber.Create(ARect.Bottom));
+end;
+
+procedure AddToolButtonDiagnostics(const AButton: TToolButton; const AJson: TJSONObject);
+var
+  LToolbar: TToolBar;
+  LLayout, LNative: TJSONObject;
+  LHandle: HWND;
+  LNativeImages: HIMAGELIST;
+  LCount: LRESULT;
+  LIndex: Integer;
+  LButton: TTBButton;
+  LClientRect, LItemRect: TRect;
+begin
+  AJson.AddPair('button_index', TJSONNumber.Create(AButton.Index));
+  AJson.AddPair('bounds', RectangleJson(AButton.BoundsRect));
+  if not (AButton.Parent is TToolBar) then
+    Exit;
+  LToolbar := TToolBar(AButton.Parent);
+  if csDestroying in LToolbar.ComponentState then
+    Exit;
+  LLayout := TJSONObject.Create;
+  AJson.AddPair('parent_toolbar', LLayout);
+  LLayout.AddPair('bounds', RectangleJson(LToolbar.BoundsRect));
+  LLayout.AddPair('visible', TJSONBool.Create(LToolbar.Visible));
+  LLayout.AddPair('showing', TJSONBool.Create(LToolbar.Showing));
+  LLayout.AddPair('auto_size', TJSONBool.Create(LToolbar.AutoSize));
+  LLayout.AddPair('wrapable', TJSONBool.Create(LToolbar.Wrapable));
+  LLayout.AddPair('hide_clipped_buttons', TJSONBool.Create(LToolbar.HideClippedButtons));
+  LLayout.AddPair('handle_allocated', TJSONBool.Create(LToolbar.HandleAllocated));
+  if Assigned(LToolbar.Images) then
+  begin
+    LLayout.AddPair('images_handle_allocated', TJSONBool.Create(LToolbar.Images.HandleAllocated));
+    // TCustomImageList.GetCount checks HandleAllocated and returns zero otherwise.
+    LLayout.AddPair('images_count', TJSONNumber.Create(LToolbar.Images.Count));
+  end
+  else
+  begin
+    LLayout.AddPair('images_handle_allocated', TJSONBool.Create(False));
+    LLayout.AddPair('images_count', TJSONNumber.Create(0));
+  end;
+  LNative := TJSONObject.Create;
+  LLayout.AddPair('native', LNative);
+  if not LToolbar.HandleAllocated then
+  begin
+    // VCL ClientRect/ClientWidth/ClientHeight would invoke HandleNeeded here.
+    LLayout.AddPair('client_rect', TJSONNull.Create);
+    LLayout.AddPair('client_width', TJSONNull.Create);
+    LLayout.AddPair('client_height', TJSONNull.Create);
+    LNative.AddPair('available', TJSONBool.Create(False));
+    LNative.AddPair('reason', 'handle_not_allocated');
+    Exit;
+  end;
+  LHandle := LToolbar.Handle;
+  if not Winapi.Windows.GetClientRect(LHandle, LClientRect) then
+  begin
+    LNative.AddPair('available', TJSONBool.Create(False));
+    LNative.AddPair('reason', 'client_rect_unavailable');
+    Exit;
+  end;
+  LLayout.AddPair('client_rect', RectangleJson(LClientRect));
+  LLayout.AddPair('client_width', TJSONNumber.Create(LClientRect.Right - LClientRect.Left));
+  LLayout.AddPair('client_height', TJSONNumber.Create(LClientRect.Bottom - LClientRect.Top));
+  LCount := SendMessage(LHandle, TB_BUTTONCOUNT, 0, 0);
+  if (LCount < 0)
+{$IFDEF CPUX64}
+    or (LCount > High(Integer))
+{$ENDIF}
+  then
+  begin
+    LNative.AddPair('available', TJSONBool.Create(False));
+    LNative.AddPair('reason', 'invalid_button_count');
+    Exit;
+  end;
+  LNative.AddPair('button_count', TJSONNumber.Create(Integer(LCount)));
+  LNativeImages := HIMAGELIST(SendMessage(LHandle, TB_GETIMAGELIST, 0, 0));
+  LNative.AddPair('has_image_list', TJSONBool.Create(LNativeImages <> 0));
+  if LNativeImages <> 0 then
+    LNative.AddPair('images_count', TJSONNumber.Create(ImageList_GetImageCount(LNativeImages)))
+  else
+    LNative.AddPair('images_count', TJSONNumber.Create(0));
+  LIndex := AButton.Index;
+  if (LIndex < 0) or (LIndex >= LCount) then
+  begin
+    LNative.AddPair('available', TJSONBool.Create(False));
+    LNative.AddPair('reason', 'index_outside_native_buttons');
+    Exit;
+  end;
+  FillChar(LButton, SizeOf(LButton), 0);
+  if SendMessage(LHandle, TB_GETBUTTON, WPARAM(LIndex), LPARAM(@LButton)) = 0 then
+  begin
+    LNative.AddPair('available', TJSONBool.Create(False));
+    LNative.AddPair('reason', 'native_button_unavailable');
+    Exit;
+  end;
+  LNative.AddPair('available', TJSONBool.Create(True));
+  // Never expose or dereference dwData, which is the VCL control pointer.
+  LNative.AddPair('identity_matches', TJSONBool.Create(LButton.dwData = NativeUInt(Pointer(AButton))));
+  LNative.AddPair('state', TJSONNumber.Create(LButton.fsState));
+  LNative.AddPair('hidden', TJSONBool.Create((LButton.fsState and TBSTATE_HIDDEN) <> 0));
+  LNative.AddPair('image_index', TJSONNumber.Create(LButton.iBitmap));
+  if SendMessage(LHandle, TB_GETITEMRECT, WPARAM(LIndex), LPARAM(@LItemRect)) <> 0 then
+  begin
+    LNative.AddPair('item_rect', RectangleJson(LItemRect));
+    LNative.AddPair('clipped', TJSONBool.Create((LItemRect.Left < LClientRect.Left) or (LItemRect.Top < LClientRect.Top) or
+      (LItemRect.Right > LClientRect.Right) or (LItemRect.Bottom > LClientRect.Bottom)));
+  end
+  else
+  begin
+    LNative.AddPair('item_rect', TJSONNull.Create);
+    LNative.AddPair('clipped', TJSONNull.Create);
+  end;
+end;
+
 function TWindowSnapshot.ReadIDE: TJSONObject;
 var
   LForms: TJSONArray;
@@ -268,6 +391,29 @@ var
       LControlJson.AddPair('handle_allocated', TJSONBool.Create(LHandle <> 0));
       LControlJson.AddPair('sensitive', TJSONBool.Create(LSensitive));
       LControlJson.AddPair('depth', TJSONNumber.Create(ADepth));
+      if Assigned(LControl.Parent) then
+      begin
+        LControlJson.AddPair('parent_name', LControl.Parent.Name);
+        LControlJson.AddPair('parent_class_name', LControl.Parent.ClassName);
+      end;
+      if Assigned(LControl.Owner) then
+      begin
+        LControlJson.AddPair('owner_name', LControl.Owner.Name);
+        LControlJson.AddPair('owner_class_name', LControl.Owner.ClassName);
+      end;
+      if (LControl is TToolButton) and not LSensitive then
+      begin
+        AddToolButtonDiagnostics(TToolButton(LControl), LControlJson);
+        LControlJson.AddPair('button_style', TJSONNumber.Create(Ord(TToolButton(LControl).Style)));
+        LControlJson.AddPair('image_index', TJSONNumber.Create(TToolButton(LControl).ImageIndex));
+        LControlJson.AddPair('image_name', TToolButton(LControl).ImageName);
+        LControlJson.AddPair('has_dropdown_menu', TJSONBool.Create(Assigned(TToolButton(LControl).DropdownMenu)));
+        if Assigned(TToolButton(LControl).Action) then
+        begin
+          LControlJson.AddPair('action_name', TToolButton(LControl).Action.Name);
+          LControlJson.AddPair('action_class_name', TToolButton(LControl).Action.ClassName);
+        end;
+      end;
       LControls.AddElement(LControlJson);
       Inc(LCount);
       if LControl is TWinControl then

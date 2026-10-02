@@ -12,7 +12,7 @@ const
   {$ENDIF}
   CDAIName = 'DAI';
   CDAIDisplayName = 'Delphi AI';
-  CDAIVersion = '1.2.7';
+  CDAIVersion = '1.2.13';
   CDAIDefaultPort = 7331;
   CDAIDefaultBindAddress = '127.0.0.1';
   CDAIMcpPath = '/mcp';

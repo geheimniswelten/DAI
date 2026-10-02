@@ -11,6 +11,7 @@ uses
   h5u.DAI.OTA.CodeInsight,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
+  h5u.DAI.Settings,
   h5u.DAI.UI;
 
 var
@@ -24,11 +25,33 @@ begin
 end;
 
 procedure FalseAndReentrantChecks;
+var
+  LDefaultCalls: Integer;
+  LExplicitCalls: Integer;
 begin
   Check(TDAIRuntime.StartServer(7777, 'isolated-test-token'), 'isolated endpoint starts');
   Check(TDAIMCPServer.CreatedCount = 1, 'one runtime owner created');
+  TDAISettings.Instance.Port := 7999;
+  TDAISettings.Instance.Token := 'different-persisted-test-token';
+  LDefaultCalls := TDAIMCPServer.DefaultStartCount;
+  LExplicitCalls := TDAIMCPServer.ExplicitStartCount;
+  Check(TDAIRuntime.StartServer, 'parameterless start is idempotent for active temporary endpoint');
+  Check(TDAIMCPServer.DefaultStartCount = LDefaultCalls + 1, 'active start reaches the server state guard');
+  Check(TDAIMCPServer.ExplicitStartCount = LExplicitCalls, 'active start never reapplies explicit persisted values');
+  Check(TDAIRuntime.ServerPort = 7777, 'active temporary port remains unchanged');
+  Check(TDAIMCPServer.LastAppliedToken = 'isolated-test-token', 'active temporary token remains unchanged');
+  Check(TDAISettings.Instance.Port = 7999, 'persisted port remains distinct from runtime');
+  Check(TDAISettings.Instance.Token = 'different-persisted-test-token', 'persisted token is not overwritten');
   TDAIMCPServer.FailureMode := 1;
-  TDAIMCPServer.OnStop := procedure begin TDAIRuntime.Stop; end;
+  TDAIMCPServer.OnStop :=
+    procedure
+    begin
+      Check(TDAIRuntime.ServerActive, 'server still reports active while its stop callback drains');
+      Check(not TDAIRuntime.StartServer, 'parameterless start during drain is rejected');
+      Check(TDAIRuntime.LastServerError.Contains('gestoppt'), 'drain refusal exposes the server reason');
+      Check(TDAIRuntime.ServerPort = 7777, 'rejected drain start preserves active port until stop finishes');
+      TDAIRuntime.Stop;
+    end;
   TDAIMCPServer.OnDestroy := procedure begin TDAIRuntime.Stop; end;
   Events.Clear;
   TDAIRuntime.Stop;
@@ -83,11 +106,33 @@ begin
   Check(TDAIMCPServer.UnsafeDestroyedCount = 0, 'all destructors follow successful drain');
 end;
 
+procedure DefaultStartExceptionChecks;
+begin
+  Check(TDAIRuntime.StartServer, 'inactive parameterless start uses current stored configuration');
+  Check(TDAIRuntime.ServerPort = 7999, 'cold parameterless start applies persisted port');
+  Check(TDAIMCPServer.LastAppliedToken = 'different-persisted-test-token', 'cold parameterless start applies persisted token');
+  TDAIMCPServer.RaiseDefaultStart := True;
+  try
+    Check(not TDAIRuntime.StartServer, 'default-start producer exception is contained');
+    Check(TDAIRuntime.LastServerError.Contains('isolated default start exception'), 'default-start exception appears in status');
+    Check(Events[Events.Count - 1].Contains('isolated default start exception'), 'default-start exception is logged');
+    Check(TDAIRuntime.ServerActive and (TDAIRuntime.ServerPort = 7999), 'contained exception does not overwrite active configuration');
+  finally
+    TDAIMCPServer.RaiseDefaultStart := False;
+  end;
+  Check(TDAIRuntime.StartServer, 'idempotent start recovers after producer exception');
+  Check(TDAIRuntime.LastServerError = '', 'successful start clears the prior error');
+  TDAIRuntime.Stop;
+  Check(not TDAIRuntime.ServerActive, 'additional default-start endpoint is cleaned up');
+  Check(TDAIMCPServer.UnsafeDestroyedCount = 0, 'default-start tests never destroy an undrained server');
+end;
+
 begin
   try
     FalseAndReentrantChecks;
     ExceptionAndFallbackChecks;
-    Writeln(Format('PASS: %d runtime shutdown checks', [CheckCount]));
+    DefaultStartExceptionChecks;
+    Writeln(Format('PASS: %d runtime start/shutdown checks', [CheckCount]));
   except
     on E: Exception do
     begin

@@ -6,13 +6,25 @@ uses
   System.Classes,
   System.JSON,
   System.SysUtils,
+  Vcl.ActnList,
+  Vcl.ComCtrls,
   Vcl.Controls,
+  Vcl.ExtCtrls,
   Vcl.Forms,
+  Vcl.Graphics,
+  Vcl.ImgList,
+  Vcl.Menus,
   Vcl.StdCtrls,
   Winapi.Windows,
+  Winapi.CommCtrl,
   h5u.DAI.Windows.Inspection;
 
 type
+  TDiagnosticToolbar = class(TToolBar)
+  public
+    procedure DropNativeHandle;
+  end;
+
   TWindowWorker = class(TThread)
   private
     FRespond: Boolean;
@@ -52,6 +64,11 @@ begin
   Inc(CheckCount);
   if not ACondition then
     raise Exception.Create('FAIL: ' + ADescription);
+end;
+
+procedure TDiagnosticToolbar.DropNativeHandle;
+begin
+  DestroyWnd;
 end;
 
 function HandleText(const AHandle: HWND): string;
@@ -402,6 +419,178 @@ begin
   end;
 end;
 
+procedure TestToolbarMetadata;
+var
+  LForm: TForm;
+  LPanel: TPanel;
+  LToolbar: TToolBar;
+  LSensitiveToolbar: TToolBar;
+  LButton: TToolButton;
+  LPlainButton: TToolButton;
+  LSensitiveButton: TToolButton;
+  LInheritedButton: TToolButton;
+  LAction: TAction;
+  LPrivateAction: TAction;
+  LPopup: TPopupMenu;
+  LResult: TJSONObject;
+  LControl: TJSONObject;
+  LMetadata: TJSONObject;
+  LPayload: string;
+
+  function Metadata(const AName: string): TJSONObject;
+  var
+    LFound: TJSONObject;
+  begin
+    LFound := FindVCLName(LResult, AName);
+    Check(Assigned(LFound), 'embedded toolbar control is present: ' + AName);
+    Result := TJSONObject(LFound.GetValue('vcl'));
+    Check(Assigned(Result), 'toolbar control has actual VCL metadata: ' + AName);
+  end;
+
+  procedure CheckNoButtonDetails(const AMetadata: TJSONObject; const AReason: string);
+  begin
+    Check(JsonString(AMetadata, 'sensitive') = 'true', AReason + ': sensitive status retained');
+    Check(not Assigned(AMetadata.GetValue('button_style')), AReason + ': button style excluded');
+    Check(not Assigned(AMetadata.GetValue('image_index')), AReason + ': image index excluded');
+    Check(not Assigned(AMetadata.GetValue('image_name')), AReason + ': image name excluded');
+    Check(not Assigned(AMetadata.GetValue('has_dropdown_menu')), AReason + ': dropdown state excluded');
+    Check(not Assigned(AMetadata.GetValue('action_name')), AReason + ': action name excluded');
+    Check(not Assigned(AMetadata.GetValue('action_class_name')), AReason + ': action class excluded');
+    Check(not Assigned(AMetadata.GetValue('button_index')), AReason + ': button index excluded');
+    Check(not Assigned(AMetadata.GetValue('bounds')), AReason + ': button bounds excluded');
+    Check(not Assigned(AMetadata.GetValue('parent_toolbar')), AReason + ': toolbar native diagnostics excluded');
+  end;
+
+begin
+  LForm := TForm.CreateNew(nil);
+  try
+    LForm.Name := 'WindowInspectionToolbarForm';
+    LPanel := TPanel.Create(LForm);
+    LPanel.Name := 'WindowInspectionToolbarPanel';
+    LPanel.Parent := LForm;
+    LToolbar := TToolBar.Create(LForm);
+    LToolbar.Name := 'WindowInspectionDebugToolbar';
+    LToolbar.Parent := LPanel;
+    LAction := TAction.Create(LForm);
+    LAction.Name := 'WindowInspectionServerAction';
+    LAction.Caption := 'Visible isolated server action';
+    LAction.ImageIndex := 6;
+    LPopup := TPopupMenu.Create(LForm);
+    LPopup.Name := 'WindowInspectionServerPopup';
+    LButton := TToolButton.Create(LForm);
+    LButton.Name := 'WindowInspectionServerButton';
+    LButton.Parent := LToolbar;
+    LButton.Action := LAction;
+    LButton.Style := tbsDropDown;
+    LButton.ImageIndex := 6;
+    LButton.ImageName := 'WindowInspection.StatusGlyph';
+    LButton.DropdownMenu := LPopup;
+    LPlainButton := TToolButton.Create(LToolbar);
+    LPlainButton.Name := 'WindowInspectionPlainButton';
+    LPlainButton.Parent := LToolbar;
+    LPlainButton.Style := tbsButton;
+    LPlainButton.ImageIndex := -1;
+    LPrivateAction := TAction.Create(LForm);
+    LPrivateAction.Name := 'PrivateToolbarActionMarker';
+    LPrivateAction.Caption := 'test-only-toolbar-secret';
+    LSensitiveButton := TToolButton.Create(LForm);
+    LSensitiveButton.Name := 'WindowInspectionApiTokenButton';
+    LSensitiveButton.Parent := LToolbar;
+    LSensitiveButton.Action := LPrivateAction;
+    LSensitiveButton.ImageName := 'PrivateToolbarImageMarker';
+    LSensitiveButton.DropdownMenu := LPopup;
+    LSensitiveToolbar := TToolBar.Create(LForm);
+    LSensitiveToolbar.Name := 'WindowInspectionTokenToolbar';
+    LSensitiveToolbar.Parent := LPanel;
+    LInheritedButton := TToolButton.Create(LForm);
+    LInheritedButton.Name := 'WindowInspectionInheritedButton';
+    LInheritedButton.Parent := LSensitiveToolbar;
+    LInheritedButton.Action := LPrivateAction;
+    LInheritedButton.ImageName := 'PrivateInheritedImageMarker';
+
+    LResult := TDAIWindowService.IDEWindows(True, 100, 500, 1000);
+    try
+      LMetadata := Metadata(LToolbar.Name);
+      Check(JsonString(LMetadata, 'parent_name') = LPanel.Name, 'toolbar reports actual panel parent');
+      Check(JsonString(LMetadata, 'parent_class_name') = 'TPanel', 'toolbar parent class reported');
+      Check(JsonString(LMetadata, 'owner_name') = LForm.Name, 'toolbar reports its independent form owner');
+      Check(JsonString(LMetadata, 'owner_class_name') = 'TForm', 'toolbar owner class reported');
+      LMetadata := Metadata(LButton.Name);
+      Check(JsonString(LMetadata, 'class_name') = 'TToolButton', 'actual embedded VCL button class reported');
+      Check(JsonString(LMetadata, 'parent_name') = LToolbar.Name, 'dropdown button reports containing toolbar parent');
+      Check(JsonString(LMetadata, 'parent_class_name') = 'TToolBar', 'dropdown parent class reported');
+      Check(JsonString(LMetadata, 'owner_name') = LForm.Name, 'dropdown form owner is distinct from its toolbar parent');
+      Check(JsonString(LMetadata, 'owner_class_name') = 'TForm', 'dropdown owner class reported');
+      Check(JsonInteger(LMetadata, 'button_style') = Ord(tbsDropDown), 'actual dropdown enum ordinal reported');
+      Check(JsonInteger(LMetadata, 'image_index') = 6, 'actual button image index reported');
+      Check(JsonString(LMetadata, 'image_name') = 'WindowInspection.StatusGlyph', 'actual button image name reported');
+      Check(JsonString(LMetadata, 'has_dropdown_menu') = 'true', 'assigned real popup reported');
+      Check(JsonString(LMetadata, 'action_name') = LAction.Name, 'actual action name reported');
+      Check(JsonString(LMetadata, 'action_class_name') = 'TAction', 'actual action class reported');
+      Check(JsonString(LMetadata, 'handle_allocated') = 'false', 'graphic ToolButton does not acquire an HWND for inspection');
+      LMetadata := Metadata(LPlainButton.Name);
+      Check(JsonString(LMetadata, 'owner_name') = LToolbar.Name, 'plain button retains its toolbar owner');
+      Check(JsonString(LMetadata, 'owner_class_name') = 'TToolBar', 'plain button owner class reported');
+      Check(JsonString(LMetadata, 'parent_name') = LToolbar.Name, 'plain button parent retained');
+      Check(JsonInteger(LMetadata, 'button_style') = Ord(tbsButton), 'plain button enum ordinal reported');
+      Check(JsonInteger(LMetadata, 'image_index') = -1, 'absent image index retained');
+      Check(JsonString(LMetadata, 'image_name') = '', 'unnamed image stays empty');
+      Check(JsonString(LMetadata, 'has_dropdown_menu') = 'false', 'button without popup explicitly reported');
+      Check(not Assigned(LMetadata.GetValue('action_name')), 'button without action never fabricates action name');
+      Check(not Assigned(LMetadata.GetValue('action_class_name')), 'button without action never fabricates action class');
+      CheckNoButtonDetails(Metadata(LSensitiveButton.Name), 'sensitive button name');
+      CheckNoButtonDetails(Metadata(LInheritedButton.Name), 'sensitivity inherited from toolbar parent');
+      LControl := FindVCLName(LResult, LSensitiveButton.Name);
+      Check(JsonString(LControl, 'title') = '', 'sensitive graphic button text stays omitted');
+      LPayload := LResult.ToJSON;
+      Check(not LPayload.Contains('test-only-toolbar-secret'), 'action caption never exposes sensitive text');
+      Check(not LPayload.Contains('PrivateToolbarActionMarker'), 'sensitive action identifier stays omitted');
+      Check(not LPayload.Contains('PrivateToolbarImageMarker'), 'sensitive image name stays omitted');
+      Check(not LPayload.Contains('PrivateInheritedImageMarker'), 'inherited-sensitive image name stays omitted');
+      Check(LButton.Action = LAction, 'inspection preserves actual action linkage');
+      Check(LButton.DropdownMenu = LPopup, 'inspection preserves actual popup linkage');
+      Check(LButton.ImageIndex = 6, 'inspection preserves actual image index');
+    finally
+      LResult.Free;
+    end;
+
+    LButton.DropdownMenu := nil;
+    LButton.Action := nil;
+    LResult := TDAIWindowService.IDEWindows(True, 100, 500, 1000);
+    try
+      LMetadata := Metadata(LButton.Name);
+      Check(JsonString(LMetadata, 'has_dropdown_menu') = 'false', 'removed popup is reflected by a fresh snapshot');
+      Check(not Assigned(LMetadata.GetValue('action_name')), 'removed action is reflected by a fresh snapshot');
+      Check(not Assigned(LMetadata.GetValue('action_class_name')), 'removed action class is omitted');
+    finally
+      LResult.Free;
+    end;
+    TDAIWindowService.RegisterPermissionWindow(LForm.Handle);
+    try
+      LResult := TDAIWindowService.IDEWindows(True, 100, 500, 1000);
+      try
+        Check(not Assigned(FindVCLName(LResult, LToolbar.Name)), 'permission-protected toolbar excluded');
+        Check(not Assigned(FindVCLName(LResult, LButton.Name)), 'permission-protected dropdown excluded');
+        Check(not Assigned(FindVCLName(LResult, LPlainButton.Name)), 'permission-protected plain button excluded');
+        Check(not Assigned(FindVCLName(LResult, LSensitiveButton.Name)), 'permission-protected sensitive button excluded');
+        Check(not Assigned(FindVCLName(LResult, LInheritedButton.Name)), 'permission-protected inherited button excluded');
+      finally
+        LResult.Free;
+      end;
+    finally
+      TDAIWindowService.UnregisterPermissionWindow(LForm.Handle);
+    end;
+    LResult := TDAIWindowService.IDEWindows(True, 100, 500, 1000);
+    try
+      Check(Assigned(FindVCLName(LResult, LButton.Name)), 'toolbar button returns after permission-window unregister');
+    finally
+      LResult.Free;
+    end;
+  finally
+    LForm.Free;
+  end;
+end;
+
 procedure ChildMode(const AReadyName, AStopName: string);
 var
   LReady, LStop: THandle;
@@ -480,6 +669,8 @@ begin
   end;
 end;
 
+{$I ToolbarTests\Toolbar.Diagnostics.Tests.inc}
+
 begin
   try
     if (ParamCount = 3) and (ParamStr(1) = '--child') then
@@ -488,6 +679,8 @@ begin
     begin
       TestLocalWindows;
       TestVCLMetadata;
+      TestToolbarMetadata;
+      TestToolbarLayoutDiagnostics;
       if (ParamCount = 2) and (ParamStr(1) = '--peer') then
         TestForeignProcess(ParamStr(2))
       else

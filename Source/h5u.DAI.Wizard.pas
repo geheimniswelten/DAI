@@ -29,6 +29,7 @@ uses
   System.Types,
   Vcl.Graphics,
   h5u.DAI.Consts,
+  h5u.DAI.IDE.Toolbar,
   h5u.DAI.IDE.Notifier,
   h5u.DAI.Log,
   h5u.DAI.Options.Page,
@@ -57,12 +58,14 @@ begin
     on E: Exception do
       TDAILog.Error('Der optionale MCP-Server konnte während der Package-Registrierung nicht gestartet werden: ' + E.ClassName + ': ' + E.Message);
   end;
+  TDAIIDEToolbar.Install;
 end;
 
 destructor TDAIWizard.Destroy;
 var
   LOTAServices: IOTAServices;
 begin
+  TDAIIDEToolbar.Shutdown;
   TDAIRuntime.Stop;
 
   if (FIDENotifierIndex >= 0) and Supports(BorlandIDEServices, IOTAServices, LOTAServices) then

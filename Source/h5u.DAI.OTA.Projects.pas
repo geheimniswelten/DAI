@@ -1,6 +1,8 @@
 ﻿unit h5u.DAI.OTA.Projects;
 
+{$IF CompilerVersion >= 36.0}  // Delphi 12+
 {$TEXTBLOCK CRLF}
+{$IFEND}
 
 interface
 
@@ -336,12 +338,20 @@ begin
     if not ConfirmWorkspaceChange(
       'Neues Projekt erstellen',
       Format(
+        {$IF CompilerVersion >= 36.0}  // Delphi 12+
         '''
         DAI erstellt das neue Projekt in der aktuellen Projektgruppe. Sollte die IDE die vorhandene Gruppe nicht erweitern können, könnte sie einen Wechsel anbieten.
 
         Geöffnete Projekte:
         %s
         ''', [LOpenProjects]
+        {$ELSE}
+        'DAI erstellt das neue Projekt in der aktuellen Projektgruppe. Sollte die IDE die vorhandene Gruppe nicht erweitern können, könnte sie einen Wechsel anbieten.' + sLineBreak +
+        '' + sLineBreak +
+        'Geöffnete Projekte:' + sLineBreak +
+        '%s'
+        , [LOpenProjects]
+        {$IFEND}
       )
     ) then
       raise EAbort.Create('Die Projekterstellung wurde durch den Benutzer abgebrochen.');
@@ -518,6 +528,7 @@ begin
     if not ConfirmWorkspaceChange(
       'Projekt öffnen',
       Format(
+        {$IF CompilerVersion >= 36.0}  // Delphi 12+
         '''
         DAI wird die folgende Projektdatei öffnen:
         %s
@@ -527,6 +538,16 @@ begin
         Bereits geöffnet:
         %s
         ''', [LFileName, LOpenProjects]
+        {$ELSE}
+        'DAI wird die folgende Projektdatei öffnen:' + sLineBreak +
+        '%s' + sLineBreak +
+        '' + sLineBreak +
+        'Die vorhandenen Projekte sollen geöffnet bleiben. Falls die IDE stattdessen einen Gruppenwechsel verlangt, erscheint zusätzlich deren eigener Dialog.' + sLineBreak +
+        '' + sLineBreak +
+        'Bereits geöffnet:' + sLineBreak +
+        '%s'
+        , [LFileName, LOpenProjects]
+        {$IFEND}
       )
     ) then
       raise EAbort.Create('Das Öffnen des Projekts wurde durch den Benutzer abgebrochen.');
@@ -598,12 +619,20 @@ begin
   if not ConfirmWorkspaceChange(
     'Projekt aus Projektgruppe entfernen',
     Format(
+      {$IF CompilerVersion >= 36.0}  // Delphi 12+
       '''
       Projekt:
       %s
 
       Das Projekt wird nur aus der aktuellen Projektgruppe entfernt. Dateien auf dem Datenträger werden nicht gelöscht.
       ''', [LProjectFileName]
+      {$ELSE}
+      'Projekt:' + sLineBreak +
+      '%s' + sLineBreak +
+      '' + sLineBreak +
+      'Das Projekt wird nur aus der aktuellen Projektgruppe entfernt. Dateien auf dem Datenträger werden nicht gelöscht.'
+      , [LProjectFileName]
+      {$IFEND}
     )
   ) then
     raise EAbort.Create('Das Entfernen des Projekts wurde durch den Benutzer abgebrochen.');
