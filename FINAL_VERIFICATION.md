@@ -1,3 +1,28 @@
+# DAI 1.2.15 – gemeinsame Toolbar-Ausrichtung, 3. Oktober 2026
+
+Nach einer tatsächlichen Verbreiterung der Fehlersuche-Toolbar ruft DAI Realign am vorhandenen, lebenden Parent auf.
+Die laufende Win32-IDE verwendet dafür ControlBar1 (TControlBar). Die native ControlBar entscheidet über Positionen
+und mögliche Zeilenumbrüche; DAI verschiebt keine Nachbarleiste von Hand. Statusupdates und ausreichend breite Toolbars
+lösen keine zusätzliche Ausrichtung aus. Loading-/Reading-/Destroying-Zustände und fehlende Parent-Handles werden ausgespart.
+
+Die Toolbar-Suite verwendet echte VCL-Controls und kompiliert die Produktionsunit zusätzlich gegen die installierte ToolsAPI.
+Die vollständige Suite besteht mit 4.621 Prüfungen je Architektur (Win32 und Win64).
+Neue Prüfungen mit zwei benachbarten Toolbars prüfen das native Buttonrechteck, Überlappungsfreiheit, vollständige
+Bandausrichtung nach Wachstum, erhaltene Nachbarbreite und unverändertes Layout bei Statusupdates/ausreichender Breite.
+Der neue Fall für vollständige Bandausrichtung schlägt mit dem vorherigen Code fehl. Die einfache native Testanordnung
+rückt ihren Nachbarn schon mit dem vorherigen Code korrekt nach rechts; sie reproduziert die gemeldete IDE-Überlappung nicht.
+
+Release wurde mit Delphi 13 für Win32 und Win64 erfolgreich gebaut; versionierte DAI370.bpl und Bridge nach PE-Architektur geprüft.
+Delphi 11/12 wurden für diese Änderung nicht gebaut. Realign gehört zur bestehenden VCL; keine neue ToolsAPI-Version wird benötigt.
+Die statische Prüfung meldet unverändert sechs bekannte Befunde: eine überlange Zeile in OTA.Projects und fünf Parserbefunde
+an bedingten Textblock-/Classic-String-Zweigen in MCP.Tools. An den neu geänderten Produktionszeilen gibt es keinen zusätzlichen Befund.
+Die laufende Win32-IDE (PID 2672) meldet nach dem manuellen Build DAI 1.2.15 aus der Debug-BPL.
+ReadOnly-MCP-Inspektion bestätigt den eigenen Button mit Aktion, Statusbild und Dropdown: DebugToolBar endet bei
+Bildschirm-x=2042, PlatformDeviceToolBar beginnt bei x=2055 (13 Pixel Abstand). Die ausgelesenen sichtbaren Nachbarleisten
+überlappen nicht. Der Benutzer bestätigte danach den gezielten Ablauf: DAI deinstalliert, die anderen Toolbars nach links verschoben,
+anschließend DAI kompiliert/installiert. Die Toolbars standen ohne Überlappung korrekt; der Toolbar-Editor war dafür nicht erforderlich. Die Höhendiagnose bezeichnet das
+native Buttonrechteck weiterhin als vertikal geklippt (28 bei 24 Client-Pixeln); diese Änderung betrifft nur die horizontale Bandausrichtung.
+
 # DAI 1.2.14 – Projektoptionen über MCP, 3. Oktober 2026
 
 Neue Produktionsunit h5u.DAI.OTA.ProjectOptions.pas und fünf Werkzeuge: project_activate, project_options_configurations,

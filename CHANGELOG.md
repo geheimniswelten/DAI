@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 1.2.15
+
+- Nach tatsächlichem Verbreitern der Fehlersuche-Toolbar wird der gemeinsame Parent mit Realign vollständig ausgerichtet; benachbarte Toolbars erhalten das neue Layout.
+- Normale Statusaktualisierungen und bereits ausreichend breite Toolbars lösen keine zusätzliche Ausrichtung aus. Parentzugriff bleibt auf lebende, fertig geladene Controls mit vorhandenem HWND beschränkt.
+- Native VCL-Tests prüfen zwei benachbarte Toolbars, vollständige Bandausrichtung sowie erhaltene Nachbarbreite und unveränderte Position bei Statusupdates.
+
 ## 1.2.14
 
 - Fünf MCP-Werkzeuge für Projektaktivierung, Konfigurationsübersicht sowie Lesen, Setzen und echtes Entfernen von Projektoptionen.

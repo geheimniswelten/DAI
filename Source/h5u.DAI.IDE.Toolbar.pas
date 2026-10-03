@@ -886,6 +886,7 @@ end;
 
 procedure TDAIToolbarController.EnsureOwnButtonFitsHorizontally;
 var
+  LParent: TWinControl;
   LHandle: HWND;
   LIndex: Integer;
   LPPI: Integer;
@@ -955,6 +956,20 @@ begin
   // Width preserves Left, Top, Height, AutoSize and Wrapable. Call this only
   // after creation or positive restore adoption, never on ordinary refreshes.
   FToolbar.Width := Integer(LRequiredWidth);
+  // Width requests alignment of this child only. The shared control bar also
+  // needs a full band layout so toolbars to the right follow the new width.
+  // Width changes can invoke callbacks which retire our UI; inspect it again.
+  if FShuttingDown or not Assigned(FToolbar) then
+    Exit;
+  if FToolbar.ComponentState * [csDestroying, csLoading, csReading] <> [] then
+    Exit;
+  LParent := FToolbar.Parent;
+  if not Assigned(LParent) then
+    Exit;
+  if LParent.ComponentState * [csDestroying, csLoading, csReading] <> [] then
+    Exit;
+  if LParent.HandleAllocated then
+    LParent.Realign;
 end;
 
 procedure TDAIToolbarController.EnsureInstalled;

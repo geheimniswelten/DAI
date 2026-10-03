@@ -122,8 +122,87 @@ begin
   end;
 end;
 
+type
+  TLayoutControlBar = class(TControlBar)
+  public
+    FullAlignments: Integer;
+  protected
+    procedure AlignControls(AControl: TControl; var ARect: TRect); override;
+  end;
+
+procedure TLayoutControlBar.AlignControls(AControl: TControl; var ARect: TRect);
+begin
+  if AControl = nil then
+    Inc(FullAlignments);
+  inherited;
+end;
+
+procedure TestAdjacentToolbarGrowth(const AWide: Boolean);
+var
+  LBar: TLayoutControlBar;
+  LNext: TToolBar;
+  LButton: TToolButton;
+  LIndex: Integer;
+  LBefore: Integer;
+  LAlignments: Integer;
+  LWidth: Integer;
+  LRect: TRect;
+begin
+  NewHost;
+  GHost.Form.Width := 1200;
+  LBar := TLayoutControlBar.Create(GHost.Form);
+  LBar.Parent := GHost.Form;
+  LBar.SetBounds(0, 0, 1100, 70);
+  LBar.HandleNeeded;
+  ConfigureFixedToolbar(GHost.Toolbar, 218);
+  GHost.Toolbar.Parent := LBar;
+  GHost.ForeignAction.Name := 'RunUntilReturnCommand';
+  for LIndex := 1 to 7 do
+  begin
+    LButton := TToolButton.Create(GHost.Form);
+    LButton.Left := GHost.Toolbar.ButtonCount * 64;
+    LButton.Parent := GHost.Toolbar;
+  end;
+  LWidth := 218;
+  if AWide then
+    LWidth := 400;
+  GHost.Toolbar.SetBounds(11, 2, LWidth, 24);
+  LNext := TToolBar.Create(GHost.Form);
+  LNext.Align := alNone;
+  LNext.AutoSize := False;
+  LNext.Wrapable := False;
+  LNext.SetBounds(LWidth + 27, 2, 332, 28);
+  LNext.Parent := LBar;
+  LBar.Realign;
+  LBefore := LNext.Left;
+  LAlignments := LBar.FullAlignments;
+  Check(LNext.Left >= GHost.Toolbar.Left + GHost.Toolbar.Width, 'Adjacent bars start without overlap');
+  TDAIIDEToolbar.Install;
+  TDAIIDEToolbar.Refresh;
+  LRect := ActualButtonRect(GHost.DAIButton);
+  Check(LRect.Right <= GHost.Toolbar.ClientWidth, 'Docked own button fits within its native toolbar');
+  Check(LNext.Left >= GHost.Toolbar.Left + GHost.Toolbar.Width, 'Growing the docked toolbar moves its right neighbour clear');
+  if AWide then
+    Check(LNext.Left = LBefore, 'An already wide toolbar does not move its neighbour')
+  else
+    Check(LNext.Left > LBefore, 'The neighbouring toolbar follows the required horizontal growth');
+  Check(LNext.Width = 332, 'Neighbouring toolbar width is preserved');
+  if AWide then
+    Check(LBar.FullAlignments = LAlignments, 'An already wide toolbar does not request a complete parent layout')
+  else
+    Check(LBar.FullAlignments > LAlignments, 'Growth requests a complete parent band layout, not only alignment of the changed child');
+  LAlignments := LBar.FullAlignments;
+  LBefore := LNext.Left;
+  TDAIIDEToolbar.Refresh;
+  Check(LBar.FullAlignments = LAlignments, 'Ordinary status refresh does not realign unrelated toolbars');
+  Check(LNext.Left = LBefore, 'Ordinary status refresh preserves the neighbouring toolbar position');
+  TDAIIDEToolbar.Shutdown;
+end;
+
 procedure TestToolbarLayoutGrowth;
 begin
+  TestAdjacentToolbarGrowth(False);
+  TestAdjacentToolbarGrowth(True);
   System.Classes.RegisterClass(TToolBar);
   System.Classes.RegisterClass(TToolButton);
   TestInitialLayoutGrowth(False);
