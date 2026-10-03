@@ -39,6 +39,24 @@ begin
   Check(AResult.GetValue<Integer>('definition_character') = AExpectedCharacter, ACase + ': current result character');
 end;
 
+procedure CheckDefinitionCapability(const AExpected: Boolean);
+var
+  LResult: TJSONObject;
+  LManagers: TJSONArray;
+  LManager: TJSONObject;
+begin
+  LResult := TDAICodeInsightService.Status(CInputFile);
+  try
+    LManagers := LResult.GetValue<TJSONArray>('managers');
+    Check(LManagers.Count = 1, 'status reports the active synthetic provider');
+    LManager := LManagers.Items[0] as TJSONObject;
+    Check(LManager.GetValue<Boolean>('definition_character_supported') = AExpected,
+      'definition character support reflects the provider interface');
+  finally
+    LResult.Free;
+  end;
+end;
+
 procedure CheckTimeout(const AProvider: TTestCodeInsightProvider; const AHover: Boolean);
 var
   LResult: TJSONObject;
@@ -255,6 +273,7 @@ begin
   LEditor.View := LView;
   try
     LServices.Provider := LHoldA;
+    CheckDefinitionCapability(True);
     LResult := TDAICodeInsightService.Definition(CInputFile, 11, 3, 1000);
     try
       CheckDefinition(LResult, LA, LA.ReplyCharacter, 'synchronous callback before ID registration');
@@ -317,6 +336,7 @@ begin
     TestWorkerCaller(LB);
 
     LServices.Provider := LHoldLegacy;
+    CheckDefinitionCapability(False);
     LResult := TDAICodeInsightService.Definition(CInputFile, 11, 3, 1000);
     try
       CheckDefinition(LResult, LLegacy, 0, 'legacy callback without character result');

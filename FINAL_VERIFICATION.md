@@ -1,4 +1,80 @@
-﻿# DAI 1.2.13 – automatische Package-Versionssuffixe, 2. Oktober 2026
+# DAI 1.2.14 – Projektoptionen über MCP, 3. Oktober 2026
+
+Neue Produktionsunit h5u.DAI.OTA.ProjectOptions.pas und fünf Werkzeuge: project_activate, project_options_configurations,
+project_options_read, project_option_set, project_option_remove. Insgesamt 44 Produktionsunits und 64 MCP-Werkzeuge.
+Schreiben verlangt Konfiguration und Plattform ausdrücklich; Base und der leere Plattformwert wählen gemeinsame Einstellungen.
+PropertyExists trennt eigenen Leerwert von fehlendem Eintrag. Eigene leere Werte sind für neun native Delphi-Listenoptionen
+mit ausdrücklich merge_mode=replace geprüft; unbekannte/skalare leere Werte werden vor Änderungen abgewiesen. Remove löscht tatsächlich, einschließlich Wiederherstellung der Vererbung;
+GetValue/InheritedValue liefern unveränderte SDK-Werte, eventuell noch mit Makros, keine rohen XML-Werte. Eigene Werte, Ursprung, Elternwerte und Merge-Modus werden ausgegeben.
+Nur das aktive Projekt ist zugänglich; andere geöffnete Gruppenprojekte müssen vorher explizit aktiviert werden. Änderungen bleiben bis
+project_save im IDE-Zustand. Mainthreadzugriff, Referenzschutz, Reparse-Schutz, Zyklenerkennung und Antwortgrenzen sind enthalten.
+
+Die vollständige Produktionsunit wurde mit echten Delphi-13-ToolsAPI-Interfaces und isolierten Projekten geprüft: 807 Checks je Win32/Win64,
+mit B+, Q+ und R+. Der tatsächliche MCP-Dispatch und die fünf tatsächlichen JSON-Schemata wurden separat mit 953 Checks je Architektur
+geprüft: Berechtigungsverweigerung, Projektbindung, strikte JSON-Typen, erforderliche Ziele, Leerwerte, Standardwerte und Grenzen.
+Die bestehende Fenster-Dispatch-Suite besteht weiterhin mit 688 Checks je Architektur; die Registrierungs-/Dateisuite mit 144.
+Debug und Release wurden für Win32 und Win64 gebaut und DAI370.bpl/DAI.McpBridge.exe nach Architektur/PE-Typ geprüft.
+Die Tests verändern weder echte Projektoptionen noch IDE-Einstellungen. Delphi 11/12 wurden für diesen neuen Stand nicht tatsächlich gebaut.
+
+Die Konfigurationsübersicht verwendet SDK-Schlüssel und Parent, ohne Schlüsselstrings zu zerlegen. Plattformknoten werden ausschließlich
+für vom SDK in Platforms gemeldete Plattformen gelesen; ein bereits spezialisierter Knoten wird nicht erneut spezialisiert. Die API besitzt
+keinen dokumentierten create/read-only-Parameter für PlatformConfiguration; eine interne SDK-Materialisierung ist daher nicht ausgeschlossen.
+Die Optionsliste ohne names enthält ausschließlich explizite Eigenschaften der Elternkette, nicht alle denkbaren Defaultoptionen.
+Unbekannte Defaultwerte bleiben default_or_unset. Wenn mehrere explizite Plattform-/Elternquellen konkurrieren, bleibt
+origin=inherited, source_resolution=unknown und origin_configuration=null; sources nennt alle Kandidaten, ohne aus Wertgleichheit Herkunft abzuleiten.
+
+IOTAServices.GetEnvironmentOptions liefert IOTAEnvironmentOptions/IOTAOptions mit GetOptionNames, GetOptionValue und SetOptionValue.
+IDE-weite Optionen gehören zum Registry-Stamm der laufenden Instanz, auch bei alternativer Startkonfiguration; sie haben keine
+Projektkonfigurationsvererbung. Diese Schnittstelle besitzt keine allgemeine Remove-/Reset-Funktion. Das neue MCP-Wiring betrifft Projektoptionen.
+
+Die beiden vorhandenen BDS-37.0-Package-Registrierungen zeigten auf fehlende Dateien unter C:\Develop2. Sie wurden unter Erhaltung der
+Beschreibung auf die frisch gebauten Debug-Packages unter C:\DevApps.git umgestellt. Die vorherigen Werte sind im Codex-Workspace unter
+work/package-registration-before-new-repo.json gesichert. Die zuvor laufende Win32-IDE hatte bei der Prozessprüfung kein DAI-Package geladen;
+die neue Debug-BPL wurde danach in einer eigenen Win32-Testinstanz aus dem neuen Pfad geladen.
+
+Der abschließende HTTP-/IDE-Test besteht mit 40 Prüfungen und bestätigt das Inventar von 64 Werkzeugen. Nativ geprüft wurden
+Projektaktivierung, Base/all-platform und Win32, versteckte Plattformvererbung, Kandidaten/mehrdeutige Herkunft, Grenzwerte,
+Setzen/Entfernen sowie Listen-Replace/Merge/eigener Leerwert. Ein nicht unterstützter leerer Skalar überschreibt einen vorherigen
+Wert nicht. Alle neun Listenoptionen wurden zuvor einzeln unter Delphi 13 Win32 mit eigenem Leerwert/Remove-Rundlauf bestätigt.
+Alle temporären Optionswerte sind entfernt, das eigene Testprojekt DAISkillTest ist gespeichert. Keine Nutzerprojektoptionen wurden verändert.
+Codex-Registrierung und installierter dai-delphi-ide-Skill wurden durch codex_register aus dem neuen Package aktualisiert und nachgeprüft.
+Die eigene Test-IDE bleibt mit dem neuen DAI aktiv; eine separat geöffnete Nutzer-IDE wurde weder geschlossen noch verändert.
+
+Der Nutzer meldete während der Arbeiten einen Absturz der vorherigen Win32-IDE beim Projektschließen. Windows Application Error/WER
+zeigen am 3. Oktober um 18:34:43 (Berlin) bds.exe PID27112/0x69E8, clr.dll4.8.9345.0, Ausnahme80131506, Offset002b48b1.
+Beide zu diesem PID vorhandenen WER-Berichte enthalten kein DAI-Modul; der neue Optionscode war zu diesem Zeitpunkt nicht geladen.
+Frühere DelphiLSP-Abstürze in dcc64370.dll sind ebenfalls protokolliert. Eine Ursache/Callbackzuordnung ist ohne BDS-Stack/Dump nicht möglich;
+das WER-Archiv enthält nur Report.wer und kein BDS-Dump. Die Befunde liegen im Codex-Workspace in work/crash-analysis-20261003.
+Die eigene erste Testsitzung ließ sich normal über ide_window_control schließen; danach wurde die finale Korrektur gebaut und erneut geladen.
+
+Die vollständige statische Prüfung meldet unverändert sechs bestehende Befunde: Projects.pas:349 (182 Zeichen), vier Schema-Argumentzählungen
+und eine Klammerprüfung in MCP.Tools.pas, deren Scanner die alternativen CompilerVersion-Zweige gleichzeitig zählen. Die neuen Units,
+Signaturen, Package-Referenzen, Version, BOM-/Zeilenenden und Werkzeuginventar erzeugen keine zusätzlichen Befunde. git diff --check besteht.
+
+# DAI 1.2.13 – Delphi-11/12-Deklarationen und Provider-Fallback, 2. Oktober 2026
+
+Der Nutzer bestätigte Build und Package-Installation seines Stands ad1ecfe unter Delphi 11. Die Grenzen CompilerVersion 35.0
+(Delphi 11) und 36.0 (Delphi 12) sowie Textblöcke ab Delphi 12 sind mit der offiziellen Dokumentation abgeglichen.
+Alle neueren IOTAAsyncCodeInsightManager290-Verwendungen bleiben mit Declared ausgeklammert. Supports prüft innerhalb dieser
+Guards das konkrete Provider-Objekt; der zuvor eingebaut gewesene as-Cast scheiterte nachweislich am vorhandenen Legacy-Provider-Test.
+Der Fallback auf AsyncGotoDefinition ist wiederhergestellt, und definition_character_supported beschreibt die tatsächliche Provider-Fähigkeit.
+Der UTF-8-Decoder verwendet durchgehend den parameterlosen Konstruktor: GetString erzeugt keinen BOM; der BOM wird beim Lesen separat übersprungen.
+
+Mit der lokalen Delphi-13-ToolsAPI bestanden je Win32/Win64 798 Code-Insight-Callback-/Hover-/Statuschecks und 25 echte BPL-Abschlusschecks.
+Die Registrierungs-/Dateisuite bestand je 144 Checks, einschließlich ungültigem UTF-8 und BOM-Erhaltung. Release und Debug für beide
+Architekturen wurden erfolgreich gebaut und als DAI370.bpl/DAI.McpBridge.exe nach PE-Architektur und Typ geprüft. Die aktuelle registrierte
+Debug-BPL liegt damit vor; es wurde kein weiterer IDE-Start ausgelöst. Delphi 12 wurde hier nicht tatsächlich kompiliert.
+
+Die vollständige statische Prüfung meldet noch sechs bestehende Befunde: Projects.pas:349 mit 182 Zeichen, vier Schema-Argumentzählungen
+sowie eine Klammerprüfung in MCP.Tools.pas:862. Die fünf Scannerbefunde zählen alternative CompilerVersion-Zweige gleichzeitig.
+Die Syntax-/Schema-Scanner wurden in dieser Korrektur nicht erweitert. Der Manifeststand enthält die aktuellen Dateien.
+
+Noch kein vollständiger Funktionstest unter Delphi 11/12: OTA.Messages.pas bindet den nativen Meldungstabellen-Adapter an vclide370.bpl.
+In älteren IDEs meldet dieser Adapter deshalb kontrolliert nicht verfügbar; eine freiere Modulwahl würde die bestehende Herkunfts-/ABI-Prüfung
+abschwächen. Für eine Anpassung sind die tatsächlichen älteren Exportnamen und Rückgabetypen zu prüfen. Auch die CodeInsight-Testfixture
+verwendet aktuell die erweiterten Interface-/Callbacktypen aus der Delphi-13-ToolsAPI und ist keine Delphi-11-Testumgebung.
+
+# DAI 1.2.13 – automatische Package-Versionssuffixe, 2. Oktober 2026
 
 Die vom Nutzer gesetzten DllSuffix=$(Auto) im DPROJ und LIBSUFFIX AUTO im DPK bleiben erhalten. Delphi 13 / BDS 37.0 erzeugt
 jetzt DAI370.bpl. Ausgabeverzeichnisse und Bridge-Dateiname bleiben unverändert; die Bridge wird weiterhin neben dem tatsächlich

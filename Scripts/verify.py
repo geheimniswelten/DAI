@@ -47,6 +47,12 @@ REQUIRED_TOOLS = {
     "code_hover",
     "file_diagnostics",
     "project_context",
+    "project_activate",
+    "project_options_configurations",
+    "project_options_read",
+    "project_option_set",
+    "project_option_remove",
+
     "file_write",
     "project_create",
     "project_open",
@@ -714,7 +720,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.13"
+    expected = "1.2.14"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")

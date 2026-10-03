@@ -281,6 +281,35 @@ Die Integration ist ausschließlich lesend:
   Prüfung des neuesten Editorpuffers; für eine verbindliche Syntax-/Semantikprüfung den aktuellen Projektstand kompilieren.
 - `project_context` liefert aktive Konfiguration, Plattform, Framework, Ziel, Projektdateien und ausgewählte ausgewertete DCC-Optionen.
 
+Projektoptionen können gezielt gelesen und geändert werden:
+
+- `project_options_configurations` nennt Konfigurationen einschließlich SDK-Schlüssel, Plattform und Elternkonfiguration.
+- `project_options_read` liefert lokale und effektive Werte, `has_local_value`, die Herkunft und explizite Werte der Vorfahren.
+  Standard ist die aktive Konfiguration/Plattform; mit `names` einzelne Optionen wählen. Ohne Namen werden nur explizite
+  Eigenschaften der Eltern- und Plattformscopes aufgelistet, kein vollständiger Katalog aller denkbaren Standardoptionen.
+- `project_option_set` und `project_option_remove` verlangen ausdrücklich Konfiguration, Plattform und Optionsname.
+  Für gemeinsame Einstellungen `configuration: "Base"`, `platform: ""` angeben; ansonsten einen gelisteten Konfigurationsschlüssel
+  und die konkrete Plattform verwenden. `active` ist bei Änderungen gesperrt.
+- `value: ""` setzt mit ausdrücklich `merge_mode: "replace"` einen eigenen Leerwert für die neun bekannten Delphi-Listenoptionen:
+  `DCC_Define`, `DCC_UnitSearchPath`, `DCC_IncludePath`, `DCC_ResourcePath`, `DCC_ObjPath`, `DCC_Namespace`,
+  `DCC_UnitAlias`, `DCC_UsePackage` und `DCC_LibraryPath`. Andere leere Werte werden vor Änderungen abgewiesen, weil der native
+  Setter sie sonst löschen kann. `project_option_remove` löscht den Eintrag ausdrücklich über `IOTABuildConfiguration.Remove`,
+  sodass wieder die Vererbung greift. `merge_mode` ist `preserve` (Standard), `merge` oder `replace` für Listenoptionen.
+- Änderungen markieren das IDE-Projekt als geändert; `project_save` speichert gesondert. Andere geladene Projekte vorher
+  mit `project_activate` aktivieren. Der Optionszugriff wechselt Projekte nicht automatisch.
+
+Die Werte stammen unverändert aus den ToolsAPI-Gettern und können unausgewertete Makros enthalten; `local_value` ist kein roher XML-Text. Nicht zuordenbare Standardwerte werden
+mit `origin: "default_or_unset"` und ohne erfundene Konfigurationsquelle ausgegeben. Optionsnamen stehen beispielsweise in
+`DCCStrs.pas` und `CommonOptionStrs.pas` der jeweiligen ToolsAPI-Installation.
+
+Die SDK-Parent-Kette enthält nicht zwingend alle Plattformvererbungen. `sources` listet deshalb explizite Elternwerte und Plattformkandidaten.
+Bei mehreren konkurrierenden Plattformquellen wird `source_resolution: "unknown"` und `origin_configuration: null` zurückgegeben.
+Gleiche Werte belegen keine eindeutige Quelle. `merge_mode_applied` nennt, ob das SDK den verlangten Merge-Modus tatsächlich übernommen hat.
+
+IDE-weite Einstellungen sind über `IOTAServices.GetEnvironmentOptions` und `IOTAOptions.GetOptionNames/GetOptionValue/SetOptionValue`
+zugänglich. Diese Schnittstelle bietet kein allgemeines Löschen, Zurücksetzen oder Ermitteln einer Vererbungsquelle.
+Die neuen MCP-Werkzeuge betreffen die Projektoptionen; IDE-weite Variantenwerte benötigen einen eigenen Zugriff.
+
 Code-Insight-Anfragen werden serialisiert, mit einem Timeout versehen und bei Zeitüberschreitung über `AsyncOperationCanceled` abgebrochen. Ein für Help
 Insight gesetzter `SetQueryContext` wird anschließend stets mit `nil, nil` zurückgesetzt.
 Jede Anfrage besitzt einen eigenen Callback-Empfänger. Verspätete Antworten bleiben damit ihrer ursprünglichen Anfrage zugeordnet, auch wenn der Provider
@@ -365,6 +394,11 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `code_hover`
 - `file_diagnostics`
 - `project_context`
+- `project_activate`
+- `project_options_configurations`
+- `project_options_read`
+- `project_option_set`
+- `project_option_remove`
 - `codex_registration_status`
 - `clients_registration_status`
 - `form_designer_inspect`
@@ -544,8 +578,9 @@ Die Tabelle zeigt Delphi 13; andere Compiler erzeugen ihr eigenes AUTO-Suffix.
 In der jeweiligen IDE über `Component → Install Packages → Add` das passende BPL auswählen. Eine zuvor installierte unsuffigierte `DAI.bpl` dabei ersetzen,
 damit DAI nicht doppelt geladen wird. Die native Bridge aus demselben Buildverzeichnis neben dem BPL belassen.
 Die Package-Zuordnung erfolgt über die verschiedenen Schlüsselnamen; ein Wechsel der Registry-View allein ersetzt sie nicht. DAI verändert diese Schlüssel nicht selbst.
-Beide vollständigen Package-Builds wurden mit Delphi 13 / BDS 37.0 geprüft. Packages für andere Delphi-Versionen müssen mit deren passender Toolchain gebaut werden;
-deren API-Kompatibilität ist hier nicht verifiziert. Die globale Instanzsperre selbst ist versionsunabhängig.
+Beide vollständigen Package-Builds wurden mit Delphi 13 / BDS 37.0 geprüft. Der Nutzer bestätigte außerdem Build und Package-Installation unter Delphi 11.
+Jedes Package muss mit der Toolchain und den ToolsAPI-Units seiner IDE-Version gebaut werden. Der Delphi-12-Build und die vollständigen Funktionstests
+unter Delphi 11/12 stehen noch aus. Die globale Instanzsperre selbst ist versionsunabhängig.
 
 Referenzen: [64-Bit-IDE](https://docwiki.embarcadero.com/RADStudio/Florence/en/64-bit_IDE),
 [Package-Installation](https://docwiki.embarcadero.com/RADStudio/Florence/en/InstallIDEPackage).

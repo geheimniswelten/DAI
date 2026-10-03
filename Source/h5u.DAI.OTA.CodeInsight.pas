@@ -584,6 +584,9 @@ begin
     procedure
     var
       LAsync: IOTAAsyncCodeInsightManager;
+      {$IF Declared(IOTAAsyncCodeInsightManager290)}
+      LAsyncEx: IOTAAsyncCodeInsightManager290;
+      {$IFEND}
       LCurrent: IOTACodeInsightManager;
       LCurrentId: string;
       LIndex: Integer;
@@ -635,7 +638,12 @@ begin
           LManagerObject.AddPair('completion', TJSONBool.Create(False));
           LManagerObject.AddPair('signature_help', TJSONBool.Create(False));
         end;
-        LManagerObject.AddPair('definition_character_supported', TJSONBool.Create({$IF Declared(IOTAAsyncCodeInsightManager290)}True{$ELSE}False{$IFEND}));
+        {$IF Declared(IOTAAsyncCodeInsightManager290)}
+        LManagerObject.AddPair('definition_character_supported', TJSONBool.Create(Supports(LManager, IOTAAsyncCodeInsightManager290, LAsyncEx)));
+        LAsyncEx := nil;
+        {$ELSE}
+        LManagerObject.AddPair('definition_character_supported', TJSONBool.Create(False));
+        {$IFEND}
         LManagers.AddElement(LManagerObject);
       end;
 
@@ -700,15 +708,18 @@ begin
               Exit;
             LProviderId := ManagerId(LManager);
             LProviderName := ManagerName(LManager);
+            {$IF Declared(IOTAAsyncCodeInsightManager290)}
+            Supports(LManager, IOTAAsyncCodeInsightManager290, LAsyncEx);
+            {$IFEND}
             LBroker.RetainCallback(LCallbacks);
             LRetained := True;
             LPublished := True;
             {$IF Declared(IOTAAsyncCodeInsightManager290)}
-              LAsyncEx := LAsync as IOTAAsyncCodeInsightManager290;
-              LRequestId := LAsyncEx.AsyncGotoDefinitionEx(LExpandedFileName, ALine, ACharacter, LCallbacks.DefinitionCallbackEx);
-            {$ELSE}
-              LRequestId := LAsync.AsyncGotoDefinition(LExpandedFileName, ALine, ACharacter, LCallbacks.DefinitionCallback);
+            if Assigned(LAsyncEx) then
+              LRequestId := LAsyncEx.AsyncGotoDefinitionEx(LExpandedFileName, ALine, ACharacter, LCallbacks.DefinitionCallbackEx)
+            else
             {$IFEND}
+              LRequestId := LAsync.AsyncGotoDefinition(LExpandedFileName, ALine, ACharacter, LCallbacks.DefinitionCallback);
             if LRequestId < 0 then
             begin
               LErrorMessage := 'Der Code-Insight-Provider hat keine gültige Request-ID zurückgegeben.';

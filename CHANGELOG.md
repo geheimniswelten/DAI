@@ -1,7 +1,16 @@
 # Änderungsprotokoll
 
+## 1.2.14
+
+- Fünf MCP-Werkzeuge für Projektaktivierung, Konfigurationsübersicht sowie Lesen, Setzen und echtes Entfernen von Projektoptionen.
+- Schreibziele verlangen eine ausdrückliche Konfiguration und Plattform; Basiskonfiguration und alle Plattformen bleiben gezielt erreichbar.
+- Gelesene Optionen nennen lokale/effektive Werte, Herkunft, Eltern-/Plattformkandidaten und Listenmerge. Mehrdeutige Quellen bleiben ausdrücklich unbekannt. Remove stellt Vererbung wieder her.
+- Eigene Leerwerte unterstützen neun native Delphi-Listen mit ausdrücklichem replace; andere leere Setter werden vor Änderungen abgewiesen. Der angewandte Merge-Modus wird geprüft.
+- Zugriff nur auf das aktive Projekt; Änderungen bleiben bis project_save im IDE-Zustand. Referenz- und Reparse-Schreibschutz bleibt wirksam.
+
 ## 1.2.13
 
+- Delphi-11-kompatibler parameterloser UTF-8-Decoder; optionale Code-Insight-Erweiterung wird mit Declared ausgeklammert und pro Provider abgefragt, mit Fallback auf den älteren Callback.
 - Package verwendet LIBSUFFIX AUTO: BPL-Namen enthalten die Compiler-Package-Version; der Build prüft ausschließlich die tatsächlich neu geschriebene versionierte BPL.
 - Nach Buttonaufbau, Wiederverwendung und Altlastenbereinigung erhält die Fehlersuche-Toolbar den fehlenden horizontalen Platz bis zum tatsächlichen nativen DAI-Buttonrechteck.
 - Die Anpassung prüft die native Buttonidentität und respektiert DPI und Größenbeschränkungen. Position, Höhe und bereits größere Breiten bleiben erhalten; normale Refreshes verändern die Breite nicht.

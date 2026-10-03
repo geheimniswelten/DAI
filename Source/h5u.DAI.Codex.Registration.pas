@@ -373,6 +373,23 @@ begin
     - Beginne mit `ide_status`, `projects_list` und `open_files_list`; verwende die zurückgegebenen vollständigen Pfade.
     - `project_files_list` zeigt Projektmitglieder; `project_directory_files_list` weitere Dateien im Projektverzeichnis.
     - `project_context` liefert Plattform, Build-Konfiguration und Compileroptionen. `project` ist optional und wählt sonst das aktive Projekt.
+    - `project_activate` aktiviert ein bereits geöffnetes Gruppenprojekt; vor Optionszugriffen auf andere Projekte zuerst aktivieren.
+    - `project_options_configurations` liefert SDK-Schlüssel, Namen, Plattformen, Eltern und die aktuelle Auswahl.
+    - `project_options_read` liest standardmäßig die aktive Konfiguration/Plattform; `names` begrenzt auf gewünschte Optionsnamen.
+    - Ohne `names` werden explizite Eigenschaften der Eltern- und Plattformscopes aufgelistet; `maximum_options` begrenzt die Antwort (Standard 200).
+    - `has_local_value`, `local_value`, `effective_value`, `origin_configuration` und `sources` zeigen lokale Werte und Vererbung.
+    - Werte sind ToolsAPI-Auswertungen, kein rohes DPROJ-XML. Bei `default_or_unset` ist keine konkrete Vererbungsquelle bekannt.
+    - `project_option_set`/`project_option_remove` benötigen ausdrücklich `configuration`, `platform`, `name`; Set zusätzlich `value`.
+    - Für gemeinsame Einstellungen `configuration: "Base"`, `platform: ""` verwenden; sonst den gelisteten Schlüssel und die Plattform.
+    - Schreibzugriffe akzeptieren keine Auswahl `active`. Ein eigener leerer Listenwert verlangt ausdrücklich `merge_mode: "replace"`.
+    - Leere Listen: `DCC_Define`, `DCC_UnitSearchPath`, `DCC_IncludePath`, `DCC_ResourcePath`, `DCC_ObjPath`, `DCC_Namespace`.
+    - Außerdem `DCC_UnitAlias`, `DCC_UsePackage`, `DCC_LibraryPath`; andere leere Werte werden vor Änderungen abgewiesen.
+    - Plattformwerte können die direkte Parent-Kette übergehen. `sources` enthält deshalb auch Plattformkandidaten.
+    - Bei `source_resolution: "unknown"` ist die genaue Herkunft mehrdeutig; keinen Ursprung aus gleichem Wert ableiten.
+    - SDK-Werte können unausgewertete Makros enthalten. `merge_mode_applied` meldet, ob das SDK den gewünschten Modus übernommen hat.
+    - Zum Wiederherstellen der Vererbung `project_option_remove` verwenden: Die Eigenschaft wird gelöscht, nicht leer überschrieben.
+    - Listen können mit `merge_mode: "merge"` erben oder mit `"replace"` überschreiben; Standard `"preserve"` erhält den bisherigen Modus.
+    - Optionsänderungen bleiben im IDE-Projekt; erst `project_save` speichert sie. Bei anderem aktiven Projekt wird der Zugriff abgewiesen.
     - Lese vor Änderungen mit `file_read` (`file`, `interfaces_only: false`, `maximum_characters: 0`) den vollständigen aktuellen Inhalt.
     - Prüfe `source`, `content_complete` und `truncated`; verwende zum Schreiben immer vollständigen Inhalt.
     - `sha256` beschreibt den vollständigen aktuellen Inhalt, auch wenn `implementation_omitted` oder `truncated` nur eine Teilansicht liefern.
@@ -466,6 +483,23 @@ begin
     '- Beginne mit `ide_status`, `projects_list` und `open_files_list`; verwende die zurückgegebenen vollständigen Pfade.' + sLineBreak +
     '- `project_files_list` zeigt Projektmitglieder; `project_directory_files_list` weitere Dateien im Projektverzeichnis.' + sLineBreak +
     '- `project_context` liefert Plattform, Build-Konfiguration und Compileroptionen. `project` ist optional und wählt sonst das aktive Projekt.' + sLineBreak +
+    '- `project_activate` aktiviert ein bereits geöffnetes Gruppenprojekt; vor Optionszugriffen auf andere Projekte zuerst aktivieren.' + sLineBreak +
+    '- `project_options_configurations` liefert SDK-Schlüssel, Namen, Plattformen, Eltern und die aktuelle Auswahl.' + sLineBreak +
+    '- `project_options_read` liest standardmäßig die aktive Konfiguration/Plattform; `names` begrenzt auf gewünschte Optionsnamen.' + sLineBreak +
+    '- Ohne `names` werden explizite Eigenschaften der Eltern- und Plattformscopes aufgelistet; `maximum_options` begrenzt die Antwort (Standard 200).' + sLineBreak +
+    '- `has_local_value`, `local_value`, `effective_value`, `origin_configuration` und `sources` zeigen lokale Werte und Vererbung.' + sLineBreak +
+    '- Werte sind ToolsAPI-Auswertungen, kein rohes DPROJ-XML. Bei `default_or_unset` ist keine konkrete Vererbungsquelle bekannt.' + sLineBreak +
+    '- `project_option_set`/`project_option_remove` benötigen ausdrücklich `configuration`, `platform`, `name`; Set zusätzlich `value`.' + sLineBreak +
+    '- Für gemeinsame Einstellungen `configuration: "Base"`, `platform: ""` verwenden; sonst den gelisteten Schlüssel und die Plattform.' + sLineBreak +
+    '- Schreibzugriffe akzeptieren keine Auswahl `active`. Ein eigener leerer Listenwert verlangt ausdrücklich `merge_mode: "replace"`.' + sLineBreak +
+    '- Leere Listen: `DCC_Define`, `DCC_UnitSearchPath`, `DCC_IncludePath`, `DCC_ResourcePath`, `DCC_ObjPath`, `DCC_Namespace`.' + sLineBreak +
+    '- Außerdem `DCC_UnitAlias`, `DCC_UsePackage`, `DCC_LibraryPath`; andere leere Werte werden vor Änderungen abgewiesen.' + sLineBreak +
+    '- Plattformwerte können die direkte Parent-Kette übergehen. `sources` enthält deshalb auch Plattformkandidaten.' + sLineBreak +
+    '- Bei `source_resolution: "unknown"` ist die genaue Herkunft mehrdeutig; keinen Ursprung aus gleichem Wert ableiten.' + sLineBreak +
+    '- SDK-Werte können unausgewertete Makros enthalten. `merge_mode_applied` meldet, ob das SDK den gewünschten Modus übernommen hat.' + sLineBreak +
+    '- Zum Wiederherstellen der Vererbung `project_option_remove` verwenden: Die Eigenschaft wird gelöscht, nicht leer überschrieben.' + sLineBreak +
+    '- Listen können mit `merge_mode: "merge"` erben oder mit `"replace"` überschreiben; Standard `"preserve"` erhält den bisherigen Modus.' + sLineBreak +
+    '- Optionsänderungen bleiben im IDE-Projekt; erst `project_save` speichert sie. Bei anderem aktiven Projekt wird der Zugriff abgewiesen.' + sLineBreak +
     '- Lese vor Änderungen mit `file_read` (`file`, `interfaces_only: false`, `maximum_characters: 0`) den vollständigen aktuellen Inhalt.' + sLineBreak +
     '- Prüfe `source`, `content_complete` und `truncated`; verwende zum Schreiben immer vollständigen Inhalt.' + sLineBreak +
     '- `sha256` beschreibt den vollständigen aktuellen Inhalt, auch wenn `implementation_omitted` oder `truncated` nur eine Teilansicht liefern.' + sLineBreak +

@@ -122,6 +122,7 @@
         <DCCReference Include="Source\h5u.DAI.OTA.Files.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Helpers.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Creators.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.ProjectOptions.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Projects.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Search.pas"/>
         <DCCReference Include="Source\h5u.DAI.Source.Search.pas"/>

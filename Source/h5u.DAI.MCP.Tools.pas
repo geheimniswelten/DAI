@@ -40,6 +40,7 @@ uses
   h5u.DAI.OTA.Helpers,
   h5u.DAI.OTA.Messages,
   h5u.DAI.OTA.Projects,
+  h5u.DAI.OTA.ProjectOptions,
   h5u.DAI.OTA.Search,
   h5u.DAI.OTA.Stack,
   h5u.DAI.OTA.Threads,
@@ -87,6 +88,74 @@ begin
   LValue := AArguments.GetValue(AName);
   if LValue is TJSONString then
     Result := TJSONString(LValue).Value;
+end;
+
+function StrictArgumentString(const AArguments: TJSONObject; const AName: string; const ADefault: string = ''): string;
+var
+  LValue: TJSONValue;
+begin
+  Result := ADefault;
+  if not Assigned(AArguments) then
+    Exit;
+  LValue := AArguments.GetValue(AName);
+  if not Assigned(LValue) then
+    Exit;
+  if not (LValue is TJSONString) then
+    raise EArgumentException.Create(AName + ' muss als JSON-String angegeben werden.');
+  Result := LValue.Value;
+end;
+
+function RequiredArgumentString(const AArguments: TJSONObject; const AName: string; const AAllowEmpty: Boolean = False): string;
+begin
+  if not Assigned(AArguments) then
+    raise EArgumentException.Create(AName + ' muss ausdrücklich angegeben werden.');
+  if not Assigned(AArguments.GetValue(AName)) then
+    raise EArgumentException.Create(AName + ' muss ausdrücklich angegeben werden.');
+  Result := StrictArgumentString(AArguments, AName);
+  if not AAllowEmpty and (Trim(Result) = '') then
+    raise EArgumentException.Create(AName + ' darf nicht leer sein.');
+end;
+
+function StrictArgumentStringArray(const AArguments: TJSONObject; const AName: string): TArray<string>;
+var
+  LArray: TJSONArray;
+  LIndex: Integer;
+  LValue: TJSONValue;
+begin
+  Result := [];
+  if not Assigned(AArguments) then
+    Exit;
+  LValue := AArguments.GetValue(AName);
+  if not Assigned(LValue) then
+    Exit;
+  if not (LValue is TJSONArray) then
+    raise EArgumentException.Create(AName + ' muss ein JSON-Array aus Strings sein.');
+  LArray := TJSONArray(LValue);
+  if LArray.Count > 1000 then
+    raise EArgumentException.Create(AName + ' darf höchstens 1000 Einträge enthalten.');
+  SetLength(Result, LArray.Count);
+  for LIndex := 0 to LArray.Count - 1 do
+  begin
+    if not (LArray.Items[LIndex] is TJSONString) then
+      raise EArgumentException.Create(AName + ' darf nur JSON-Strings enthalten.');
+    Result[LIndex] := LArray.Items[LIndex].Value;
+  end;
+end;
+
+function StrictArgumentInteger(const AArguments: TJSONObject; const AName: string; const ADefault, AMinimum, AMaximum: Integer): Integer;
+var
+  LValue: TJSONValue;
+begin
+  Result := ADefault;
+  if Assigned(AArguments) then
+  begin
+    LValue := AArguments.GetValue(AName);
+    if Assigned(LValue) then
+      if not (LValue is TJSONNumber) or not TryStrToInt(LValue.Value, Result) then
+        raise EArgumentException.Create(AName + ' muss eine JSON-Ganzzahl sein.');
+  end;
+  if (Result < AMinimum) or (Result > AMaximum) then
+    raise EArgumentOutOfRangeException.CreateFmt('%s muss zwischen %d und %d liegen.', [AName, AMinimum, AMaximum]);
 end;
 
 function ArgumentBoolean(const AArguments: TJSONObject; const AName: string; const ADefault: Boolean): Boolean;
@@ -265,6 +334,9 @@ var
   LInitiallyAuthorizedProjectKey: string;
   LProjectObject: IOTAProject;
   LProject: string;
+  LOptionConfiguration, LOptionPlatform, LOptionName, LOptionValue, LMergeMode: string;
+  LOptionNames: TArray<string>;
+  LMaximumOptions: Integer;
   LSearchOptions: TDAISourceSearchOptions;
   LSearchPlan: TDAISourceSearchPlan;
   LSearchProjectKey: string;
@@ -480,6 +552,47 @@ begin
         ArgumentBoolean(AArguments, 'include_compiler_options', True)
       )
     );
+  end;
+
+  if SameText(AName, 'project_activate') then
+  begin
+    LProject := RequiredArgumentString(AArguments, 'project');
+    RequirePermission(pcEditInsideIDE, 'Geöffnetes Gruppenprojekt aktivieren', LProject, LContext);
+    Exit(TDAIProjectOptionsService.ActivateProject(LProject));
+  end;
+
+  if SameText(AName, 'project_options_configurations') or SameText(AName, 'project_options_read') or
+     SameText(AName, 'project_option_set') or SameText(AName, 'project_option_remove') then
+  begin
+    LProject := StrictArgumentString(AArguments, 'project');
+    if Trim(LProject) = '' then
+      LProject := LContext.ProjectKey;
+    if SameText(AName, 'project_options_configurations') then
+    begin
+      RequirePermission(pcReadAccess, 'Konfigurationen des aktiven Projekts lesen', LProject, LContext);
+      Exit(TDAIProjectOptionsService.Configurations(LProject));
+    end;
+    if SameText(AName, 'project_options_read') then
+    begin
+      LOptionConfiguration := StrictArgumentString(AArguments, 'configuration', 'active');
+      LOptionPlatform := StrictArgumentString(AArguments, 'platform', 'active');
+      LOptionNames := StrictArgumentStringArray(AArguments, 'names');
+      LMaximumOptions := StrictArgumentInteger(AArguments, 'maximum_options', 200, 1, 1000);
+      RequirePermission(pcReadAccess, 'Optionen und Vererbung des aktiven Projekts lesen', LProject, LContext);
+      Exit(TDAIProjectOptionsService.ReadOptions(LProject, LOptionConfiguration, LOptionPlatform, LOptionNames, LMaximumOptions));
+    end;
+    LOptionConfiguration := RequiredArgumentString(AArguments, 'configuration');
+    LOptionPlatform := RequiredArgumentString(AArguments, 'platform', True);
+    LOptionName := RequiredArgumentString(AArguments, 'name');
+    if SameText(AName, 'project_option_set') then
+    begin
+      LOptionValue := RequiredArgumentString(AArguments, 'value', True);
+      LMergeMode := StrictArgumentString(AArguments, 'merge_mode', 'preserve');
+      RequirePermission(pcEditInsideIDE, 'Lokale Projektoption setzen', LProject, LContext);
+      Exit(TDAIProjectOptionsService.SetOption(LProject, LOptionConfiguration, LOptionPlatform, LOptionName, LOptionValue, LMergeMode));
+    end;
+    RequirePermission(pcEditInsideIDE, 'Lokale Projektoption entfernen und Vererbung wiederherstellen', LProject, LContext);
+    Exit(TDAIProjectOptionsService.RemoveOption(LProject, LOptionConfiguration, LOptionPlatform, LOptionName));
   end;
 
   if SameText(AName, 'file_write') then
@@ -910,6 +1023,49 @@ begin
     '  "maximum_threads":{"type":"integer","minimum":1,"maximum":5000,"default":200}},"additionalProperties":false}'
     , True);
     {$IFEND}
+  AddTool(Result, 'project_activate',
+    'Aktiviert ein bereits geöffnetes Projekt der Projektgruppe vor dem Zugriff auf dessen Optionen.',
+    '{"type":"object","properties":{' +
+    '"project":{"type":"string"}' +
+    '},"additionalProperties":false,"required":["project"]}',
+    False);
+  AddTool(Result, 'project_options_configurations',
+    'Listet Konfigurationen, Eltern, Plattformen und aktive Auswahl des aktiven Projekts.',
+    '{"type":"object","properties":{' +
+    '"project":{"type":"string"}' +
+    '},"additionalProperties":false}',
+    True);
+  AddTool(Result, 'project_options_read',
+    'Liest effektive/lokale Werte und Herkunft; ohne names explizite Eltern-/Plattformoptionen, mehrdeutige Quellen werden benannt.',
+    '{"type":"object","properties":{' +
+    '"project":{"type":"string"},' +
+    '"configuration":{"type":"string","description":"SDK-Schlüssel oder eindeutiger Konfigurationsname; Base für gemeinsame Optionen.","default":"active"},' +
+    '"platform":{"type":"string","description":"Leer für alle Plattformen; sonst z.B. Win32 oder Win64.","default":"active"},' +
+    '"names":{"type":"array","items":{"type":"string"},"maxItems":1000},' +
+    '"maximum_options":{"type":"integer","minimum":1,"maximum":1000,"default":200}' +
+    '},"additionalProperties":false}',
+    True);
+  AddTool(Result, 'project_option_set',
+    'Setzt einen eigenen Wert am ausdrücklichen Konfigurations-/Plattformziel; bleibt ungespeichert bis project_save.',
+    '{"type":"object","properties":{' +
+    '"project":{"type":"string"},' +
+    '"configuration":{"type":"string","description":"SDK-Schlüssel oder eindeutiger Konfigurationsname; Base für gemeinsame Optionen."},' +
+    '"platform":{"type":"string","description":"Leer für alle Plattformen; sonst z.B. Win32 oder Win64."},' +
+    '"name":{"type":"string"},' +
+    '"value":{"type":"string","maxLength":65536,' +
+    '"description":"Leer nur für bekannte Delphi-Listen mit merge_mode=replace; sonst vor Änderungen abgewiesen."},' +
+    '"merge_mode":{"type":"string","enum":["preserve","merge","replace"],"default":"preserve"}' +
+    '},"additionalProperties":false,"required":["configuration","platform","name","value"]}',
+    False);
+  AddTool(Result, 'project_option_remove',
+    'Entfernt die eigene Option mit ToolsAPI.Remove; danach gilt wieder Vererbung. Speichern separat.',
+    '{"type":"object","properties":{' +
+    '"project":{"type":"string"},' +
+    '"configuration":{"type":"string","description":"SDK-Schlüssel oder eindeutiger Konfigurationsname; Base für gemeinsame Optionen."},' +
+    '"platform":{"type":"string","description":"Leer für alle Plattformen; sonst z.B. Win32 oder Win64."},' +
+    '"name":{"type":"string"}' +
+    '},"additionalProperties":false,"required":["configuration","platform","name"]}',
+    False);
   AddTool(Result, 'open_files_list', 'Listet aktuell in der IDE geöffnete Dateien.', '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'projects_list', 'Listet Projekte und Projektpfade der aktuellen Gruppe oder das einzelne Projekt.', '{"type":"object","additionalProperties":false}', True);
 

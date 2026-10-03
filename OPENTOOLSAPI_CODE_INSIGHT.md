@@ -17,6 +17,20 @@ IDE-Notifiers und mögliche Autosave-Abläufe machen daraus trotzdem keine rein 
 DAI ersetzt für Codeprüfungen keinen Editorpuffer vorübergehend. Die `.pas`-Schreibprüfung ist lexikalisch; eine vollständige Syntax-/Semantikprüfung
 erfordert den Compiler. Eine leere Error-Insight-Liste bestätigt keine Prüfung des neuesten oder vorgeschlagenen Inhalts.
 
+## Kompatibilität mit Delphi 11/12, 2. Oktober 2026
+
+DAI wird gegen die ToolsAPI der jeweiligen Delphi-Installation kompiliert. Optionale neuere Deklarationen wie
+`IOTAAsyncCodeInsightManager290` werden bereits mit `{$IF Declared(...)}` ausgeklammert, wenn die verwendete SDK-Version sie nicht kennt.
+Innerhalb dieses Guards prüft `Supports` das konkrete Provider-Objekt. Eine vorhandene Interface-Deklaration bedeutet nicht, dass jeder registrierte
+Code-Insight-Provider sie implementiert. DAI verwendet bei fehlender Erweiterung den älteren Callback, dessen Ergebnis keinen Zeichenindex liefert.
+`definition_character_supported` beschreibt entsprechend die tatsächlich angebotene Provider-Schnittstelle.
+
+Der Nutzer bestätigte Build und Installation unter Delphi 11. Die lokalen Regressionen laufen gegen die installierte Delphi-13-ToolsAPI;
+sie ersetzen keinen vollständigen Funktionstest in der Delphi-11/12-IDE. CompilerVersion 35.0 bezeichnet Delphi 11 und 36.0 Delphi 12
+([Compiler-Versionen](https://docwiki.embarcadero.com/RADStudio/Athens/en/Compiler_Versions)).
+Textblöcke und TEXTBLOCK sind deshalb ab `CompilerVersion >= 36.0` geschützt
+([String-Typen](https://docwiki.embarcadero.com/RADStudio/Athens/en/String_Types_%28Delphi%29)).
+
 ## Untersuchte Quelle
 
 Grundlage ist das vom Benutzer bereitgestellte Archiv `4eca849b-bdf8-4cba-9dc9-9e73f93171aa.zip` mit den Delphi-13-OpenToolsAPI-Sourcen. Das Archiv enthält
