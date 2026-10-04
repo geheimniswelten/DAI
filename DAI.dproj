@@ -88,6 +88,7 @@
         <DCCReference Include="vcl.dcp"/>
         <DCCReference Include="vclimg.dcp"/>
         <DCCReference Include="vclie.dcp"/>
+        <DCCReference Include="xmlrtl.dcp"/>
         <DCCReference Include="designide.dcp"/>
         <DCCReference Include="IndySystem.dcp"/>
         <DCCReference Include="IndyCore.dcp"/>
@@ -123,6 +124,9 @@
         <DCCReference Include="Source\h5u.DAI.OTA.Helpers.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Creators.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.ProjectOptions.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.ProjectSummary.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.PackageSummary.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.Packages.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Projects.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Search.pas"/>
         <DCCReference Include="Source\h5u.DAI.Source.Regex.pas"/>

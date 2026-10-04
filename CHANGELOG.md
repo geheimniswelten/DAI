@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## 1.2.17
+
+- projects_list bündelt die Basisinformationen aller geöffneten Projekte: aktive Auswahl, EXE/DLL/Package, SDK-Anwendungs-/Frameworktyp, aktive Konfiguration/Plattform und Ausgabeziel.
+- ProjectVersion nennt das DPROJ-Format. Packages ergänzen Description, Runtime-/DesignTime-Verwendung, automatischen/manuellen Build sowie Registrierung, Aktivierung und Ladezustand des aktuellen Ausgabeziels in dieser IDE.
+- Vorhandene Felder bleiben erhalten; unbekannte Zusatzwerte werden ausdrücklich als null zurückgegeben. Ausführliche Konfigurations-/Plattform- und Optionsabfragen bleiben separat verfügbar.
+- package_is_installed liest Package-Registrierung, Aktivierung und Ladezustand; installed entspricht registered und unbekannte Zustände bleiben null.
+- package_install und package_uninstall wählen ein geöffnetes Package-Projekt oder eine vollständige BPL-Datei und verwenden die öffentliche ToolsAPI. Kein automatischer Build oder Projektwechsel; Deinstallation löscht die BPL nicht und unterstützt verwaiste Registrierungen.
+- Installation prüft Package-Typ und IDE-Architektur. Mutationen verlangen Lese-, IDE-Bearbeitungs- und Ausführungsrechte; laufendes DAI, feste IDE-Packages und geladene Abhängigkeiten erhalten gezielte Schutzprüfungen.
+- README und generierter IDE-Skill erklären die kompakte Projektübersicht und Package-Verwaltung; native OTA-Fixtures prüfen die Packageoperationen ohne echte Installation in der Benutzer-IDE.
+
 ## 1.2.16
 
 - source_search unterstützt optional RegEx für query sowie einen zusätzlichen filename_regex-Filter auf den Dateinamen; bestehende Glob-/Interfaces-/Editorpufferregeln bleiben erhalten.

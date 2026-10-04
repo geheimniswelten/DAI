@@ -35,6 +35,7 @@ uses
   ToolsAPI,
   h5u.DAI.Consts,
   h5u.DAI.OTA.Helpers,
+  h5u.DAI.OTA.ProjectSummary,
   h5u.DAI.Settings,
   h5u.DAI.Source.Regex,
   h5u.DAI.Source.View,
@@ -543,23 +544,8 @@ begin
 end;
 
 class function TDAIFileService.Projects: TJSONArray;
-var
-  LItem: TJSONObject;
-  LProject: IOTAProject;
-  LProjectFileName: string;
 begin
-  Result := TJSONArray.Create;
-  for LProject in TDAIOTA.Projects do
-  begin
-    LProjectFileName := TDAIOTA.ProjectFileName(LProject);
-    LItem := TJSONObject.Create;
-    LItem.AddPair('name', TPath.GetFileNameWithoutExtension(LProjectFileName));
-    LItem.AddPair('file', LProjectFileName);
-    LItem.AddPair('directory', TDAIOTA.NormalizeFileName(TPath.GetDirectoryName(LProjectFileName)));
-    LItem.AddPair('configuration', TDAIOTA.ProjectConfiguration(LProject));
-    LItem.AddPair('platform', TDAIOTA.ProjectPlatform(LProject));
-    Result.AddElement(LItem);
-  end;
+  Result := TDAIProjectSummaryService.Projects;
 end;
 
 class function TDAIFileService.ReadFile(const AFileName: string; const AMaximumCharacters: Integer; const AInterfacesOnly: Boolean): TJSONObject;

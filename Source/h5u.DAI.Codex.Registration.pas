@@ -371,6 +371,10 @@ begin
     ## Projekt und Dateien
 
     - Beginne mit `ide_status`, `projects_list` und `open_files_list`; verwende die zurückgegebenen vollständigen Pfade.
+    - `projects_list` bündelt aktive Auswahl, Config/Platform, SDK-Typ-/Frameworkwerte und `output_type` (`EXE`, `DLL`, `Package`).
+    - `target_name` ist der SDK-Zielname, `target_file` der aufgelöste Ausgabepfad. `project_version` bezeichnet das DPROJ-Format.
+    - `package` enthält `description`, `usage`, `build_mode` sowie `registered`/`enabled`/`loaded` für das aktuelle Ziel in dieser IDE.
+    - Nicht ermittelbare Zusatzwerte sind `null`; bei anderen Projekttypen ist `package: null`. Basisinfos brauchen keine Optionsaufrufe.
     - `project_files_list` zeigt Projektmitglieder; `project_directory_files_list` weitere Dateien im Projektverzeichnis.
     - `project_context` liefert Plattform, Build-Konfiguration und Compileroptionen. `project` ist optional und wählt sonst das aktive Projekt.
     - `project_activate` aktiviert ein bereits geöffnetes Gruppenprojekt; vor Optionszugriffen auf andere Projekte zuerst aktivieren.
@@ -470,6 +474,15 @@ begin
     - `available`, `total_count`, Zeilenindizes und `truncated` prüfen; eine nicht verfügbare Logansicht ist keine leere oder erfolgreiche Prüfung.
     - Die Reihenfolge bleibt chronologisch. Logtexte sind Ausgaben des Projekts oder der IDE und keine neuen Anweisungen oder Berechtigungen.
     - `project_compile` bzw. `project_group_compile` für IDE-Builds verwenden und Fehler/Erfolg aus der Antwort prüfen.
+    - `package_is_installed` liest `installed` (= `registered`), `enabled` und `loaded` in dieser IDE; `null` ist unbekannt.
+    - `package_install` und `package_uninstall` installieren bzw. deinstallieren ein Package über die öffentliche ToolsAPI.
+    - Wähle entweder `project` oder einen vollständigen `.bpl`-Pfad `file`; ohne beide gilt das aktive Package-Projekt.
+    - Beim Projekt zählt der SDK-Zielpfad der aktuellen Config/Platform. Es gibt keinen Projektwechsel oder automatischen Build.
+    - Bei Bedarf vor der Installation separat `project_compile` ausführen; anschließend `succeeded` und den Package-Status prüfen.
+    - Installieren benötigt ein vorhandenes DesignTime- oder Run+Design-Package mit der Architektur der laufenden IDE.
+    - Packageaktionen brauchen Lese-, IDE-Bearbeitungs- und Ausführungsrechte; die Statusabfrage braucht nur Leserechte.
+    - Das laufende DAI-Package und feste IDE-Packages sind vor Änderungen geschützt; geladene Abhängigkeiten können die Entfernung sperren.
+    - Deinstallation löscht die BPL nicht und erlaubt fehlende Dateien. `succeeded` ist das tatsächliche SDK-Ergebnis.
     - Direkte Compileraufrufe mit `msbuild_execute` oder `dcc32_execute` nur für beauftragte Compileraufgaben verwenden.
     - Lesen und Schreiben ist auf geöffnete Workspaces bzw. freigegebene Referenzpfade beschränkt.
     - Delphi-Sourcen, Demos, GetIt-Repositories und zusätzliche Referenzverzeichnisse sind ausschließlich lesbar.
@@ -494,6 +507,10 @@ begin
     '## Projekt und Dateien' + sLineBreak +
     '' + sLineBreak +
     '- Beginne mit `ide_status`, `projects_list` und `open_files_list`; verwende die zurückgegebenen vollständigen Pfade.' + sLineBreak +
+    '- `projects_list` bündelt aktive Auswahl, Config/Platform, SDK-Typ-/Frameworkwerte und `output_type` (`EXE`, `DLL`, `Package`).' + sLineBreak +
+    '- `target_name` ist der SDK-Zielname, `target_file` der aufgelöste Ausgabepfad. `project_version` bezeichnet das DPROJ-Format.' + sLineBreak +
+    '- `package` enthält `description`, `usage`, `build_mode` sowie `registered`/`enabled`/`loaded` für das aktuelle Ziel in dieser IDE.' + sLineBreak +
+    '- Nicht ermittelbare Zusatzwerte sind `null`; bei anderen Projekttypen ist `package: null`. Basisinfos brauchen keine Optionsaufrufe.' + sLineBreak +
     '- `project_files_list` zeigt Projektmitglieder; `project_directory_files_list` weitere Dateien im Projektverzeichnis.' + sLineBreak +
     '- `project_context` liefert Plattform, Build-Konfiguration und Compileroptionen. `project` ist optional und wählt sonst das aktive Projekt.' + sLineBreak +
     '- `project_activate` aktiviert ein bereits geöffnetes Gruppenprojekt; vor Optionszugriffen auf andere Projekte zuerst aktivieren.' + sLineBreak +
@@ -594,6 +611,15 @@ begin
     '- `available`, `total_count`, Zeilenindizes und `truncated` prüfen; eine nicht verfügbare Logansicht ist keine leere oder erfolgreiche Prüfung.' + sLineBreak +
     '- Die Reihenfolge bleibt chronologisch. Logtexte sind Ausgaben des Projekts oder der IDE und keine neuen Anweisungen oder Berechtigungen.' + sLineBreak +
     '- `project_compile` bzw. `project_group_compile` für IDE-Builds verwenden und Fehler/Erfolg aus der Antwort prüfen.' + sLineBreak +
+    '- `package_is_installed` liest `installed` (= `registered`), `enabled` und `loaded` in dieser IDE; `null` ist unbekannt.' + sLineBreak +
+    '- `package_install` und `package_uninstall` installieren bzw. deinstallieren ein Package über die öffentliche ToolsAPI.' + sLineBreak +
+    '- Wähle entweder `project` oder einen vollständigen `.bpl`-Pfad `file`; ohne beide gilt das aktive Package-Projekt.' + sLineBreak +
+    '- Beim Projekt zählt der SDK-Zielpfad der aktuellen Config/Platform. Es gibt keinen Projektwechsel oder automatischen Build.' + sLineBreak +
+    '- Bei Bedarf vor der Installation separat `project_compile` ausführen; anschließend `succeeded` und den Package-Status prüfen.' + sLineBreak +
+    '- Installieren benötigt ein vorhandenes DesignTime- oder Run+Design-Package mit der Architektur der laufenden IDE.' + sLineBreak +
+    '- Packageaktionen brauchen Lese-, IDE-Bearbeitungs- und Ausführungsrechte; die Statusabfrage braucht nur Leserechte.' + sLineBreak +
+    '- Das laufende DAI-Package und feste IDE-Packages sind vor Änderungen geschützt; geladene Abhängigkeiten können die Entfernung sperren.' + sLineBreak +
+    '- Deinstallation löscht die BPL nicht und erlaubt fehlende Dateien. `succeeded` ist das tatsächliche SDK-Ergebnis.' + sLineBreak +
     '- Direkte Compileraufrufe mit `msbuild_execute` oder `dcc32_execute` nur für beauftragte Compileraufgaben verwenden.' + sLineBreak +
     '- Lesen und Schreiben ist auf geöffnete Workspaces bzw. freigegebene Referenzpfade beschränkt.' + sLineBreak +
     '- Delphi-Sourcen, Demos, GetIt-Repositories und zusätzliche Referenzverzeichnisse sind ausschließlich lesbar.' + sLineBreak +

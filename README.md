@@ -307,6 +307,57 @@ Erfolgreiche Builds warten nicht auf „OK“ im Fortschrittsdialog. Fehler dür
 `IOTACompileNotifier` meldet Projekt-/Gruppenstart und -ende, enthält aber keinen Parameter zum Ersetzen des Dialogs.
 Debuggernotifier melden unter anderem `nrException`/`psException`; sie garantieren keine Unterdrückung des Exception-Dialogs.
 
+## Projektübersicht
+
+Pro Delphi-IDE-Instanz gibt es eine aktuelle Projektgruppe mit mehreren möglichen Projekten.
+`projects_list` liefert deren Basisinformationen in einem Aufruf. Die bisherigen Felder `name`, `file`, `directory`,
+`configuration` und `platform` bleiben erhalten; Konfiguration und Plattform gehören jeweils zur aktuellen Auswahl dieses Projekts.
+
+| Feld | Bedeutung |
+| --- | --- |
+| `active` | Kennzeichnet das aktive Projekt der Gruppe. |
+| `output_type` | Aufbereiteter Ausgabetyp: `EXE`, `DLL` oder `Package`. |
+| `project_type`, `application_type`, `framework_type` | Unveränderte SDK-Typ- und Frameworkwerte, etwa Console, VCL, FMX oder None. |
+| `target_name`, `target_file` | SDK-Zielname und aufgelöster vollständiger Ausgabepfad für die aktuelle Konfiguration und Plattform. |
+| `project_version` | Formatversion der DPROJ; keine Produkt- oder Dateiversion. Vor Änderungen am Projektformat beachten. |
+| `package.description` | Beschreibung des Packages. |
+| `package.usage` | `runtime`, `design_time` oder `runtime_and_design`. |
+| `package.build_mode` | `automatic` oder `manual`. |
+| `package.registered`, `package.enabled`, `package.loaded` | Registrierung, Aktivierung und tatsächlicher Ladezustand des aktuellen Ausgabeziels in dieser IDE. |
+
+Bei anderen Projekttypen ist `package` gleich `null`. Nicht ermittelbare Zusatzwerte sind ebenfalls `null`; unbekannt bedeutet nicht `false`.
+Eine vorhandene BPL bestätigt weder ihre Registrierung noch den Ladezustand; ein registrierter anderer Ausgabepfad bestätigt das aktuelle Ziel nicht.
+Die Übersicht aktiviert keine Projekte und verändert keine Optionen. `project_context` liefert bei Bedarf die ausführlicheren Projektdatei-/Compilerinformationen;
+`project_options_configurations` bleibt für die vollständige Konfigurationsübersicht verfügbar. Einzelne Optionsabfragen sind für diese Basisinformationen nicht nötig.
+
+## Packages in der IDE verwalten
+
+`package_is_installed` liest den Registrierungs-, Aktivierungs- und Ladezustand eines Packages in der laufenden IDE.
+`installed` entspricht `registered`; `enabled` und `loaded` sind eigenständige Zustände. Unbekannte Zustände sind `null`.
+Die Abfrage benötigt Leserechte und funktioniert auch bei einer fehlenden BPL oder einem RuntimeOnly-Package.
+
+`package_install` und `package_uninstall` verwenden die öffentliche `IOTAPackageServices210` zum Installieren und Deinstallieren.
+Sie erfordern Lese-, IDE-Bearbeitungs- und Ausführungsrechte. Alle drei Werkzeuge wählen entweder ein geöffnetes Package über `project`
+oder einen vollständigen `.bpl`-Pfad über `file`; beide Parameter zusammen werden abgewiesen. Ohne Parameter wird das aktive Package-Projekt verwendet.
+Beim Projekt gilt der ausgewertete SDK-Zielpfad der aktuellen Konfiguration und Plattform. Die Werkzeuge aktivieren kein anderes Projekt und führen keinen Build aus;
+zum Erstellen der BPL bei Bedarf zuvor `project_compile` verwenden.
+
+Die Installation verlangt eine vorhandene BPL für die Architektur der laufenden IDE und ein DesignTime- oder Run+Design-Package.
+RuntimeOnly-Packages werden nicht installiert. Das laufende DAI-Package einschließlich Pfadaliasen sowie feste IDE-Packages sind gegen Änderungen geschützt;
+geladene abhängige Packages können eine Deinstallation zusätzlich verhindern. Die Deinstallation löscht die BPL nicht und kann auch eine verwaiste
+Registrierung für eine nicht mehr vorhandene Datei entfernen. Die Werkzeuge schreiben keine Package-Registrierung direkt in die Registry.
+
+Die Antworten nennen `file`, `project`, `configuration`, `platform` und die Package-Zustände. Mutationen liefern zusätzlich `operation` und `succeeded`;
+`succeeded` gibt den tatsächlichen booleschen SDK-Rückgabewert wieder, auch bei einem fehlgeschlagenen Auftrag. Anschließend die zurückgegebenen Zustände beachten.
+
+```json
+{"project":"C:\\Projects\\Components\\DesignPackage.dpk"}
+```
+
+Dieses Argument kann beispielsweise an `package_is_installed`, nach einem erfolgreichen Build an `package_install` und später an `package_uninstall` gehen.
+Eine echte Installation oder Deinstallation in der laufenden Benutzer-IDE gehört nicht zu den isolierten Tests; diese prüfen die produktive Implementierung
+mit nativen OTA-Fixtures. Release-Builds prüfen zusätzlich die Anbindung an die tatsächlich installierte ToolsAPI.
+
 ## Code Insight und Delphi-LSP
 
 DAI greift nicht als zweiter JSON-RPC-Client auf die privaten Standard-I/O-Pipes der von Delphi gestarteten `DelphiLSP.exe` zu. Stattdessen verwendet es den
@@ -425,6 +476,7 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `ide_status`
 - `open_files_list`
 - `projects_list`
+- `package_is_installed`
 - `project_files_list`
 - `project_directory_files_list`
 - `directory_files_list`
@@ -457,6 +509,8 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `project_open`
 - `project_save`
 - `project_remove`
+- `package_install`
+- `package_uninstall`
 - `unit_create`
 - `form_unit_create`
 - `file_open`
@@ -656,6 +710,10 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.SearchDispatch.ps1 -Platform Both
 .\Scripts\Test.SourcePaths.ps1 -Platform Both -StrictSeparators
 .\Scripts\Test.EditorWrite.ps1 -Platform Both
+.\Scripts\Test.ProjectSummary.ps1 -Platform Both
+.\Scripts\Test.PackageSummary.ps1 -Platform Both
+.\Scripts\Test.Packages.ps1 -Platform Both
+.\Scripts\Test.PackageDispatch.ps1 -Platform Both
 .\Scripts\Test.Windows.ps1 -Platform Both
 .\Scripts\Test.ReadOnlyPolicy.ps1 -Platform Both
 .\Scripts\Test.CodeInsight.ps1 -Platform Both
@@ -684,6 +742,8 @@ python .\Scripts\verify.py
 ```
 
 Geprüft werden unter anderem Dateinamen, Unit-Namen, DPK-/DPROJ-Referenzen, XML, erforderliche MCP-Werkzeuge, bekannte ungültige Delphi-Typen, fehlende DAI-Typdeklarationen, Altbezeichnungen, unqualifizierte `TMonitor`-Aufrufe, Tabulatoren, gemischte Zeilenenden und die maximale Zeilenlänge von 180 Zeichen.
+
+Die Standardpaket-Abhängigkeit `xmlrtl` stellt den XML-Parser für die DPROJ-Formatversion in der Projektübersicht bereit.
 
 ## Hinweis zur Binärprüfung
 

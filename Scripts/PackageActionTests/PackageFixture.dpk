@@ -1,0 +1,6 @@
+﻿package PackageFixture;
+
+requires
+  rtl;
+
+end.

@@ -1,0 +1,4 @@
+﻿library PlainFixture;
+
+begin
+end.

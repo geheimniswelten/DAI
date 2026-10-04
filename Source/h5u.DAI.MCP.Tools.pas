@@ -39,6 +39,7 @@ uses
   h5u.DAI.OTA.Files,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.OTA.Messages,
+  h5u.DAI.OTA.Packages,
   h5u.DAI.OTA.Projects,
   h5u.DAI.OTA.ProjectOptions,
   h5u.DAI.OTA.Search,
@@ -374,6 +375,7 @@ var
   LInitiallyAuthorizedProjectKey: string;
   LProjectObject: IOTAProject;
   LProject: string;
+  LPackageTarget: TDAIPackageTarget;
   LOptionConfiguration, LOptionPlatform, LOptionName, LOptionValue, LMergeMode: string;
   LOptionNames: TArray<string>;
   LMaximumOptions: Integer;
@@ -810,6 +812,34 @@ begin
     Exit(TDAIClientRegistration.UnregisterFiles(ArgumentString(AArguments, 'client')));
   end;
 
+  if SameText(AName, 'package_install') or SameText(AName, 'package_uninstall') or SameText(AName, 'package_is_installed') then
+  begin
+    LProject := StrictArgumentString(AArguments, 'project');
+    LFileName := StrictArgumentString(AArguments, 'file');
+    if (Trim(LProject) <> '') and (Trim(LFileName) <> '') then
+      raise EArgumentException.Create('project und file dürfen nicht gleichzeitig angegeben werden.');
+    RequirePermission(pcReadAccess, 'Package-Ziel und Installationsstatus lesen', LFileName, LContext);
+    LPackageTarget := TDAIPackageService.Prepare(LProject, LFileName);
+    LInitiallyAuthorizedProjectKey := LContext.ProjectKey;
+    if LPackageTarget.ProjectFile <> '' then
+      LContext.ProjectKey := LPackageTarget.ProjectFile
+    else
+      LContext.ProjectKey := LPackageTarget.FileName;
+    if not SameText(LInitiallyAuthorizedProjectKey, LContext.ProjectKey) then
+      RequirePermission(pcReadAccess, 'Package-Ziel und Installationsstatus lesen', LPackageTarget.FileName, LContext);
+    if SameText(AName, 'package_is_installed') then
+      Exit(TDAIPackageService.Status(LPackageTarget));
+    if SameText(AName, 'package_install') then
+    begin
+      RequirePermission(pcEditInsideIDE, 'Package in dieser IDE installieren', LPackageTarget.FileName, LContext);
+      RequirePermission(pcExecute, 'Package-Code in dieser IDE laden', LPackageTarget.FileName, LContext);
+      Exit(TDAIPackageService.Install(LPackageTarget));
+    end;
+    RequirePermission(pcEditInsideIDE, 'Package aus dieser IDE deinstallieren', LPackageTarget.FileName, LContext);
+    RequirePermission(pcExecute, 'Package-Code in dieser IDE entladen', LPackageTarget.FileName, LContext);
+    Exit(TDAIPackageService.Uninstall(LPackageTarget));
+  end;
+
   if SameText(AName, 'project_compile') then
   begin
     LProject := ArgumentString(AArguments, 'project');
@@ -1101,7 +1131,9 @@ begin
     '},"additionalProperties":false,"required":["configuration","platform","name"]}',
     False);
   AddTool(Result, 'open_files_list', 'Listet aktuell in der IDE geöffnete Dateien.', '{"type":"object","additionalProperties":false}', True);
-  AddTool(Result, 'projects_list', 'Listet Projekte und Projektpfade der aktuellen Gruppe oder das einzelne Projekt.', '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'projects_list',
+    'Liefert kompakte Projektinfos mit Typ, Framework, aktivem Buildziel, DPROJ-Format und Package-Metadaten/-Status.',
+    '{"type":"object","additionalProperties":false}', True);
 
   AddTool(
     Result,
@@ -1741,6 +1773,27 @@ begin
     'Öffnet die DFM-Datei eines Formulars im Texteditor.',
     '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}',
     False
+  );
+  AddTool(
+    Result,
+    'package_install',
+    'Installiert eine erzeugte Design-Time-BPL in dieser IDE; project oder vollständiger file-Pfad, sonst aktives Package. Vorher separat kompilieren.',
+    '{"type":"object","properties":{"project":{"type":"string"},"file":{"type":"string"}},"additionalProperties":false}',
+    False
+  );
+  AddTool(
+    Result,
+    'package_uninstall',
+    'Deinstalliert ein Package aus dieser IDE, ohne die BPL zu löschen; project oder vollständiger file-Pfad, sonst aktives Package.',
+    '{"type":"object","properties":{"project":{"type":"string"},"file":{"type":"string"}},"additionalProperties":false}',
+    False
+  );
+  AddTool(
+    Result,
+    'package_is_installed',
+    'Prüft die Registrierung eines Packages in dieser IDE; liefert installed, registered, enabled und loaded getrennt. project oder file, sonst aktives Package.',
+    '{"type":"object","properties":{"project":{"type":"string"},"file":{"type":"string"}},"additionalProperties":false}',
+    True
   );
   AddTool(
     Result,

@@ -1,9 +1,10 @@
 Build/
-work/
 Win32/
 Win64/
+work/
 __history/
 __recovery/
+__pycache__/
 *.dcu
 *.dcp
 *.bpl

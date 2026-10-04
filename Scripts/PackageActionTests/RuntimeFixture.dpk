@@ -1,0 +1,8 @@
+﻿package RuntimeFixture;
+
+{$RUNONLY ON}
+
+requires
+  rtl;
+
+end.

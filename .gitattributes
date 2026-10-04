@@ -1,3 +1,5 @@
 * export-ignore
 LICENSE.md !export-ignore
 README.md !export-ignore
+README.en.md !export-ignore
+SECURITY.md !export-ignore
