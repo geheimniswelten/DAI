@@ -141,6 +141,7 @@ begin
       var
         LCurrent: IOTAProcess;
         LDebugger: IOTADebuggerServices;
+        LExpressions: TJSONObject;
         LIndex: Integer;
         LProcess: IOTAProcess;
         LProcesses: TJSONArray;
@@ -151,6 +152,19 @@ begin
           Exit;
         end;
         LResult.AddPair('available', TJSONBool.Create(True));
+        LExpressions := TJSONObject.Create;
+        LResult.AddPair('expression_capabilities', LExpressions);
+        LExpressions.AddPair('evaluate', TJSONBool.Create(True));
+        LExpressions.AddPair('modify', TJSONBool.Create(True));
+        LExpressions.AddPair('cursor_expression', TJSONBool.Create(True));
+        LExpressions.AddPair('native_add_watch', TJSONBool.Create(True));
+        LExpressions.AddPair('native_watch_at_cursor', TJSONBool.Create(True));
+        LExpressions.AddPair('native_evaluate_modify', TJSONBool.Create(True));
+        LExpressions.AddPair('native_inspect_at_cursor', TJSONBool.Create(True));
+        LExpressions.AddPair('watch_list_read', TJSONBool.Create(False));
+        LExpressions.AddPair('watch_edit', TJSONBool.Create(False));
+        LExpressions.AddPair('watch_delete', TJSONBool.Create(False));
+        LExpressions.AddPair('scope', 'public_toolsapi');
         LCurrent := LDebugger.CurrentProcess;
         LResult.AddPair('has_current_process', TJSONBool.Create(Assigned(LCurrent)));
         LResult.AddPair('source_breakpoint_count', TJSONNumber.Create(LDebugger.SourceBkptCount));

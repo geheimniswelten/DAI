@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## 1.2.19
+
+- debugger_evaluate wertet Ausdrücke im angehaltenen Prozess/Thread über ToolsAPI aus. debugger_modify prüft die Beschreibbarkeit und weist im selben SDK-Vorgang einen neuen Wert zu.
+- debugger_cursor_expression liest eine sichtbare einzeilige Auswahl oder einen einfachen Delphi-Zugriff am Cursor; use_cursor übernimmt Ausdruck und Quellkontext in Auswertung oder Änderung.
+- debugger_evaluation_status liefert verzögerte Ergebnisse über request_id, einschließlich Fehlern, Zeitüberschreitung und Änderungsstatus. Ein Timeout bricht die Debuggee-Operation nicht ab.
+- Seiteneffekte sind beim Auswerten standardmäßig abgeschaltet; Properties/Funktionsaufrufe und Wertzuweisungen verlangen Ausführungsrechte. Prozess-/Threadziele werden vor Berechtigungsdialogen gebunden.
+- debugger_expression_ui ruft die nativen Editoraktionen zum Hinzufügen einer Überwachung, Übernehmen des Cursorausdrucks, Auswerten/Ändern und Untersuchen auf; asynchrone Statusabfragen melden die tatsächliche Ausführung.
+- Die öffentliche ToolsAPI bietet keine CRUD-Schnittstelle für die IDE-Watchliste. Auflisten, Bearbeiten und Löschen werden deshalb ausdrücklich als nicht unterstützt ausgewiesen.
+- README und generierter IDE-Skill erläutern Ausdrucksparameter, Cursorgrenzen und verzögerte Änderungen. Native SDK-Fixtures prüfen die Funktionen ohne Eingriffe in einen echten Benutzer-Debuggee.
+
 ## 1.2.18
 
 - options_search liest echte IDE-/Projekt-Optionsnamen und Typen mit deutschen/englischen Suchaliasen; die Suche öffnet kein UI und liest keine Werte. Der gecachte IDE-Insight-Katalog kennzeichnet unbekannte Vollständigkeit/Aktualität.

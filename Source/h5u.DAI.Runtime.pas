@@ -29,6 +29,8 @@ uses
   h5u.DAI.MCP.Server,
   h5u.DAI.OTA.Build,
   h5u.DAI.OTA.CodeInsight,
+  h5u.DAI.OTA.Evaluation,
+  h5u.DAI.OTA.ExpressionUI,
   h5u.DAI.Options.Navigation,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
@@ -165,8 +167,10 @@ begin
     Exit;
   FStopping := True;
   try
-    // Close navigation callbacks before draining HTTP workers and the modal UI loop.
+    // Close debugger and navigation callbacks before draining workers and modal UI loops.
     TDAILog.Shutdown;
+    TDAIEvaluationService.Shutdown;
+    TDAIExpressionUIService.Shutdown;
     TDAIOptionsNavigationService.Shutdown;
     TDAICodeInsightService.Shutdown;
     try

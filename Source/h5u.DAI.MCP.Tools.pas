@@ -36,8 +36,11 @@ uses
   h5u.DAI.Options.Search,
   h5u.DAI.OTA.Build,
   h5u.DAI.OTA.CodeInsight,
+  h5u.DAI.OTA.CursorExpression,
   h5u.DAI.OTA.Debugger,
   h5u.DAI.OTA.Designer,
+  h5u.DAI.OTA.Evaluation,
+  h5u.DAI.OTA.ExpressionUI,
   h5u.DAI.OTA.Files,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.OTA.Messages,
@@ -366,12 +369,68 @@ begin
   end;
 end;
 
+function CursorFileContext(const AFileName: string; const AContext: TDAIRequestContext): TDAIRequestContext;
+var
+  LArguments: TJSONObject;
+begin
+  LArguments := TJSONObject.Create;
+  try
+    LArguments.AddPair('file', AFileName);
+    Result := ContextForArguments(LArguments, AContext);
+  finally
+    LArguments.Free;
+  end;
+end;
+
+function EvaluationArguments(const AArguments: TJSONObject; out AUseCursor: Boolean): TDAIEvaluationRequest;
+var
+  LHasExpression, LHasFile, LHasLine: Boolean;
+begin
+  Result := Default(TDAIEvaluationRequest);
+  AUseCursor := StrictArgumentBoolean(AArguments, 'use_cursor', False);
+  LHasExpression := False;
+  LHasFile := False;
+  LHasLine := False;
+  if Assigned(AArguments) then
+  begin
+    LHasExpression := Assigned(AArguments.GetValue('expression'));
+    LHasFile := Assigned(AArguments.GetValue('source_file'));
+    LHasLine := Assigned(AArguments.GetValue('line'));
+  end;
+  if AUseCursor then
+  begin
+    if LHasExpression or LHasFile or LHasLine then
+      raise EArgumentException.Create('use_cursor darf nicht mit expression, source_file oder line kombiniert werden.');
+  end
+  else
+    Result.Expression := RequiredArgumentString(AArguments, 'expression');
+  if LHasFile <> LHasLine then
+    raise EArgumentException.Create('source_file und line müssen gemeinsam angegeben werden.');
+  if LHasFile then
+  begin
+    Result.SourceFile := RequiredArgumentString(AArguments, 'source_file');
+    Result.Line := StrictArgumentInteger(AArguments, 'line', 0, 1, MaxInt);
+  end;
+  Result.ProcessId := ArgumentUInt32(AArguments, 'process_id');
+  Result.ThreadId := ArgumentUInt32(AArguments, 'thread_id');
+  Result.SideEffects := LowerCase(Trim(StrictArgumentString(AArguments, 'side_effects', 'none')));
+  if (Result.SideEffects <> 'none') and (Result.SideEffects <> 'properties') and (Result.SideEffects <> 'all') then
+    raise EArgumentException.Create('side_effects muss none, properties oder all sein.');
+  Result.FormatSpecifiers := StrictArgumentString(AArguments, 'format_specifiers');
+  Result.MaximumCharacters := StrictArgumentInteger(AArguments, 'maximum_characters', 4096, 1, 65536);
+  Result.TimeoutMs := StrictArgumentInteger(AArguments, 'timeout_ms', 5000, 100, 30000);
+end;
+
 class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
 var
   LAction: string;
   LBuildFirst: Boolean;
   LCompileResult: TJSONObject;
+  LCursorResult: TJSONObject;
   LContext: TDAIRequestContext;
+  LDebuggerContext: TDAIRequestContext;
+  LEvaluationRequest: TDAIEvaluationRequest;
+  LExpressionUIRequest: TDAIExpressionUIRequest;
   LExpandedFileName: string;
   LFileName: string;
   LInitiallyAuthorizedProjectKey: string;
@@ -387,6 +446,8 @@ var
   LSearchPlan: TDAISourceSearchPlan;
   LSearchProjectKey: string;
   LUsedEditorBuffer: Boolean;
+  LUseCursor: Boolean;
+  LNewValue: string;
   LWithDebugger: Boolean;
 begin
   LContext := ContextForArguments(AArguments, AContext);
@@ -750,6 +811,124 @@ begin
   begin
     RequirePermission(pcReadAccess, 'Debugger-, Prozess- und Threadstatus lesen', '', LContext);
     Exit(TDAIDebuggerService.Status);
+  end;
+
+  if SameText(AName, 'debugger_cursor_expression') then
+  begin
+    LFileName := TDAICursorExpressionService.CurrentFileName;
+    if LFileName = '' then
+    begin
+      Result := TJSONObject.Create;
+      Result.AddPair('available', TJSONBool.Create(False));
+      Result.AddPair('reason_code', 'no_active_source_editor');
+      Result.AddPair('reason', 'Ein aktiver Quelleditor ist erforderlich.');
+      Exit;
+    end;
+    LContext := CursorFileContext(LFileName, LContext);
+    RequirePermission(pcReadAccess, 'Ausdruck im aktiven Quelleditor lesen', LFileName, LContext);
+    Exit(TDAICursorExpressionService.Read(LFileName));
+  end;
+
+  if SameText(AName, 'debugger_evaluate') or SameText(AName, 'debugger_modify') then
+  begin
+    LEvaluationRequest := EvaluationArguments(AArguments, LUseCursor);
+    LNewValue := '';
+    if SameText(AName, 'debugger_modify') then
+    begin
+      LNewValue := RequiredArgumentString(AArguments, 'value');
+      if LEvaluationRequest.SideEffects <> 'none' then
+        raise EArgumentException.Create('debugger_modify erlaubt für die vorgeschaltete Auswertung nur side_effects: none.');
+    end;
+    // Resolve default OS process/thread IDs before any permission dialog changes the IDE context.
+    LEvaluationRequest := TDAIEvaluationService.Prepare(LEvaluationRequest);
+    // A lexical source file or active project cannot identify the owning debuggee.
+    // Debugger values and execution use the explicit global permission scope.
+    LDebuggerContext := AContext;
+    LDebuggerContext.ProjectKey := '';
+    LFileName := LEvaluationRequest.SourceFile;
+    if LUseCursor then
+    begin
+      LFileName := TDAICursorExpressionService.CurrentFileName;
+      if LFileName = '' then
+        raise EInvalidOperation.Create('use_cursor erfordert einen aktiven Quelleditor.');
+    end;
+    RequirePermission(pcReadAccess, 'Debuggerausdruck und seinen Wert lesen',
+      Format('Prozess %u / Thread %u', [LEvaluationRequest.ProcessId, LEvaluationRequest.ThreadId]), LDebuggerContext);
+    LCursorResult := nil;
+    try
+      if LUseCursor then
+      begin
+        LContext := CursorFileContext(LFileName, LContext);
+        RequirePermission(pcReadAccess, 'Ausdruck im aktiven Quelleditor lesen', LFileName, LContext);
+        LCursorResult := TDAICursorExpressionService.Read(LFileName);
+        if not SameText(LCursorResult.GetValue('available').Value, 'true') then
+        begin
+          Result := LCursorResult;
+          LCursorResult := nil;
+          Exit;
+        end;
+        LEvaluationRequest.Expression := LCursorResult.GetValue('expression').Value;
+        LEvaluationRequest.SourceFile := LCursorResult.GetValue('file').Value;
+        LEvaluationRequest.Line := StrToInt(LCursorResult.GetValue('line').Value);
+      end;
+      if SameText(AName, 'debugger_modify') then
+      begin
+        RequirePermission(pcExecute, 'Wert im angehaltenen Debuggerprozess zuweisen', LEvaluationRequest.Expression, LDebuggerContext);
+        Result := TDAIEvaluationService.Modify(LEvaluationRequest, LNewValue);
+      end
+      else
+      begin
+        if LEvaluationRequest.SideEffects <> 'none' then
+          RequirePermission(pcExecute, 'Debuggerausdruck mit möglichen Seiteneffekten auswerten', LEvaluationRequest.Expression, LDebuggerContext);
+        Result := TDAIEvaluationService.Evaluate(LEvaluationRequest);
+      end;
+      if Assigned(LCursorResult) then
+      begin
+        Result.AddPair('cursor', LCursorResult);
+        LCursorResult := nil;
+      end;
+    finally
+      LCursorResult.Free;
+    end;
+    Exit;
+  end;
+
+  if SameText(AName, 'debugger_evaluation_status') then
+  begin
+    LRequestId := RequiredArgumentString(AArguments, 'request_id');
+    if AArguments.Count <> 1 then
+      raise EArgumentException.Create('request_id muss ohne weitere Argumente angegeben werden.');
+    LContext.ProjectKey := '';
+    RequirePermission(pcReadAccess, 'Status und Ergebnis einer Debuggerauswertung lesen', LRequestId, LContext);
+    Exit(TDAIEvaluationService.Status(LRequestId));
+  end;
+
+  if SameText(AName, 'debugger_expression_ui') then
+  begin
+    if Assigned(AArguments) then
+      if Assigned(AArguments.GetValue('request_id')) then
+      begin
+        LRequestId := RequiredArgumentString(AArguments, 'request_id');
+        if AArguments.Count <> 1 then
+          raise EArgumentException.Create('request_id muss ohne weitere Argumente angegeben werden.');
+        LContext.ProjectKey := '';
+        RequirePermission(pcReadAccess, 'Status der nativen Debuggeraktion lesen', LRequestId, LContext);
+        Exit(TDAIExpressionUIService.Status(LRequestId));
+      end;
+    LAction := LowerCase(Trim(RequiredArgumentString(AArguments, 'action')));
+    LFileName := TDAIExpressionUIService.CurrentFileName;
+    if LFileName = '' then
+      raise EInvalidOperation.Create('Die Debugger-Editoraktion erfordert einen aktiven Quelleditor.');
+    LContext := CursorFileContext(LFileName, LContext);
+    RequirePermission(pcReadAccess, 'Ziel der nativen Debuggeraktion lesen', LFileName, LContext);
+    LExpressionUIRequest := TDAIExpressionUIService.Prepare(LAction, LFileName);
+    LDebuggerContext := AContext;
+    LDebuggerContext.ProjectKey := '';
+    // Adding a native watch can trigger immediate or later automatic evaluation.
+    RequirePermission(pcReadAccess, 'Globalen Debuggerzugriff für native Ausdrucksaktion lesen', LFileName, LDebuggerContext);
+    RequirePermission(pcEditInsideIDE, 'Native Debuggeraktion im Editor aufrufen: ' + LAction, LFileName, LContext);
+    RequirePermission(pcExecute, 'Native Debuggeraktion ausführen: ' + LAction, LFileName, LDebuggerContext);
+    Exit(TDAIExpressionUIService.Invoke(LExpressionUIRequest));
   end;
 
   if SameText(AName, 'debugger_stacktrace') then
@@ -1943,6 +2122,29 @@ begin
     '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}', False);
   AddTool(Result, 'debugger_status', 'Liest den Debuggerstatus einschließlich aktueller Prozesse und Threads.',
     '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'debugger_cursor_expression', 'Liest den markierten Ausdruck oder einen einfachen Delphi-Zugriff am Cursor im aktiven Quelleditor.',
+    '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'debugger_evaluate', 'Wertet einen Ausdruck im angehaltenen Debuggerthread aus; verzögerte Ergebnisse über debugger_evaluation_status lesen.',
+    '{"type":"object","properties":{"expression":{"type":"string","minLength":1},"use_cursor":{"type":"boolean"},' +
+    '"process_id":{"type":"integer","minimum":0,"maximum":4294967295},"thread_id":{"type":"integer","minimum":0,"maximum":4294967295},' +
+    '"side_effects":{"type":"string","enum":["none","properties","all"],"default":"none"},"format_specifiers":{"type":"string"},' +
+    '"source_file":{"type":"string","minLength":1},"line":{"type":"integer","minimum":1,"maximum":2147483647},' +
+    '"maximum_characters":{"type":"integer","minimum":1,"maximum":65536,"default":4096},' +
+    '"timeout_ms":{"type":"integer","minimum":100,"maximum":30000,"default":5000}},' +
+    '"anyOf":[{"required":["expression"]},{"required":["use_cursor"],"properties":{"use_cursor":{"const":true}}}],"additionalProperties":false}', False);
+  AddTool(Result, 'debugger_modify', 'Prüft einen beschreibbaren Ausdruck ohne Seiteneffekte und weist im selben Debuggerthread einen neuen Wert zu.',
+    '{"type":"object","properties":{"expression":{"type":"string","minLength":1},"use_cursor":{"type":"boolean"},' +
+    '"value":{"type":"string","minLength":1},"process_id":{"type":"integer","minimum":0,"maximum":4294967295},' +
+    '"thread_id":{"type":"integer","minimum":0,"maximum":4294967295},"side_effects":{"type":"string","enum":["none"],"default":"none"},' +
+    '"format_specifiers":{"type":"string"},"source_file":{"type":"string","minLength":1},' +
+    '"line":{"type":"integer","minimum":1,"maximum":2147483647},"maximum_characters":{"type":"integer","minimum":1,"maximum":65536,"default":4096},' +
+    '"timeout_ms":{"type":"integer","minimum":100,"maximum":30000,"default":5000}},"required":["value"],' +
+    '"anyOf":[{"required":["expression"]},{"required":["use_cursor"],"properties":{"use_cursor":{"const":true}}}],"additionalProperties":false}', False);
+  AddTool(Result, 'debugger_evaluation_status', 'Liest Status und Ergebnis einer zuvor gestarteten Debuggerauswertung oder Wertzuweisung.',
+    '{"type":"object","properties":{"request_id":{"type":"string","minLength":1}},"required":["request_id"],"additionalProperties":false}', True);
+  AddTool(Result, 'debugger_expression_ui', 'Ruft AddWatch, AddWatchAtCursor, EvaluateModify oder InspectAtCursor auf; request_id fragt nur den Status ab.',
+    '{"type":"object","properties":{"action":{"type":"string","enum":["add_watch","watch_at_cursor","evaluate_modify","inspect_at_cursor"]},' +
+    '"request_id":{"type":"string","minLength":1}},"oneOf":[{"required":["action"]},{"required":["request_id"]}],"additionalProperties":false}', False);
   AddTool(Result, 'breakpoints_list', 'Listet Quellhaltepunkte mit Datei, Zeile, Bedingung und Aktivierung.',
     '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'breakpoint_set', 'Erstellt oder aktualisiert einen Quellhaltepunkt im geöffneten Workspace.',

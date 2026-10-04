@@ -26,6 +26,11 @@ REQUIRED_TOOLS = {
     "form_designer_inspect",
     "form_show_designer",
     "debugger_status",
+    "debugger_cursor_expression",
+    "debugger_evaluate",
+    "debugger_modify",
+    "debugger_evaluation_status",
+    "debugger_expression_ui",
     "breakpoints_list",
     "breakpoint_set",
     "breakpoint_remove",
@@ -992,7 +997,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.18"
+    expected = "1.2.19"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")

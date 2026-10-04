@@ -476,6 +476,17 @@ begin
     - `debugger_stacktrace` liest den angehaltenen aktuellen Thread; `process_id` und `thread_id` wählen optional einen gelisteten Prozess und seinen Thread.
     - `maximum_frames` begrenzt den Stack (Standard 50), `maximum_characters` den Text. Die zurückgegebenen Frame-Indizes sind ToolsAPI-konform ab 1.
     - Bei einem laufenden Prozess oder nicht zugänglichem Stack die Meldung beachten; `retryable` erlaubt erneutes Lesen, ohne Fortsetzen/Anhalten zu erzwingen.
+    - `debugger_evaluate` liest expression oder use_cursor: true im angehaltenen Thread; process_id/thread_id sind OS-IDs.
+    - source_file und line setzen gemeinsam den lexikalischen Quellkontext, keinen Stackframe; side_effects ist standardmäßig none.
+    - side_effects properties/all und debugger_modify benötigen Ausführungsrechte; value ist ein Delphi-Wertausdruck, z.B. "1".
+    - Debuggerwerte, Änderungen und Ergebnisstatus brauchen globale Rechte; Cursorlesen zusätzlich Rechte des tatsächlichen Dateiprojekts.
+    - debugger_cursor_expression liefert die sichtbare einzeilige Auswahl oder einen einfachen Zugriff am Cursor, inklusive Pufferhash und UTF-8-Bytepositionen.
+    - use_cursor darf nicht mit expression/source_file/line kombiniert werden; Designer und komplexe automatische Ausdrücke werden abgewiesen.
+    - Bei deferred mit debugger_evaluation_status(request_id) abfragen; Timeout bricht die SDK-Operation nicht ab, sdk_pending beachten.
+    - Modify braucht eine erfolgreiche synchrone beschreibbare Vorprüfung; nach deferred erneut ausdrücklich anfordern, modified kann null sein.
+    - debugger_expression_ui(action) unterstützt add_watch, watch_at_cursor, evaluate_modify und inspect_at_cursor, mit aktuellem Editor/Cursor.
+    - Native Aktionen brauchen Lese-/IDE-Bearbeitungs-/Ausführungsrechte; ausschließlich request_id fragt den Status ab. action_invoked bestätigt nur den Aufruf.
+    - Watchliste auflisten/bearbeiten/löschen ist öffentlich nicht unterstützt; bekannte Ausdrücke einzeln auswerten, keinen eigenen IDE-Watchzustand erfinden.
     - `project_run` unterstützt `debugger` und `build_first`; `project_stop` beendet die Ausführung. Prüfe den Rückgabestatus vor weiteren Schritten.
     - `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; `debugger_windows_list` liest Fenster des Debuggerprozesses.
     - Beide Fensterwerkzeuge sind ReadOnly. DAI-Berechtigungsdialoge und Texte aus Eingabefeldern werden ausgelassen; keine Fensteraktionen ableiten.
@@ -634,6 +645,17 @@ begin
     '- `debugger_stacktrace` liest den angehaltenen aktuellen Thread; `process_id` und `thread_id` wählen optional einen gelisteten Prozess und seinen Thread.' + sLineBreak +
     '- `maximum_frames` begrenzt den Stack (Standard 50), `maximum_characters` den Text. Die zurückgegebenen Frame-Indizes sind ToolsAPI-konform ab 1.' + sLineBreak +
     '- Bei einem laufenden Prozess oder nicht zugänglichem Stack die Meldung beachten; `retryable` erlaubt erneutes Lesen, ohne Fortsetzen/Anhalten zu erzwingen.' + sLineBreak +
+    '- `debugger_evaluate` liest expression oder use_cursor: true im angehaltenen Thread; process_id/thread_id sind OS-IDs.' + sLineBreak +
+    '- source_file und line setzen gemeinsam den lexikalischen Quellkontext, keinen Stackframe; side_effects ist standardmäßig none.' + sLineBreak +
+    '- side_effects properties/all und debugger_modify benötigen Ausführungsrechte; value ist ein Delphi-Wertausdruck, z.B. "1".' + sLineBreak +
+    '- Debuggerwerte, Änderungen und Ergebnisstatus brauchen globale Rechte; Cursorlesen zusätzlich Rechte des tatsächlichen Dateiprojekts.' + sLineBreak +
+    '- debugger_cursor_expression liefert die sichtbare einzeilige Auswahl oder einen einfachen Zugriff am Cursor, inklusive Pufferhash und UTF-8-Bytepositionen.' + sLineBreak +
+    '- use_cursor darf nicht mit expression/source_file/line kombiniert werden; Designer und komplexe automatische Ausdrücke werden abgewiesen.' + sLineBreak +
+    '- Bei deferred mit debugger_evaluation_status(request_id) abfragen; Timeout bricht die SDK-Operation nicht ab, sdk_pending beachten.' + sLineBreak +
+    '- Modify braucht eine erfolgreiche synchrone beschreibbare Vorprüfung; nach deferred erneut ausdrücklich anfordern, modified kann null sein.' + sLineBreak +
+    '- debugger_expression_ui(action) unterstützt add_watch, watch_at_cursor, evaluate_modify und inspect_at_cursor, mit aktuellem Editor/Cursor.' + sLineBreak +
+    '- Native Aktionen brauchen Lese-/IDE-Bearbeitungs-/Ausführungsrechte; ausschließlich request_id fragt den Status ab. action_invoked bestätigt nur den Aufruf.' + sLineBreak +
+    '- Watchliste auflisten/bearbeiten/löschen ist öffentlich nicht unterstützt; bekannte Ausdrücke einzeln auswerten, keinen eigenen IDE-Watchzustand erfinden.' + sLineBreak +
     '- `project_run` unterstützt `debugger` und `build_first`; `project_stop` beendet die Ausführung. Prüfe den Rückgabestatus vor weiteren Schritten.' + sLineBreak +
     '- `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; `debugger_windows_list` liest Fenster des Debuggerprozesses.' + sLineBreak +
     '- Beide Fensterwerkzeuge sind ReadOnly. DAI-Berechtigungsdialoge und Texte aus Eingabefeldern werden ausgelassen; keine Fensteraktionen ableiten.' + sLineBreak +

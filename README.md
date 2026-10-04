@@ -554,6 +554,8 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `clients_registration_status`
 - `form_designer_inspect`
 - `debugger_status`
+- `debugger_cursor_expression`
+- `debugger_evaluation_status`
 - `breakpoints_list`
 
 ### Bearbeiten und IDE-Steuerung
@@ -568,6 +570,7 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `package_install`
 - `package_uninstall`
 - `options_open`: Dialog öffnen und navigieren; mit ausschließlich `request_id` den Zustand lesend abfragen.
+- `debugger_expression_ui`: Native Watch-/Auswerten-/Inspektoraktion; mit ausschließlich `request_id` den Zustand lesend abfragen.
 - `unit_create`
 - `form_unit_create`
 - `file_open`
@@ -595,6 +598,8 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `msbuild_execute`
 - `dcc32_execute`
 - `debugger_control`
+- `debugger_evaluate`
+- `debugger_modify`
 
 ## KI-Client-Registrierung
 
@@ -679,6 +684,79 @@ weil die verwendeten öffentlichen ToolsAPI-Getter diese Angaben nicht liefern.
 `debugger_control(action)` unterstützt `pause`, `continue`, `step_into`, `step_over` und `step_out` mit Prüfung des aktuellen Prozesszustands.
 Starten/Beenden erfolgt über `project_run` und `project_stop`. Ein bereits laufender Debugger wird durch `project_run` nicht unbeabsichtigt neu gestartet.
 Haltepunkte gehören zur IDE-Bearbeitung, Debugger-Steuerung zur Ausführungsberechtigung; Status und Auflistungen zur Leseberechtigung.
+
+### Ausdrücke auswerten und Werte ändern
+
+`debugger_evaluate` wertet einen Delphi-Ausdruck im angehaltenen Debuggerthread aus, zum Beispiel:
+
+```json
+{"expression":"Self.Tag"}
+```
+
+`process_id` und `thread_id` wählen OS-IDs aus den Prozess-/Threadlisten. Ohne Angabe wird der aktuelle angehaltene Thread gewählt;
+DAI bindet dieses Ziel vor Berechtigungsdialogen. `source_file` und `line` müssen gemeinsam angegeben werden und setzen den lexikalischen
+Quellkontext der Auswertung. Damit wird kein Stackframe ausgewählt. Die unterstützte Ausdruckssprache bestimmt der Delphi-Debugger;
+komplette Pascal-Anweisungsblöcke lassen sich damit nicht beliebig ausführen.
+
+`side_effects` ist standardmäßig `"none"`. `"properties"` erlaubt Property-Auswertung, `"all"` die vom Debugger unterstützten Seiteneffekte
+einschließlich Funktionsaufrufen. Beide verlangen zusätzlich Ausführungsrechte. `format_specifiers` übergibt bis zu 256 druckbare ASCII-Zeichen
+an das SDK. `maximum_characters` begrenzt den Ergebnistext auf standardmäßig 4096, höchstens 65536 Zeichen; `truncated` zeigt die Begrenzung.
+
+`debugger_cursor_expression` liest zunächst die sichtbare einzeilige Auswahl, andernfalls einen einfachen Delphi-Zugriff am Cursor,
+etwa `Self.Tag`, `Obj.Field`, `Ptr^.Field` oder `Items[Index]`. Automatische Erkennung führt keine Funktionen aus und ignoriert Kommentare,
+Strings und komplexe Ausdrücke. Solche Ausdrücke ausdrücklich markieren oder als `expression` angeben. Mehrzeilige und rechteckige Auswahlen
+werden abgewiesen. `line`/`column` sind einsbasiert; `expression_start`/`expression_end` sind UTF-8-Bytepositionen ab 0, Ende exklusiv.
+`source_sha256` bezeichnet den tatsächlich gelesenen Editorpuffer. Der Reader ist auf 16 MiB, eine Zeile auf 65536 Zeichen begrenzt.
+
+`debugger_evaluate` und `debugger_modify` können diesen Ausdruck mit `{"use_cursor":true}` übernehmen; bei Modify zusätzlich `value` angeben.
+`use_cursor` darf nicht mit `expression`, `source_file` oder `line` kombiniert werden. DAI prüft den aktiven Quelleditor und die Leseberechtigung
+seines Projekts vor dem Lesen. Designer oder eine veraltete TopView liefern keinen vermeintlichen Cursorausdruck.
+
+Zum Zuweisen eines neuen Werts:
+
+```json
+{"expression":"Self.Tag","value":"1"}
+```
+
+Diese Argumente gehören zu `debugger_modify`. `value` ist ein Delphi-Wertausdruck; für eine Stringkonstante beispielsweise `"'Hallo'"`.
+DAI wertet den Zielausdruck unmittelbar vor Modify ohne Seiteneffekte aus und prüft `can_modify`. Eine erfolgreiche synchrone Vorprüfung
+und die Zuweisung laufen im selben IDE-Thread ohne dazwischenliegende Dialoge oder Nachrichtenverarbeitung. Reentranz, Zielwechsel oder
+eine verzögerte Vorprüfung verhindern die Zuweisung. Modify verlangt Lese- und Ausführungsrechte und ändert den Debuggee, keine Quelldatei.
+Debuggerwerte, Wertzuweisungen und Ergebnisabfragen verwenden ausdrücklich den globalen Berechtigungskontext; das aktive Projekt oder eine
+lexikalische Quelldatei beweisen keine Zugehörigkeit eines Debug-Prozesses. Bei `use_cursor` kommt die Leseberechtigung des tatsächlichen
+Dateiprojekts hinzu. Alle nativen Ausdrucksaktionen benötigen ebenfalls globale Debuggerrechte zusätzlich zum Zugriff auf den Editor;
+eine hinzugefügte Überwachung kann der Debugger sofort oder später automatisch auswerten.
+
+Antworten enthalten `request_id`, `status`, `sdk_result`, `result_text` und bekannte SDK-Ergebnisdaten; unbekannte Werte bleiben `null`.
+Bei `deferred` den Zustand mit `debugger_evaluation_status({"request_id":"..."})` abholen. `busy`/`retryable` erlauben einen erneuten Versuch.
+`timeout_ms` liegt zwischen 100 und 30000 ms, Standard 5000. Ein Timeout beendet nur das Warten: Eine gestartete Funktion oder Zuweisung
+kann weiterlaufen. `sdk_pending` meldet den weiterhin offenen SDK-Vorgang; derselbe Thread bleibt bis zum Callback oder seiner Zerstörung belegt.
+Maximal 32 SDK-Vorgänge und 64 abgeschlossene Ergebnisse werden gehalten. Die Statusabfrage verarbeitet einmal anstehende Debuggerereignisse.
+Bei Modify beschreibt `modify_attempted`, ob der Zuweisungsaufruf gestartet wurde; `modified` bleibt bei offenem Aufruf `null`.
+Späte Callbacks ergänzen das tatsächliche SDK-Ergebnis und `modified`, auch wenn `status` weiterhin `timed_out` oder `cancelled` lautet.
+`registration_uncertain` meldet eine ungewisse SDK-Notifierregistrierung; `receiver_retained` zeigt die weiterhin gebundene Receiverkapazität.
+Eine verzögerte Vorprüfung startet nach ihrem Callback niemals automatisch Modify; die Änderung muss erneut ausdrücklich angefordert werden.
+
+### Überwachungen und native Debuggerdialoge
+
+`debugger_expression_ui` ruft die öffentlichen Editorbefehle der Delphi-IDE auf:
+
+| `action` | IDE-Befehl |
+| --- | --- |
+| `add_watch` | Überwachten Ausdruck hinzufügen |
+| `watch_at_cursor` | Ausdruck am Cursor anzeigen / in Überwachungen übernehmen |
+| `evaluate_modify` | Auswerten/Ändern öffnen |
+| `inspect_at_cursor` | Debug-Inspektor am Cursor öffnen |
+
+Der Aufruf benötigt Lese-, IDE-Bearbeitungs- und Ausführungsrechte. Er verändert weder Cursor noch Auswahl und läuft asynchron:
+`{"request_id":"..."}` fragt beim selben Werkzeug nur den Status ab. `queued`, `invoking`, `invoked`, `error` und `cancelled` beschreiben den Aufruf;
+`action_invoked` bestätigt die Rückkehr des nativen Befehls. Daraus lässt sich weder ein hinzugefügter Watch noch ein geschlossener Dialog ableiten.
+Auswerten/Ändern und Inspektor benötigen einen angehaltenen Debuggerthread. Native Dialoge bleiben durch den Benutzer bedienbar.
+
+Die öffentliche ToolsAPI besitzt keine Schnittstelle zum Auflisten, Bearbeiten oder Löschen der IDE-Watchliste.
+Diese Funktionen sind daher nicht verfügbar; `debugger_status.expression_capabilities` nennt die unterstützten SDK-Funktionen und diese Grenzen.
+Einzelne bekannte Watch-Ausdrücke lassen sich mit `debugger_evaluate` auswerten. Der Debug-Inspektor ist ein nativer Dialog, keine strukturierte
+Objektbaum-Abfrage. DAI hält das Package ab dem ersten Debugger-Notifier oder eingereihten Editorbefehl geladen; für einen BPL-Austausch die IDE neu starten.
 
 ## Build
 
@@ -785,6 +863,10 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.Messages.ps1 -Platform Both
 .\Scripts\Test.Stack.ps1 -Platform Both
 .\Scripts\Test.Threads.ps1 -Platform Both
+.\Scripts\Test.CursorExpression.ps1 -Platform Both
+.\Scripts\Test.Evaluation.ps1 -Platform Both
+.\Scripts\Test.ExpressionUI.ps1 -Platform Both
+.\Scripts\Test.ExpressionDispatch.ps1 -Platform Both
 .\Scripts\Test.ToolDispatch.ps1 -Platform Both
 python .\Scripts\test_bridge.py
 ```

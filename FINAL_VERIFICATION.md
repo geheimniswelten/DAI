@@ -1,3 +1,26 @@
+# DAI 1.2.19 – Debuggerausdrücke, 4. Oktober 2026
+
+Fünf neue MCP-Werkzeuge ergänzen Auswertung, Wertzuweisung, Cursorausdruck, verzögerte Ergebnisse und native Ausdrucksaktionen.
+Insgesamt 54 Produktionsunits und 74 Werkzeuge. Die öffentliche ToolsAPI bietet keine Watchlisten-CRUD-Schnittstelle;
+DAI meldet Auflisten/Bearbeiten/Löschen deshalb ausdrücklich als nicht unterstützt. AddWatch/AddWatchAtCursor werden nativ aufgerufen.
+
+Evaluate und Modify verwenden einen angehaltenen, vor Berechtigungsdialogen gebundenen Prozess/Thread. Modify benötigt einen
+frischen synchronen beschreibbaren Evaluate ohne dazwischenliegende IDE-Nachrichtenverarbeitung; ein deferred Precheck weist nie später zu.
+Deferred SDK-Puffer, Notifier und Ausgabeparameter bleiben bis zur tatsächlichen Retirement erhalten. Timeout beendet keine Debuggee-Operation.
+Späte Callback-Ergebnisse aktualisieren die tatsächlichen SDK-Daten und modified, auch bei beibehaltenem Timeout-/Cancelstatus.
+Debuggerwerte, Ausführung und Status verwenden globale Berechtigungen; Cursorlesen zusätzlich das tatsächliche Dateiprojekt.
+
+Native SDK-Fixtures bestanden mit B+, Q+ und R+ je Win32/Win64: CursorExpression 242, Evaluation 441,
+ExpressionUI 502 plus 35 Shutdownprüfungen, ExpressionDispatch 2272, Runtime 69 und ClientRegistration 144 Prüfungen.
+Dispatchtests extrahieren die tatsächlichen Produktionszweige, Parser, Schemas und Requestrecords; Projekt-only-Freigaben
+berechtigen keine globalen Debuggerzugriffe. Python-Scanner-/Schema-/Versionsregressionen bestanden mit 27 Tests.
+
+Release wurde mit Delphi 13 für Win32/Win64 gebaut; versionierte DAI370.bpl und Bridge wurden nach PE-Typ und Architektur geprüft.
+Die statische Prüfung bestätigt alle 54 Units und 74 Werkzeuge; git diff --check besteht. Delphi 11/12 wurden nicht binär getestet.
+Es wurden keine echten Ausdrücke/Wertzuweisungen in der Benutzer-IDE ausgeführt und keine Watch-/Auswerten-/Inspektordialoge geöffnet.
+Die derzeit geladene Debug-BPL wurde nicht ersetzt. Die neuen Release-BPLs müssen in der passenden IDE geladen werden;
+ein physischer Austausch bereits gepinnter BPLs benötigt einen IDE-Neustart. Verworfen gewählte Benutzer-Projektoptionen bleiben verworfen.
+
 # DAI 1.2.15 – gemeinsame Toolbar-Ausrichtung, 3. Oktober 2026
 
 Nach einer tatsächlichen Verbreiterung der Fehlersuche-Toolbar ruft DAI Realign am vorhandenen, lebenden Parent auf.

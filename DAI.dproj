@@ -100,6 +100,10 @@
         <DCCReference Include="Source\h5u.DAI.IDE.Toolbar.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Designer.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Debugger.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.CursorExpression.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.Evaluation.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.ExpressionUI.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Source.Expression.pas"/>
         <DCCReference Include="Source\h5u.DAI.Clients.Registration.pas"/>
         <DCCReference Include="Source\h5u.DAI.Clients.SafeFiles.pas"/>
         <DCCReference Include="Source\h5u.DAI.Clients.ConfigText.pas"/>
