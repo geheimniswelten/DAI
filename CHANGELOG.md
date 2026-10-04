@@ -1,5 +1,14 @@
 # Änderungsprotokoll
 
+## 1.2.18
+
+- options_search liest echte IDE-/Projekt-Optionsnamen und Typen mit deutschen/englischen Suchaliasen; die Suche öffnet kein UI und liest keine Werte. Der gecachte IDE-Insight-Katalog kennzeichnet unbekannte Vollständigkeit/Aktualität.
+- options_open öffnet Projekt-/IDE-Optionen oder IDE Insight über die öffentliche SDK. Explizite Optionen bevorzugen die IDE-eigene Navigation eines eindeutigen echten Options-Insight-Eintrags; Standard-VCL-Controls ergänzen Seiten-, Editfeld- und Zeilenfokus.
+- Modale Optionsdialoge öffnen asynchron; request_id ermöglicht eine lesende Statusabfrage einschließlich erreichtem Fokus, Fehlern und geschlossenem Dialog.
+- Explizite Konfiguration/Plattform ändern die aktive Projektauswahl; Optionenwerte und Projektdateien werden dabei nicht automatisch geschrieben. Projektwechsel bleiben über project_activate ausdrücklich.
+- IDE Insight unterstützt Suchfilter und Suchfeldfokus. Ein reiner Suchaufruf führt nichts aus; native Optionsnavigation führt ausschließlich einen eindeutig angeforderten Optionseintrag aus, keine allgemeinen Commands-/Datei-/Build-Einträge. Öffnen benötigt Lese-, IDE-Bearbeitungs- und Ausführungsrechte.
+- Private Sondercontrols melden einen ausdrücklichen Status; ein öffentlicher Popup-Ergebnisindex wird nicht behauptet. README und generierter IDE-Skill erläutern Parameter, Status und Ausgabepfad-Beispiele.
+
 ## 1.2.17
 
 - projects_list bündelt die Basisinformationen aller geöffneten Projekte: aktive Auswahl, EXE/DLL/Package, SDK-Anwendungs-/Frameworktyp, aktive Konfiguration/Plattform und Ausgabeziel.

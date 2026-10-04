@@ -358,6 +358,60 @@ Dieses Argument kann beispielsweise an `package_is_installed`, nach einem erfolg
 Eine echte Installation oder Deinstallation in der laufenden Benutzer-IDE gehört nicht zu den isolierten Tests; diese prüfen die produktive Implementierung
 mit nativen OTA-Fixtures. Release-Builds prüfen zusätzlich die Anbindung an die tatsächlich installierte ToolsAPI.
 
+## Optionen suchen und in der IDE öffnen
+
+`options_search` findet technische Optionsnamen und Typen aus der öffentlichen ToolsAPI. Deutsche und englische Aliasnamen helfen beispielsweise,
+mit „Ausgabepfad“ die Optionen `DCC_ExeOutput`, `DCC_DcuOutput`, `DCC_BplOutput` und `DCC_DcpOutput` zu finden. Die Suche liest keine Optionswerte
+und öffnet kein Fenster. `scope` wählt `all` (Standard), `ide`, `project` oder `insight`; `query` mit 1 bis 256 Zeichen ist erforderlich, `project` optional,
+`maximum_results` begrenzt die Antwort auf 1 bis 500 Einträge. Für Projekte gelten die bereits geöffneten SDK-Projekte.
+Der IDE-Insight-Katalog enthält die aktuell verfügbaren gecachten Einträge; seine Vollständigkeit und Aktualität sind unbekannt.
+
+`options_open` öffnet Projektoptionen (`scope: "project"`, Standard), IDE-Optionen (`"ide"`) oder die IDE-Insight-Suche (`"insight"`).
+Für Projektoptionen muss das gewählte Projekt bereits aktiv sein; ein anderes geöffnetes Projekt zuvor mit `project_activate` aktivieren.
+Die optionalen Parameter `area`, `page`, `control` und `option` wählen einen Bereich, eine Seite, ein Control oder eine Option.
+`option` akzeptiert den tatsächlich gefundenen SDK-Namen oder den exakten Titel eines Options-Treffers aus IDE Insight;
+dazu je nach Optionskategorie `scope: "project"` oder `"ide"` wählen.
+Für eine ausdrücklich angeforderte Option bevorzugt DAI die IDE-eigene Navigation über `INTAIDEInsightItem.Execute`, wenn ein eindeutiger echter
+Optionseintrag in einer IDE-/Projektoptionen-Kategorie gefunden wurde. Allgemeine Commands-, Datei- oder Build-Einträge werden dafür nicht ausgeführt.
+Danach bzw. als Fallback verwendet DAI die SDK-Dialogaufrufe und sucht in den tatsächlich vorhandenen Standard-VCL-Controls: beschriftete Editfelder,
+Baum-/Tabseiten und Zeilen eines `TValueListEditor` oder `TStringGrid`. Private Sondercontrols oder nicht zuordenbare Optionen können
+`unsupported` melden. Die Rückgabe bestätigt den erreichten Zustand; eine beliebige Delphi-Optionsseite ist nicht allgemein garantiert.
+
+Explizite `configuration` und `platform` ändern die wirkliche aktive SDK-Auswahl des Projekts. Eine konkrete vorhandene Konfiguration und Plattform
+verwenden; `Base`, `all` und `active` sind hierfür keine Schreibziele. DAI schreibt dabei keine Optionswerte und speichert das Projekt nicht automatisch.
+Für Insight setzt `query` den SDK-Suchfilter und fokussiert das Suchfeld. Die öffentliche SDK bietet keinen gefilterten Ergebnisindex zur Vorwahl;
+Ein Insight-Aufruf nur mit `query` zeigt die Suche; die Ausführung einer Optionsnavigation setzt die ausdrückliche Auswahl über `option` voraus.
+
+Die modale Öffnung läuft asynchron. `options_open` gibt eine `request_id` zurück; denselben Aufruf anschließend nur mit dieser ID ausführen,
+um den Status zu lesen. Weitere Selektoren zusammen mit `request_id` werden abgewiesen. Die Zustände unterscheiden `queued`, `opened`,
+`focused`, `unsupported`, `error`, `closed` und `cancelled`; `page_selected` und `option_focused` bestätigen die einzelnen Schritte.
+Suche und Status benötigen Leserechte. Öffnen verlangt zusätzlich
+IDE-Bearbeitungs- und Ausführungsrechte, weil die native Navigation einen ausgewählten Options-Insight-Eintrag ausführen kann.
+
+Vor der ersten asynchronen Navigation wird das eigene Package im Prozess gehalten, damit ein modaler SDK-Aufruf bei einer
+reentranten Deinstallation nicht in entladenen Code zurückkehrt. Zum Austausch der geladenen BPL die IDE neu starten.
+
+Beispiel: Mit `options_search` zunächst die Ausgabepfad-Option finden:
+
+```json
+{"scope":"project","query":"Ausgabepfad","maximum_results":20}
+```
+
+Danach mit `options_open` die Option anzeigen und bei Bedarf die aktive Auswahl auf Release/Win64 ändern:
+
+```json
+{"scope":"project","option":"DCC_ExeOutput","configuration":"Release","platform":"Win64"}
+```
+
+Den technischen Namen aus dem tatsächlichen Suchergebnis verwenden: Liefert die SDK beispielsweise `OutputDir` statt `DCC_ExeOutput`,
+ist dieser Name als `option` zu übergeben. Die genannten DCC-Namen sind Beispiele für SDK-Kataloge, die sie anbieten.
+
+Zum Lesen des späteren Status nur die tatsächlich zurückgegebene ID übergeben:
+
+```json
+{"request_id":"<zurückgegebene ID>"}
+```
+
 ## Code Insight und Delphi-LSP
 
 DAI greift nicht als zweiter JSON-RPC-Client auf die privaten Standard-I/O-Pipes der von Delphi gestarteten `DelphiLSP.exe` zu. Stattdessen verwendet es den
@@ -402,7 +456,8 @@ Gleiche Werte belegen keine eindeutige Quelle. `merge_mode_applied` nennt, ob da
 
 IDE-weite Einstellungen sind über `IOTAServices.GetEnvironmentOptions` und `IOTAOptions.GetOptionNames/GetOptionValue/SetOptionValue`
 zugänglich. Diese Schnittstelle bietet kein allgemeines Löschen, Zurücksetzen oder Ermitteln einer Vererbungsquelle.
-Die neuen MCP-Werkzeuge betreffen die Projektoptionen; IDE-weite Variantenwerte benötigen einen eigenen Zugriff.
+`options_search` und `options_open` ergänzen die Suche nach Optionsnamen und die Navigation im IDE-Dialog. Lesen oder Schreiben IDE-weiter Variantenwerte
+benötigt weiterhin einen eigenen Zugriff; die Navigation setzt solche Werte nicht.
 
 Code-Insight-Anfragen werden serialisiert, mit einem Timeout versehen und bei Zeitüberschreitung über `AsyncOperationCanceled` abgebrochen. Ein für Help
 Insight gesetzter `SetQueryContext` wird anschließend stets mit `nil, nil` zurückgesetzt.
@@ -492,6 +547,7 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `project_activate`
 - `project_options_configurations`
 - `project_options_read`
+- `options_search`
 - `project_option_set`
 - `project_option_remove`
 - `codex_registration_status`
@@ -511,6 +567,7 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `project_remove`
 - `package_install`
 - `package_uninstall`
+- `options_open`: Dialog öffnen und navigieren; mit ausschließlich `request_id` den Zustand lesend abfragen.
 - `unit_create`
 - `form_unit_create`
 - `file_open`

@@ -9,6 +9,7 @@ uses
   h5u.DAI.MCP.Server,
   h5u.DAI.OTA.Build,
   h5u.DAI.OTA.CodeInsight,
+  h5u.DAI.Options.Navigation,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
   h5u.DAI.Settings,
@@ -55,13 +56,15 @@ begin
   TDAIMCPServer.OnDestroy := procedure begin TDAIRuntime.Stop; end;
   Events.Clear;
   TDAIRuntime.Stop;
-  Check(Events.Count = 3, 'failed drain preserves dependent services');
+  Check(Events.Count = 4, 'failed drain preserves dependent services');
   Check(Events[0] = 'log-shutdown', 'logging admission closes first');
-  Check(Events[1] = 'insight-shutdown', 'insight admission closes before HTTP drain');
-  Check(Events[2] = 'server-stop', 'server drain follows admission closure');
+  Check(Events[1] = 'options-navigation-shutdown', 'navigation callbacks close before modal HTTP drain');
+  Check(Events[2] = 'insight-shutdown', 'insight admission closes before HTTP drain');
+  Check(Events[3] = 'server-stop', 'server drain follows admission closure');
   Check(LoggerStopped and InsightStopped, 'both admissions remain closed after failed drain');
   Check(TDAIMCPServer.StopCount = 1, 'nested permanent Stop does not reenter server drain');
   Check(TDAILog.ShutdownCount = 1, 'nested Stop does not reenter logging shutdown');
+  Check(TDAIOptionsNavigationService.ShutdownCount = 1, 'nested Stop does not reenter navigation shutdown');
   Check(TDAICodeInsightService.ShutdownCount = 1, 'nested Stop does not reenter insight shutdown');
   Check(TDAIMCPServer.DestroyedCount = 0, 'failed drain never destroys server');
   Check(TDAIRuntime.ServerActive and (TDAIRuntime.ServerPort = 7777), 'failed server object remains valid');
@@ -74,6 +77,7 @@ begin
   Events.Clear;
   TDAIRuntime.Stop;
   Check(TDAIMCPServer.StopCount = 2, 'successful retry drains the same retained server');
+  Check(Events.IndexOf('options-navigation-shutdown') < Events.IndexOf('server-stop'), 'retry cancels navigation before draining');
   Check(TDAIMCPServer.DestroyedCount = 1, 'successful retry destroys server once');
   Check(TDAIMCPServer.UnsafeDestroyedCount = 0, 'no server is destroyed before a successful drain');
   Check(not TDAIRuntime.ServerActive and (TDAIRuntime.ServerPort = 0), 'successful retry clears runtime owner');

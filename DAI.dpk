@@ -61,6 +61,8 @@ contains
   h5u.DAI.MCP.Tools in 'Source\h5u.DAI.MCP.Tools.pas',
   h5u.DAI.Options.Frame in 'Source\h5u.DAI.Options.Frame.pas' {DAIOptionsFrame: TFrame},
   h5u.DAI.Options.Page in 'Source\h5u.DAI.Options.Page.pas',
+  h5u.DAI.Options.Search in 'Source\h5u.DAI.Options.Search.pas',
+  h5u.DAI.Options.Navigation in 'Source\h5u.DAI.Options.Navigation.pas',
   h5u.DAI.OTA.Build in 'Source\h5u.DAI.OTA.Build.pas',
   h5u.DAI.OTA.CodeInsight in 'Source\h5u.DAI.OTA.CodeInsight.pas',
   h5u.DAI.OTA.Files in 'Source\h5u.DAI.OTA.Files.pas',

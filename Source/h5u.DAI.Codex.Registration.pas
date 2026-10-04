@@ -408,6 +408,27 @@ begin
     - Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.
     - `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.
 
+    ## Optionen suchen und öffnen
+
+    - `options_search` liest SDK-Optionsnamen und Typen; deutsche/englische Aliase finden etwa mit `Ausgabepfad` die DCC-Ausgabeoptionen.
+    - `query` mit 1 bis 256 Zeichen ist erforderlich, `project` optional; `scope`: `all` (Standard), `ide`, `project`, `insight`.
+    - `maximum_results` liegt zwischen 1 und 500. Technische Optionsnamen aus echten Treffern verwenden, etwa `OutputDir` oder `DCC_ExeOutput`.
+    - Die Suche öffnet kein UI und liest keine Werte. Der Insight-Katalog ist gecacht; Vollständigkeit und Aktualität sind unbekannt.
+    - `options_open` öffnet `scope: "project"` (Standard), `"ide"` oder `"insight"`; Projektoptionen verlangen das bereits aktive Projekt.
+    - Vor anderen Projekten `project_activate` verwenden. `area`, `page`, `control` und `option` sind optionale Navigationsziele.
+    - `option` akzeptiert den tatsächlichen SDK-Namen oder den exakten Insight-Optionstitel; je nach Kategorie `scope: "project"` oder `"ide"` wählen.
+    - Beispiel: `options_search` mit `{"scope":"project","query":"Ausgabepfad"}`, danach `options_open` mit `{"option":"DCC_ExeOutput"}`.
+    - Explizite `configuration`/`platform` ändern die tatsächliche aktive Projektauswahl, etwa `Release`/`Win64`; `Base`, `all`, `active` sind gesperrt.
+    - DAI schreibt dabei keine Optionswerte und speichert Projekte nicht automatisch. Standard-VCL-Controls erlauben Seiten-/Zeilenwahl und Fokus.
+    - Private Sondercontrols können `unsupported` melden; nur einen ausdrücklich gemeldeten erreichten Fokus als bestätigt ansehen.
+    - Öffnen läuft asynchron: `request_id` aus der Antwort danach nur als `{"request_id":"..."}` an `options_open` übergeben.
+    - Status: `queued`, `opened`, `focused`, `unsupported`, `error`, `closed`, `cancelled`; weitere Selektoren neben `request_id` sind gesperrt.
+    - `page_selected` und `option_focused` bestätigen einzelne Schritte; `focus_verified: null` bedeutet unbekannten Fokus.
+    - Suche/Status verlangen Leserechte; Öffnen zusätzlich IDE-Bearbeitungs- und Ausführungsrechte.
+    - Bei `option` bevorzugt DAI `INTAIDEInsightItem.Execute` eines eindeutigen echten Optionseintrags als native Navigation.
+    - Allgemeine Commands-/Datei-/Build-Einträge oder mehrdeutige Treffer werden nicht ausgeführt; Controlnavigation dient als Fallback.
+    - Insight nur mit `query` zeigt Suchpopup und Suchfeldfokus. Ein öffentlicher gefilterter Ergebnisindex zur Vorwahl ist nicht verfügbar.
+
     ## Units, Typen und Funktionen finden
 
     - Ermittle mit `projects_list` und `project_files_list` die Dateien des Projekts bzw. der Gruppe; beachte zusätzlich `open_files_list`.
@@ -543,6 +564,27 @@ begin
     '- `project_create` verwendet standardmäßig `save: true`; `save: false` erzeugt ein ungespeichertes IDE-Projekt, bei VCL einschließlich Hauptformular.' + sLineBreak +
     '- Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.' + sLineBreak +
     '- `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.' + sLineBreak +
+    '' + sLineBreak +
+    '## Optionen suchen und öffnen' + sLineBreak +
+    '' + sLineBreak +
+    '- `options_search` liest SDK-Optionsnamen und Typen; deutsche/englische Aliase finden etwa mit `Ausgabepfad` die DCC-Ausgabeoptionen.' + sLineBreak +
+    '- `query` mit 1 bis 256 Zeichen ist erforderlich, `project` optional; `scope`: `all` (Standard), `ide`, `project`, `insight`.' + sLineBreak +
+    '- `maximum_results` liegt zwischen 1 und 500. Technische Optionsnamen aus echten Treffern verwenden, etwa `OutputDir` oder `DCC_ExeOutput`.' + sLineBreak +
+    '- Die Suche öffnet kein UI und liest keine Werte. Der Insight-Katalog ist gecacht; Vollständigkeit und Aktualität sind unbekannt.' + sLineBreak +
+    '- `options_open` öffnet `scope: "project"` (Standard), `"ide"` oder `"insight"`; Projektoptionen verlangen das bereits aktive Projekt.' + sLineBreak +
+    '- Vor anderen Projekten `project_activate` verwenden. `area`, `page`, `control` und `option` sind optionale Navigationsziele.' + sLineBreak +
+    '- `option` akzeptiert den tatsächlichen SDK-Namen oder den exakten Insight-Optionstitel; je nach Kategorie `scope: "project"` oder `"ide"` wählen.' + sLineBreak +
+    '- Beispiel: `options_search` mit `{"scope":"project","query":"Ausgabepfad"}`, danach `options_open` mit `{"option":"DCC_ExeOutput"}`.' + sLineBreak +
+    '- Explizite `configuration`/`platform` ändern die tatsächliche aktive Projektauswahl, etwa `Release`/`Win64`; `Base`, `all`, `active` sind gesperrt.' + sLineBreak +
+    '- DAI schreibt dabei keine Optionswerte und speichert Projekte nicht automatisch. Standard-VCL-Controls erlauben Seiten-/Zeilenwahl und Fokus.' + sLineBreak +
+    '- Private Sondercontrols können `unsupported` melden; nur einen ausdrücklich gemeldeten erreichten Fokus als bestätigt ansehen.' + sLineBreak +
+    '- Öffnen läuft asynchron: `request_id` aus der Antwort danach nur als `{"request_id":"..."}` an `options_open` übergeben.' + sLineBreak +
+    '- Status: `queued`, `opened`, `focused`, `unsupported`, `error`, `closed`, `cancelled`; weitere Selektoren neben `request_id` sind gesperrt.' + sLineBreak +
+    '- `page_selected` und `option_focused` bestätigen einzelne Schritte; `focus_verified: null` bedeutet unbekannten Fokus.' + sLineBreak +
+    '- Suche/Status verlangen Leserechte; Öffnen zusätzlich IDE-Bearbeitungs- und Ausführungsrechte.' + sLineBreak +
+    '- Bei `option` bevorzugt DAI `INTAIDEInsightItem.Execute` eines eindeutigen echten Optionseintrags als native Navigation.' + sLineBreak +
+    '- Allgemeine Commands-/Datei-/Build-Einträge oder mehrdeutige Treffer werden nicht ausgeführt; Controlnavigation dient als Fallback.' + sLineBreak +
+    '- Insight nur mit `query` zeigt Suchpopup und Suchfeldfokus. Ein öffentlicher gefilterter Ergebnisindex zur Vorwahl ist nicht verfügbar.' + sLineBreak +
     '' + sLineBreak +
     '## Units, Typen und Funktionen finden' + sLineBreak +
     '' + sLineBreak +

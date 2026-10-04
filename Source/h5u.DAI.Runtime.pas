@@ -29,6 +29,7 @@ uses
   h5u.DAI.MCP.Server,
   h5u.DAI.OTA.Build,
   h5u.DAI.OTA.CodeInsight,
+  h5u.DAI.Options.Navigation,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
   h5u.DAI.UI;
@@ -164,8 +165,9 @@ begin
     Exit;
   FStopping := True;
   try
-    // Retiring HTTP workers may still log or enter an insight operation.
+    // Close navigation callbacks before draining HTTP workers and the modal UI loop.
     TDAILog.Shutdown;
+    TDAIOptionsNavigationService.Shutdown;
     TDAICodeInsightService.Shutdown;
     try
       if Assigned(FServer) then

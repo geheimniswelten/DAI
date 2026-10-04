@@ -39,6 +39,8 @@ REQUIRED_TOOLS = {
     "package_install",
     "package_uninstall",
     "package_is_installed",
+    "options_search",
+    "options_open",
     "project_files_list",
     "project_directory_files_list",
     "directory_files_list",
@@ -990,7 +992,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.17"
+    expected = "1.2.18"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")

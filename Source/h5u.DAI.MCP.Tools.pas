@@ -32,6 +32,8 @@ uses
   h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
   h5u.DAI.Log,
+  h5u.DAI.Options.Navigation,
+  h5u.DAI.Options.Search,
   h5u.DAI.OTA.Build,
   h5u.DAI.OTA.CodeInsight,
   h5u.DAI.OTA.Debugger,
@@ -379,6 +381,8 @@ var
   LOptionConfiguration, LOptionPlatform, LOptionName, LOptionValue, LMergeMode: string;
   LOptionNames: TArray<string>;
   LMaximumOptions: Integer;
+  LNavigationRequest: TDAIOptionsNavigationRequest;
+  LOptionsQuery, LOptionsScope, LRequestId: string;
   LSearchOptions: TDAISourceSearchOptions;
   LSearchPlan: TDAISourceSearchPlan;
   LSearchProjectKey: string;
@@ -810,6 +814,51 @@ begin
     RequirePermission(pcEditOutsideIDE, 'DAI beim KI-Client deregistrieren: ' + ArgumentString(AArguments, 'client', 'all'),
       TDAICodexRegistration.UserProfileDirectory, LContext);
     Exit(TDAIClientRegistration.UnregisterFiles(ArgumentString(AArguments, 'client')));
+  end;
+
+  if SameText(AName, 'options_search') then
+  begin
+    LOptionsQuery := RequiredArgumentString(AArguments, 'query');
+    LOptionsScope := StrictArgumentString(AArguments, 'scope', 'all');
+    LProject := StrictArgumentString(AArguments, 'project');
+    LMaximumOptions := StrictArgumentInteger(AArguments, 'maximum_results', 100, 1, 500);
+    RequirePermission(pcReadAccess, 'Optionsnamen und IDE-Insight-Metadaten durchsuchen', LProject, LContext);
+    Exit(TDAIOptionsSearchService.Search(LOptionsQuery, LOptionsScope, LProject, LMaximumOptions));
+  end;
+
+  if SameText(AName, 'options_open') then
+  begin
+    if Assigned(AArguments) then
+      if Assigned(AArguments.GetValue('request_id')) then
+      begin
+        LRequestId := RequiredArgumentString(AArguments, 'request_id');
+        if AArguments.Count <> 1 then
+          raise EArgumentException.Create('request_id muss ohne weitere Argumente angegeben werden.');
+        RequirePermission(pcReadAccess, 'Status der Optionsnavigation lesen', LRequestId, LContext);
+        Exit(TDAIOptionsNavigationService.Status(LRequestId));
+      end;
+    LNavigationRequest := Default(TDAIOptionsNavigationRequest);
+    LNavigationRequest.Scope := StrictArgumentString(AArguments, 'scope', 'project');
+    LNavigationRequest.Project := StrictArgumentString(AArguments, 'project');
+    LNavigationRequest.Area := StrictArgumentString(AArguments, 'area');
+    LNavigationRequest.Page := StrictArgumentString(AArguments, 'page');
+    LNavigationRequest.Option := StrictArgumentString(AArguments, 'option');
+    LNavigationRequest.Control := StrictArgumentString(AArguments, 'control');
+    LNavigationRequest.Query := StrictArgumentString(AArguments, 'query');
+    LNavigationRequest.Configuration := StrictArgumentString(AArguments, 'configuration');
+    LNavigationRequest.Platform := StrictArgumentString(AArguments, 'platform');
+    if ((Trim(LNavigationRequest.Scope) = '') or SameText(Trim(LNavigationRequest.Scope), 'project')) and
+       (Trim(LNavigationRequest.Project) = '') then
+    begin
+      if Trim(LContext.ProjectKey) = '' then
+        raise EArgumentException.Create('Für Projektoptionen muss bereits ein Projekt aktiv sein.');
+      // Bind the default target before permission dialogs can change the active project.
+      LNavigationRequest.Project := LContext.ProjectKey;
+    end;
+    RequirePermission(pcReadAccess, 'Ziel der Optionsnavigation lesen', LNavigationRequest.Project, LContext);
+    RequirePermission(pcEditInsideIDE, 'Optionsdialog öffnen und Option auswählen', LNavigationRequest.Project, LContext);
+    RequirePermission(pcExecute, 'Optionsnavigation über die IDE ausführen', LNavigationRequest.Project, LContext);
+    Exit(TDAIOptionsNavigationService.Open(LNavigationRequest));
   end;
 
   if SameText(AName, 'package_install') or SameText(AName, 'package_uninstall') or SameText(AName, 'package_is_installed') then
@@ -1772,6 +1821,25 @@ begin
     'form_show_as_text',
     'Öffnet die DFM-Datei eines Formulars im Texteditor.',
     '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}',
+    False
+  );
+  AddTool(
+    Result,
+    'options_search',
+    'Sucht Optionsnamen, deutsche/englische Begriffe und verfügbare IDE-Insight-Metadaten; liest keine Optionswerte und öffnet keine Dialoge.',
+    '{"type":"object","properties":{"query":{"type":"string"},"scope":{"type":"string","enum":["all","ide","project","insight"]},' +
+    '"project":{"type":"string"},"maximum_results":{"type":"integer","minimum":1,"maximum":500}},"required":["query"],"additionalProperties":false}',
+    True
+  );
+  AddTool(
+    Result,
+    'options_open',
+    'Öffnet IDE-/Projektoptionen und wählt eine Option, bevorzugt über IDE Insight. Liefert request_id; Status nur mit request_id abfragen. ' +
+    'configuration/platform ändern ausdrücklich die aktive Projektauswahl. scope=insight zeigt nur den Suchfilter.',
+    '{"type":"object","properties":{"scope":{"type":"string","enum":["project","ide","insight"]},"project":{"type":"string"},' +
+    '"area":{"type":"string"},"page":{"type":"string"},"option":{"type":"string"},"control":{"type":"string"},' +
+    '"query":{"type":"string"},"configuration":{"type":"string"},"platform":{"type":"string"},"request_id":{"type":"string"}},' +
+    '"additionalProperties":false}',
     False
   );
   AddTool(

@@ -118,6 +118,8 @@
             <DesignClass>TFrame</DesignClass>
         </DCCReference>
         <DCCReference Include="Source\h5u.DAI.Options.Page.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Options.Search.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Options.Navigation.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Build.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.CodeInsight.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Files.pas"/>
