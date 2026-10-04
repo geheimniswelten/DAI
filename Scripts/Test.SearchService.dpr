@@ -351,6 +351,83 @@ begin
   end;
 end;
 
+procedure CheckRegexSearches;
+var
+  LRegexOptions: TDAISourceSearchOptions;
+  LResult: TJSONObject;
+  LPlan: TDAISourceSearchPlan;
+  LReadCount: Integer;
+  LProjectReadCount: Integer;
+  LRejected: Boolean;
+begin
+  LRegexOptions := Options;
+  LRegexOptions.UseRegex := True;
+  LResult := TDAISourceSearchService.Search('MARK_(?:EDITOR|UNSAVED)', 'project', 'A', '', LRegexOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'content regex searches authoritative and unsaved editor buffers');
+    Check(LResult.GetValue<Boolean>('use_regex'), 'regex query mode is returned');
+  finally
+    LResult.Free;
+  end;
+  LRegexOptions.FilenameRegex := '^unsaved\.pas$';
+  LResult := TDAISourceSearchService.Search('MARK_(?:EDITOR|UNSAVED)', 'project', 'A', '', LRegexOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'filename regex selects editor-only unsaved source');
+    Check(TJSONObject(Matches(LResult)[0]).GetValue<string>('source') = 'editor_buffer', 'regex preserves current unsaved buffer source');
+    Check(LResult.GetValue<string>('filename_regex') = LRegexOptions.FilenameRegex, 'filename regex is returned');
+    Check(not TFile.Exists(UnsavedFile), 'regex search never saves editor-only source');
+  finally
+    LResult.Free;
+  end;
+  LRegexOptions.CaseSensitive := True;
+  LReadCount := TDAIOTA.TestReadCount;
+  LResult := TDAISourceSearchService.Search('MARK_UNSAVED', 'project', 'A', '', LRegexOptions);
+  try
+    Check(Matches(LResult).Count = 0, 'case-sensitive filename regex is applied to editor prefilter');
+    Check(TDAIOTA.TestReadCount = LReadCount, 'excluded filename regex reads no editor contents');
+  finally
+    LResult.Free;
+  end;
+  LRegexOptions.CaseSensitive := False;
+  LRegexOptions.FilePatterns := ['*.inc'];
+  LResult := TDAISourceSearchService.Search('MARK_UNSAVED', 'project', 'A', '', LRegexOptions);
+  try
+    Check(Matches(LResult).Count = 0, 'editor prefilter combines filename regex and file patterns with AND');
+    Check(TDAIOTA.TestReadCount = LReadCount, 'AND-excluded editor is not read');
+  finally
+    LResult.Free;
+  end;
+
+  LRegexOptions := Options;
+  LRegexOptions.UseRegex := True;
+  LRejected := False;
+  LProjectReadCount := TDAIOTA.TestProjectReadCount;
+  try
+    LResult := TDAISourceSearchService.Search('(', 'project', 'A', '', LRegexOptions);
+    LResult.Free;
+  except
+    on E: EArgumentException do
+      LRejected := True;
+  end;
+  Check(LRejected, 'invalid query regex rejected before preparing or reading any source');
+  Check(TDAIOTA.TestProjectReadCount = LProjectReadCount, 'invalid query regex does not inspect project file lists');
+  Check(TDAIOTA.TestReadCount = LReadCount, 'invalid query regex reads no editor content');
+
+  LPlan := TDAISourceSearchService.Prepare('project', 'A', '', Options.TimeoutMs);
+  LRegexOptions := Options;
+  LRegexOptions.FilenameRegex := '[';
+  LRejected := False;
+  try
+    LResult := TDAISourceSearchService.SearchPrepared('needle', LPlan, LRegexOptions);
+    LResult.Free;
+  except
+    on E: EArgumentException do
+      LRejected := True;
+  end;
+  Check(LRejected, 'invalid filename regex rejected in an already authorized plan');
+  Check(TDAIOTA.TestReadCount = LReadCount, 'invalid prepared filename regex reads no editor content');
+end;
+
 procedure CreateFixtures;
 var
   LGuid: TGUID;
@@ -414,6 +491,7 @@ begin
       CheckPermissions;
       CheckSearches;
       CheckPreparedPlan;
+      CheckRegexSearches;
       Writeln('PASS: ', CheckCount, ' isolated search service checks; real OTA adapter and engine, no live IDE or client settings.');
     finally
       CleanFixtures;

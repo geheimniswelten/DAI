@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import re
 import sys
@@ -411,66 +412,332 @@ def read_pascal_literal(content: str, start: int) -> tuple[str, int]:
     raise ValueError("nicht abgeschlossene Delphi-Zeichenkette")
 
 
-def pascal_literal_expression(content: str) -> str:
-    parts: list[str] = []
+def mask_pascal_region(content: str) -> str:
+    return "".join(character if character in "\r\n" else " " for character in content)
+
+
+def preprocess_pascal(content: str, compiler_version: float, defines: set[str] | None = None) -> tuple[str, list[str]]:
+    """Select compiler branches while retaining every original offset and line ending."""
+    code, errors = strip_pascal_strings_and_comments(content)
+    symbols = {symbol.upper() for symbol in (defines or set())}
+    stack: list[dict[str, bool | int]] = []
+    output: list[str] = []
+    active = True
+    previous = 0
+
+    def condition(expression: str, line: int) -> bool:
+        comparison = re.fullmatch(r"CompilerVersion\s*(>=|<=|<>|>|<|=)\s*(\d+(?:\.\d+)?)", expression, re.IGNORECASE)
+        if comparison:
+            operator, value = comparison.groups()
+            version = float(value)
+            return {">=": compiler_version >= version, "<=": compiler_version <= version,
+                    ">": compiler_version > version, "<": compiler_version < version,
+                    "=": compiler_version == version, "<>": compiler_version != version}[operator]
+        symbol = re.fullmatch(r"(not\s+)?(?:Defined|Declared)\s*\(\s*([A-Za-z_]\w*)\s*\)", expression, re.IGNORECASE)
+        if symbol:
+            found = symbol.group(2).upper() in symbols
+            return not found if symbol.group(1) else found
+        errors.append(f"{line}: nicht unterstützte bedingte Compileranweisung: {expression}")
+        return False
+
+    for directive in re.finditer(r"\{\$([A-Za-z]+)\b([^{}]*)\}", code):
+        output.append(content[previous:directive.start()] if active else mask_pascal_region(content[previous:directive.start()]))
+        output.append(mask_pascal_region(content[directive.start():directive.end()]))
+        previous = directive.end()
+        command = directive.group(1).upper()
+        expression = directive.group(2).strip()
+        line = content.count("\n", 0, directive.start()) + 1
+        if command in {"IF", "IFDEF", "IFNDEF", "IFOPT"}:
+            if command in {"IFDEF", "IFNDEF"}:
+                # Delphi's generated DPK uses explanatory text after IMPLICITBUILDING.
+                symbol = re.fullmatch(r"([A-Za-z_]\w*)(?:\s+[^{}]*)?", expression)
+                if not symbol:
+                    errors.append(f"{line}: ungültiges Symbol in {command}")
+                    selected = False
+                else:
+                    selected = symbol.group(1).upper() in symbols
+                    if command == "IFNDEF":
+                        selected = not selected
+            else:
+                selected = condition(expression, line)
+            stack.append({"parent": active, "selected": selected, "else": False, "line": line})
+            active = active and selected
+        elif command in {"ELSE", "ELSEIF"}:
+            if not stack:
+                errors.append(f"{line}: {command} ohne zugehöriges IF")
+                continue
+            frame = stack[-1]
+            if frame["else"]:
+                errors.append(f"{line}: {command} nach ELSE")
+            selected = True if command == "ELSE" else condition(expression, line)
+            active = bool(frame["parent"]) and not bool(frame["selected"]) and selected
+            frame["selected"] = bool(frame["selected"]) or selected
+            frame["else"] = command == "ELSE"
+        elif command in {"ENDIF", "IFEND"}:
+            if not stack:
+                errors.append(f"{line}: {command} ohne zugehöriges IF")
+            else:
+                active = bool(stack.pop()["parent"])
+    output.append(content[previous:] if active else mask_pascal_region(content[previous:]))
+    for frame in stack:
+        errors.append(f"{frame['line']}: nicht abgeschlossene bedingte Compileranweisung")
+    return "".join(output), errors
+
+
+def pascal_compilation_views(content: str) -> list[tuple[str, str, list[str]]]:
+    """Check both architectures and each optional symbol occurring in actual guards."""
+    code, _ = strip_pascal_strings_and_comments(content)
+    symbols = {symbol.upper() for groups in re.findall(
+        r"\{\$(?:IFDEF|IFNDEF)\s+([A-Za-z_]\w*)\b|\b(?:Defined|Declared)\s*\(\s*([A-Za-z_]\w*)\s*\)",
+        code, re.IGNORECASE) for symbol in groups if symbol}
+    architecture_symbols = {"WIN32", "WIN64", "CPUX86", "CPUX64", "MSWINDOWS"}
+    architectures = [{"WIN32", "CPUX86", "MSWINDOWS"}, {"WIN64", "CPUX64", "MSWINDOWS"}]
+    if not symbols & architecture_symbols:
+        architectures = architectures[:1]
+    optional = sorted(symbols - architecture_symbols)
+    versions = (35.0, 36.0, 37.0) if re.search(r"\{\$IF\s+CompilerVersion\b", code, re.IGNORECASE) else (37.0,)
+    views: list[tuple[str, str, list[str]]] = []
+    seen: set[str] = set()
+    for version, architecture, values in itertools.product(versions, architectures, itertools.product((False, True), repeat=len(optional))):
+        defines = architecture | {symbol for symbol, selected in zip(optional, values) if selected}
+        selected, errors = preprocess_pascal(content, version, defines)
+        if selected not in seen or errors:
+            seen.add(selected)
+            label = f"CompilerVersion={version:g}, " + ", ".join(sorted(defines))
+            views.append((label, selected, errors))
+    return views
+
+
+def pascal_schema_tokens(content: str) -> list[tuple[str, str]]:
+    """Tokenize only the small, explicitly supported schema construction language."""
+    tokens: list[tuple[str, str]] = []
     index = 0
     while index < len(content):
-        if content[index] == "'":
-            literal, index = read_pascal_literal(content, index)
-            parts.append(literal)
-        else:
+        if content[index].isspace():
             index += 1
-    return "".join(parts)
+        elif content.startswith("//", index):
+            end = content.find("\n", index)
+            index = len(content) if end < 0 else end
+        elif content.startswith("(*", index) or content[index] == "{":
+            terminator = "*)" if content.startswith("(*", index) else "}"
+            end = content.find(terminator, index + 2)
+            if end < 0:
+                raise ValueError("nicht abgeschlossener Kommentar im Schemaausdruck")
+            index = end + len(terminator)
+        elif content[index] == "'":
+            literal, index = read_pascal_literal(content, index)
+            tokens.append(("literal", literal))
+        elif match := re.match(r"[A-Za-z_]\w*|:=|[+();,]", content[index:]):
+            value = match.group()
+            tokens.append(("word" if value[0].isalpha() or value[0] == "_" else "symbol", value.lower()))
+            index += len(value)
+        elif match := re.match(r"#(\d+)", content[index:]):
+            tokens.append(("literal", chr(int(match.group(1)))))
+            index += len(match.group())
+        else:
+            raise ValueError(f"nicht unterstütztes Zeichen im Schemaausdruck: {content[index]!r}")
+    return tokens
+
+
+class PascalSchemaExpression:
+    """Evaluate actual literals and simple string helpers with one constant Boolean parameter."""
+
+    def __init__(self, content: str, helpers: dict[str, tuple[str, str]], environment: dict[str, str | bool] | None = None,
+                 depth: int = 0):
+        if depth > 16:
+            raise ValueError("rekursiver Schema-Helper")
+        self.tokens = pascal_schema_tokens(content)
+        self.position = 0
+        self.helpers = helpers
+        self.environment = environment or {}
+        self.depth = depth
+
+    def accept(self, value: str) -> bool:
+        if self.position < len(self.tokens) and self.tokens[self.position] == ("word" if value[0].isalpha() else "symbol", value):
+            self.position += 1
+            return True
+        return False
+
+    def require(self, value: str) -> None:
+        if not self.accept(value):
+            raise ValueError(f"Schema-Helper: {value!r} erwartet")
+
+    def boolean(self) -> bool:
+        invert = self.accept("not")
+        if self.accept("true"):
+            value = True
+        elif self.accept("false"):
+            value = False
+        elif self.position < len(self.tokens) and self.tokens[self.position][0] == "word":
+            name = self.tokens[self.position][1]
+            self.position += 1
+            value = self.environment.get(name)
+            if not isinstance(value, bool):
+                raise ValueError(f"nicht unterstützte Schema-Bedingung: {name}")
+        else:
+            raise ValueError("konstante Boolean-Schema-Bedingung erwartet")
+        return not value if invert else value
+
+    def primary(self) -> str:
+        if self.position >= len(self.tokens):
+            raise ValueError("unvollständiger Schemaausdruck")
+        kind, value = self.tokens[self.position]
+        self.position += 1
+        if kind == "literal":
+            return value
+        if (kind, value) == ("symbol", "("):
+            result = self.expression()
+            self.require(")")
+            return result
+        if kind != "word":
+            raise ValueError(f"nicht unterstützter Schemaausdruck: {value}")
+        if value == "slinebreak":
+            return "\r\n"
+        if value in self.environment and isinstance(self.environment[value], str):
+            return self.environment[value]
+        if value not in self.helpers:
+            raise ValueError(f"nicht unterstützter Schemaausdruck oder fehlender Helper: {value}")
+        parameter, body = self.helpers[value]
+        self.require("(")
+        argument = self.boolean()
+        self.require(")")
+        helper = PascalSchemaExpression(body, self.helpers, {"result": "", parameter: argument}, self.depth + 1)
+        helper.statement(True)
+        helper.accept(";")
+        if helper.position != len(helper.tokens):
+            raise ValueError(f"nicht unterstützter Schema-Helper: {value}")
+        result = helper.environment["result"]
+        if not isinstance(result, str):
+            raise ValueError(f"Schema-Helper {value} liefert keinen String")
+        return result
+
+    def expression(self) -> str:
+        result = self.primary()
+        while self.accept("+"):
+            result += self.primary()
+        return result
+
+    def statement(self, execute: bool) -> None:
+        if self.accept("begin"):
+            while not self.accept("end"):
+                if self.position >= len(self.tokens):
+                    raise ValueError("nicht abgeschlossener Schema-Helper")
+                self.statement(execute)
+                if not self.accept(";") and self.tokens[self.position:self.position + 1] != [("word", "end")]:
+                    raise ValueError("Schema-Helper: Semikolon erwartet")
+        elif self.accept("if"):
+            selected = self.boolean()
+            self.require("then")
+            self.statement(execute and selected)
+            if self.accept("else"):
+                self.statement(execute and not selected)
+        elif self.accept("result"):
+            self.require(":=")
+            result = self.expression()
+            if execute:
+                self.environment["result"] = result
+        else:
+            raise ValueError("nicht unterstützte Anweisung im Schema-Helper")
+
+
+def pascal_schema_helpers(content: str, code: str) -> dict[str, tuple[str, str]]:
+    helpers: dict[str, tuple[str, str]] = {}
+    pattern = r"(?im)^function\s+([A-Za-z_]\w*)\(\s*(?:const\s+)?([A-Za-z_]\w*)\s*:\s*Boolean\s*\)\s*:\s*string\s*;\s*(begin)\b"
+    for match in re.finditer(pattern, code):
+        end = re.search(r"(?im)^end\s*;", code[match.end():])
+        if not end:
+            raise ValueError(f"nicht abgeschlossener Schema-Helper: {match.group(1)}")
+        name = match.group(1).lower()
+        if name in helpers:
+            raise ValueError(f"mehrdeutiger Schema-Helper: {name}")
+        helpers[name] = (match.group(2).lower(), content[match.start(3):match.end() + end.end()])
+    return helpers
+
+
+def pascal_literal_expression(content: str, helpers: dict[str, tuple[str, str]] | None = None) -> str:
+    parser = PascalSchemaExpression(content, helpers or {})
+    result = parser.expression()
+    if parser.position != len(parser.tokens):
+        raise ValueError("nicht unterstützter Rest im Schemaausdruck")
+    return result
+
+
+def extract_tool_schemas(content: str, errors: list[str], compiler_version: float) -> dict[str, dict]:
+    content, conditional_errors = preprocess_pascal(content, compiler_version)
+    errors.extend(conditional_errors)
+    code, lexical_errors = strip_pascal_strings_and_comments(content)
+    errors.extend(lexical_errors)
+    schemas: dict[str, dict] = {}
+    try:
+        helpers = pascal_schema_helpers(content, code)
+    except ValueError as exc:
+        errors.append(str(exc))
+        return schemas
+    for match in re.finditer(r"AddTool\s*\(\s*Result\s*,", code, flags=re.IGNORECASE):
+        arguments: list[str] = []
+        depth, index, start = 1, match.end(), match.end()
+        while index < len(content) and depth:
+            character = code[index]
+            if character == "," and depth == 1:
+                arguments.append(content[start:index])
+                start = index + 1
+            elif character in "()":
+                depth += 1 if character == "(" else -1
+                if not depth:
+                    arguments.append(content[start:index])
+            index += 1
+        line = content.count("\n", 0, match.start()) + 1
+        if depth or len(arguments) != 4:
+            errors.append(f"{line}: MCP-Werkzeugdeklaration besitzt ungültige Argumentanzahl oder Klammerung")
+            continue
+        name = arguments[0].strip()
+        try:
+            name = pascal_literal_expression(arguments[0])
+            schema = json.loads(pascal_literal_expression(arguments[2], helpers))
+            if not isinstance(schema, dict):
+                raise ValueError("Eingabeschema muss ein JSON-Objekt sein")
+            if name in schemas:
+                raise ValueError("doppelte MCP-Werkzeugdeklaration")
+            schemas[name] = schema
+        except (ValueError, TypeError) as exc:
+            errors.append(f"{line}: {name}: ungültiges JSON-Eingabeschema: {exc}")
+    return schemas
 
 
 def check_tools(errors: list[str]) -> None:
-    content = read_project_text(SOURCE / "h5u.DAI.MCP.Tools.pas")
-    stripped, _ = strip_pascal_strings_and_comments(content)
-    declared = {
-        match.group(1)
-        for match in re.finditer(r"AddTool\s*\(\s*Result\s*,\s*'([^']+)'", content, flags=re.IGNORECASE | re.DOTALL)
-        if stripped[match.start():match.start() + 7].lower() == "addtool"
-    }
-    missing = sorted(REQUIRED_TOOLS - declared)
-    extra = sorted(declared - REQUIRED_TOOLS)
-    if missing:
-        fail(errors, "Fehlende MCP-Werkzeuge: " + ", ".join(missing))
-    if extra:
-        fail(errors, "Unerwartete MCP-Werkzeuge: " + ", ".join(extra))
-    dispatched = {
-        match.group(1)
-        for match in re.finditer(r"SameText\s*\(\s*AName\s*,\s*'([^']+)'", content, flags=re.IGNORECASE)
-        if stripped[match.start():match.start() + 8].lower() == "sametext"
-    }
-    for name in sorted(declared - dispatched):
-        fail(errors, f"MCP-Werkzeug ohne Dispatch: {name}")
-
-    for match in re.finditer(r"AddTool\s*\(\s*Result\s*,", stripped, flags=re.IGNORECASE):
-        args: list[str] = []
-        depth, index, argument_start = 1, match.end(), match.end()
-        while index < len(content) and depth:
-            char = stripped[index]
-            if char == "," and depth == 1:
-                args.append(content[argument_start:index])
-                argument_start = index + 1
-            elif char in "()":
-                depth += 1 if char == "(" else -1
-                if not depth:
-                    args.append(content[argument_start:index])
-            index += 1
-        if len(args) != 4:
-            fail(errors, "MCP-Werkzeugdeklaration besitzt ungültige Argumentanzahl")
-            continue
-        name = args[0].strip()
-        try:
-            schema_text = pascal_literal_expression(args[2])
-            schema = json.loads(schema_text)
+    source = read_project_text(SOURCE / "h5u.DAI.MCP.Tools.pas")
+    for compiler_version in (35.0, 36.0, 37.0):
+        branch_errors: list[str] = []
+        content, conditional_errors = preprocess_pascal(source, compiler_version)
+        branch_errors.extend(conditional_errors)
+        stripped, _ = strip_pascal_strings_and_comments(content)
+        declared = {
+            match.group(1)
+            for match in re.finditer(r"AddTool\s*\(\s*Result\s*,\s*'([^']+)'", content, flags=re.IGNORECASE | re.DOTALL)
+            if stripped[match.start():match.start() + 7].lower() == "addtool"
+        }
+        missing = sorted(REQUIRED_TOOLS - declared)
+        extra = sorted(declared - REQUIRED_TOOLS)
+        if missing:
+            fail(branch_errors, "Fehlende MCP-Werkzeuge: " + ", ".join(missing))
+        if extra:
+            fail(branch_errors, "Unerwartete MCP-Werkzeuge: " + ", ".join(extra))
+        dispatched = {
+            match.group(1)
+            for match in re.finditer(r"SameText\s*\(\s*AName\s*,\s*'([^']+)'", content, flags=re.IGNORECASE)
+            if stripped[match.start():match.start() + 8].lower() == "sametext"
+        }
+        for name in sorted(declared - dispatched):
+            fail(branch_errors, f"MCP-Werkzeug ohne Dispatch: {name}")
+        for name, schema in extract_tool_schemas(content, branch_errors, compiler_version).items():
             if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
-                fail(errors, f"{name}: Eingabeschema muss ein begrenztes Objekt sein")
-            if set(schema.get("required", [])) - set(schema.get("properties", {})):
-                fail(errors, f"{name}: required nennt nicht deklarierte Eigenschaften")
-        except (ValueError, TypeError) as exc:
-            fail(errors, f"{name}: ungültiges JSON-Eingabeschema: {exc}")
+                fail(branch_errors, f"{name}: Eingabeschema muss ein begrenztes Objekt sein")
+            try:
+                if set(schema.get("required", [])) - set(schema.get("properties", {})):
+                    fail(branch_errors, f"{name}: required nennt nicht deklarierte Eigenschaften")
+            except TypeError:
+                fail(branch_errors, f"{name}: required/properties besitzen einen ungültigen Typ")
+        errors.extend(f"CompilerVersion={compiler_version:g}: {error}" for error in branch_errors)
 
 
 def check_old_names(errors: list[str]) -> None:
@@ -720,7 +987,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.15"
+    expected = "1.2.16"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
@@ -734,8 +1001,12 @@ def check_version_consistency(errors: list[str]) -> None:
         fail(errors, f"DAI.dproj: aktivierte Datei- und Produktversion müssen {expected}.0 sein")
     if f"version = '{expected}'" not in test_client:
         fail(errors, f"Test-MCP.ps1: Clientversion muss {expected} sein")
-    if not changelog.startswith(f"# Änderungsprotokoll\n\n## {expected}\n"):
-        fail(errors, f"CHANGELOG.md: erster Eintrag muss Version {expected} sein")
+    first_release = re.match(
+        r"\A# Änderungsprotokoll\n\n(?:## Unveröffentlicht\n[\s\S]*?(?=^## ))?## (\d+\.\d+\.\d+)\n",
+        changelog, flags=re.MULTILINE,
+    )
+    if not first_release or first_release.group(1) != expected:
+        fail(errors, f"CHANGELOG.md: erster Versionseintrag muss {expected} sein; Unveröffentlicht ist davor optional")
 
 
 def check_nonfatal_server_binding(errors: list[str]) -> None:
@@ -935,28 +1206,31 @@ def strip_pascal_strings_and_comments(content: str) -> tuple[str, list[str]]:
     return "".join(output), errors
 
 
+def check_lexical_content(content: str) -> list[str]:
+    stripped, errors = strip_pascal_strings_and_comments(content)
+    stack: list[tuple[str, int]] = []
+    pairs = {")": "(", "]": "["}
+    line = 1
+    for character in stripped:
+        if character == "\n":
+            line += 1
+        elif character in "([":
+            stack.append((character, line))
+        elif character in ")]":
+            if not stack or stack[-1][0] != pairs[character]:
+                errors.append(f"{line}: unausgeglichene Klammer {character}")
+                break
+            stack.pop()
+    if stack:
+        errors.append(f"{stack[-1][1]}: nicht geschlossene Klammer {stack[-1][0]}")
+    return errors
+
+
 def check_lexical_balance(errors: list[str]) -> None:
     for path in sorted([*SOURCE.glob("*.pas"), ROOT / "DAI.dpk"]):
-        content = read_project_text(path)
-        stripped, lexical_errors = strip_pascal_strings_and_comments(content)
-        for lexical_error in lexical_errors:
-            fail(errors, f"{path.relative_to(ROOT)}: {lexical_error}")
-
-        stack: list[tuple[str, int]] = []
-        pairs = {")": "(", "]": "["}
-        line = 1
-        for ch in stripped:
-            if ch == "\n":
-                line += 1
-            elif ch in "([":
-                stack.append((ch, line))
-            elif ch in ")]":
-                if not stack or stack[-1][0] != pairs[ch]:
-                    fail(errors, f"{path.relative_to(ROOT)}:{line}: unausgeglichene Klammer {ch}")
-                    break
-                stack.pop()
-        if stack:
-            fail(errors, f"{path.relative_to(ROOT)}:{stack[-1][1]}: nicht geschlossene Klammer {stack[-1][0]}")
+        for label, content, conditional_errors in pascal_compilation_views(read_project_text(path)):
+            for error in conditional_errors + check_lexical_content(content):
+                fail(errors, f"{path.relative_to(ROOT)} [{label}]: {error}")
 
 def deliverable_files() -> list[Path]:
     """Check the shipped source, excluding builds, personal chats and permission files."""

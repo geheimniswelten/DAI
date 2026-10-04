@@ -187,18 +187,61 @@ Codierung sowie die ursprüngliche und resultierende Art des Zeilenumbruchs.
 
 ## Quelldateien und Referenzen finden
 
-`source_search` sucht wörtlichen Text, etwa `IOTADebuggerServices` oder `TButton`, mit Datei, Zeile, Spalte und Ausschnitt als Ergebnis.
+`source_search` sucht mit `query` wörtlichen Text, etwa `IOTADebuggerServices` oder `TButton`; `use_regex: true` interpretiert die Abfrage als RegEx.
+Treffer liefern Datei, Zeile, Spalte und Ausschnitt. Ohne die neue Option bleibt die bisherige wörtliche Suche erhalten.
 `interfaces_only` ist standardmäßig `true`: Pascal-Units werden vor der Suche ab dem echten `implementation`-Schlüsselwort abgeschnitten.
 Treffer und Ausschnitte können deshalb keinen nachfolgenden Implementierungscode enthalten; ursprüngliche Zeilen und Spalten bleiben erhalten.
 Für Methodenrümpfe und Verwendungen dort `interfaces_only: false` setzen. Kommentare, Direktiven, Strings und escaped identifiers lösen keinen Schnitt aus.
 Andere Dateitypen sowie Inhalte ohne erkannten Unit-/Interface-Kopf bleiben unverändert. Die Filterung erfolgt lexikalisch ohne Compiler-Präprozessor.
 Die Antwort nennt den angeforderten Modus und `implementation_files_omitted`, die Zahl tatsächlich gekürzter Dateien.
 `scope` wählt `project`, `group`, `references` oder `all` (Standard); `project`, `directory` und `file_patterns` grenzen die Suche ein.
+`filename_regex` prüft zusätzlich den Dateinamen ohne Verzeichnis; der bisherige Dateifilter und die RegEx müssen beide passen.
 Aktuelle Editor- und Designerpuffer haben Vorrang vor Dateien auf dem Datenträger. Die Standardmuster sind `*.pas`, `*.inc`, `*.dpr` und `*.dpk`.
 Dateimuster verwenden ausschließlich `*` und `?` auf dem Dateinamen, höchstens 100 Muster mit jeweils 256 Zeichen; Zeichenklassen werden abgelehnt.
-Mit `whole_word` lässt sich ein vollständiger Bezeichner suchen, mit `case_sensitive` die Groß-/Kleinschreibung beachten.
+`case_sensitive` ist standardmäßig `false` und gilt für den Suchtext sowie `filename_regex`. Die bisherigen Dateimuster bleiben unabhängig davon
+ohne Beachtung der Groß-/Kleinschreibung. `whole_word` prüft bei wörtlicher und RegEx-Suche die Bezeichnergrenzen um den gesamten Inhaltstreffer.
 
-Standardmäßig endet die Suche nach 200 Treffern, 10.000 Dateien oder 5 Sekunden; die Obergrenzen liegen bei 1.000 Treffern, 100.000 Dateien und
+Beispiel für `source_search`: Button-/Edit-Typen in den vollständigen DAI-Units suchen:
+
+```json
+{
+  "query": "T(Button|Edit)",
+  "use_regex": true,
+  "scope": "project",
+  "file_patterns": ["*.pas"],
+  "filename_regex": "^h5u\\.DAI\\..*\\.pas$",
+  "whole_word": true,
+  "interfaces_only": false
+}
+```
+
+`directory_files_list`, `project_directory_files_list` und `reference_files_list` unterstützen ebenfalls `filename_regex` sowie optional
+`content_query`. Der Inhaltsfilter ist wörtlich; mit `content_use_regex: true` wird er als RegEx ausgewertet. `case_sensitive` gilt für beide
+RegEx-Filter und den wörtlichen Inhaltsfilter; `whole_word` betrifft nur Inhaltstreffer. `search_pattern`, Dateinamen-RegEx und Inhaltsfilter
+werden mit UND verknüpft. Der Inhaltsfilter liest den vollständigen aktuellen Editor-/Designertext, sonst die Datei mit ihrer erkannten Codierung.
+Er schneidet keine Pascal-Implementierung ab. Nicht lesbare, binäre oder mehr als 16 MiB große Inhalte führen zu einem Fehler mit Dateipfad.
+
+Beispiel für `project_directory_files_list`: DAI-Pascal-Dateien mit einer passenden Klassendeklaration auflisten:
+
+```json
+{
+  "search_pattern": "*.pas",
+  "recursive": true,
+  "filename_regex": "^h5u\\.DAI\\..*\\.pas$",
+  "content_query": "TDAI\\w+\\s*=\\s*class",
+  "content_use_regex": true
+}
+```
+
+RegEx-Filter suchen auch Teiltreffer; für einen vollständigen Dateinamen `^` und `$` verwenden. In JSON wird jeder RegEx-Backslash als `\\`
+geschrieben. Inhalts-RegEx kann mehrere Zeilen umfassen: `(?m)` lässt `^`/`$` an Zeilengrenzen greifen, `(?s)` lässt `.` auch Zeilenumbrüche erfassen.
+Ungültige RegEx-Syntax und überschrittene RegEx-Ausführungsgrenzen melden einen Fehler; sie werden nicht als „keine Treffer“ behandelt.
+RegEx verwenden Delphis PCRE-Engine mit Unicode-Zeichenklassen, etwa für `\w` und `\d`. `\G` und die Scan-Steuerverben
+`(*SKIP)`, `(*COMMIT)`, `(*PRUNE)` und `(*THEN)` werden ausdrücklich abgewiesen. Pro Matchversuch gelten Grenzen
+von 100.000 Backtracking-Aufrufen und 256 Rekursionsebenen; zwischen Matchversuchen wird ein Scanbudget von 500 ms geprüft.
+`content_use_regex: true` erfordert eine nicht leere `content_query`; ohne Inhaltsabfrage werden Dateien nicht dafür gelesen.
+
+`source_search` endet standardmäßig nach 200 Treffern, 10.000 Dateien oder 5 Sekunden; die Obergrenzen liegen bei 1.000 Treffern, 100.000 Dateien und
 30 Sekunden. Dateien über 2 MiB, binäre Inhalte und Reparse-Verknüpfungen werden übersprungen. `truncated`, `limit_reason`, `files_skipped`
 und `snapshot_files_skipped` zeigen Grenzen und ausgelassene Dateien an. Eine begrenzte Suche bestätigt nicht die Abwesenheit eines Symbols.
 Die Sammlung der IDE-Metadaten wird separat als `preparation_ms` ausgewiesen; deren bestehende OTA-Hauptthreadaufrufe können auf eine beschäftigte IDE warten.
@@ -609,6 +652,8 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.SourceView.ps1 -Platform Both
 .\Scripts\Test.SourceSearch.ps1 -Platform Both
 .\Scripts\Test.SearchService.ps1 -Platform Both
+.\Scripts\Test.DirectorySearch.ps1 -Platform Both
+.\Scripts\Test.SearchDispatch.ps1 -Platform Both
 .\Scripts\Test.SourcePaths.ps1 -Platform Both -StrictSeparators
 .\Scripts\Test.EditorWrite.ps1 -Platform Both
 .\Scripts\Test.Windows.ps1 -Platform Both

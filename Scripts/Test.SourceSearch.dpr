@@ -3,12 +3,14 @@
 {$APPTYPE CONSOLE}
 
 uses
+  System.Classes,
   System.Generics.Collections,
   System.Diagnostics,
   System.IOUtils,
   System.JSON,
   System.SysUtils,
   Winapi.Windows,
+  h5u.DAI.Source.Regex,
   h5u.DAI.Source.Search;
 
 var
@@ -259,6 +261,296 @@ begin
     Check(Hit(LResult).GetValue<Integer>('column') = 2, 'Supplementary query column');
   finally
     LResult.Free;
+  end;
+end;
+
+procedure TestRegex;
+var
+  LOptions: TDAISourceSearchOptions;
+  LResult: TJSONObject;
+  LRegex: TDAIRegex;
+  LMatch: TDAIRegexMatch;
+  LRejected: Boolean;
+  LClock: TStopwatch;
+  LPattern: string;
+  LContent: string;
+  LFileName: string;
+begin
+  LOptions := EmptyOptions;
+  LOptions.UseRegex := True;
+  LResult := SnapshotResult('a.b aXb', 'a.b', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Regex explicitly enabled interprets dot');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('head' + #13#10 + #$D83D#$DE00 + ' needle42' + #10 + 'needle7', 'needle\d+', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Regex variable length matches');
+    Check(Hit(LResult).GetValue<Integer>('line') = 2, 'Regex preserves CRLF line coordinates');
+    Check(Hit(LResult).GetValue<Integer>('column') = 4, 'Regex columns count UTF-16 surrogate code units');
+    Check(Hit(LResult, 1).GetValue<Integer>('line') = 3, 'Regex preserves LF line coordinates');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('first' + #13#10 + 'needle' + #13#10 + 'tail', '(?m)^needle\r\ntail$', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Multiline regex searches current full subject');
+    Check(Hit(LResult).GetValue<Integer>('line') = 2, 'Multiline hit starts on its original line');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('prefix needle prefix needle', '(?<=prefix )needle', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Starting subsequent matches retains lookbehind context');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('TButton tbutton', 'TButton', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Regex uses case_sensitive=false');
+  finally
+    LResult.Free;
+  end;
+  LOptions.CaseSensitive := True;
+  LResult := SnapshotResult('TButton tbutton', 'TButton', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Regex uses case_sensitive=true');
+  finally
+    LResult.Free;
+  end;
+  LOptions.WholeWord := True;
+  LResult := SnapshotResult('TButton TEditX _TEdit TEdit' + #$0301 + ' (TEdit) ' + #$D801#$DC00 + 'TButton',
+    'T(?:Button|Edit)', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Whole-word boundaries surround the entire variable regex match');
+  finally
+    LResult.Free;
+  end;
+  LOptions.WholeWord := False;
+  LResult := SnapshotResult(#$D83D#$DE00, '(?=)', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Zero-length regex makes progress without splitting a surrogate pair');
+    Check(Hit(LResult, 1).GetValue<Integer>('column') = 3, 'Zero-length EOF hit has one-based UTF-16 column');
+  finally
+    LResult.Free;
+  end;
+  LResult := SnapshotResult('', '$', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Empty subject allows its single zero-length EOF match');
+    Check(Hit(LResult).GetValue<Integer>('column') = 1, 'Empty subject EOF column');
+  finally
+    LResult.Free;
+  end;
+  LOptions.MaximumResults := 2;
+  LResult := SnapshotResult('abcd', '.', LOptions);
+  try
+    Check(Matches(LResult).Count = 2, 'Regex honors maximum_results');
+    Check(LResult.GetValue<string>('limit_reason') = 'maximum_results', 'Regex result truncation is explicit');
+  finally
+    LResult.Free;
+  end;
+  LOptions := EmptyOptions;
+  LOptions.FilenameRegex := '^editor\.pas$';
+  LResult := SnapshotResult('a.b aXb', 'a.b', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Filename regex does not reinterpret a literal query');
+  finally
+    LResult.Free;
+  end;
+  LOptions.CaseSensitive := True;
+  LResult := SnapshotResult('needle', 'needle', LOptions);
+  try
+    Check(Matches(LResult).Count = 0, 'Filename regex obeys case_sensitive');
+    Check(LResult.GetValue<Integer>('files_scanned') = 0, 'Filename regex excludes content before scanning');
+  finally
+    LResult.Free;
+  end;
+  LOptions.CaseSensitive := False;
+  LOptions.FilePatterns := TArray<string>.Create('*.inc');
+  LResult := SnapshotResult('needle', 'needle', LOptions);
+  try
+    Check(Matches(LResult).Count = 0, 'Filename regex and file_patterns are combined with AND');
+  finally
+    LResult.Free;
+  end;
+  LOptions := EmptyOptions;
+  LOptions.UseRegex := True;
+  LOptions.InterfacesOnly := True;
+  LResult := SnapshotResult('unit Sample; interface procedure PublicAPI; implementation procedure PrivateAPI; begin end; end.',
+    '(?:Public|Private)API', LOptions);
+  try
+    Check(Matches(LResult).Count = 1, 'Regex preserves interface-only source view');
+    Check(LResult.GetValue<Integer>('implementation_files_omitted') = 1, 'Regex interface omission is counted');
+  finally
+    LResult.Free;
+  end;
+
+  LRejected := False;
+  try
+    LResult := TDAISourceSearch.Search('(', [TPath.Combine(FixtureRoot, 'MissingRoot')], nil, nil, nil, LOptions);
+    LResult.Free;
+  except
+    on E: EArgumentException do
+      LRejected := True;
+  end;
+  Check(LRejected, 'Invalid content regex is rejected even without candidate files');
+  LOptions := EmptyOptions;
+  LOptions.FilenameRegex := '[';
+  LRejected := False;
+  try
+    LResult := TDAISourceSearch.Search('needle', nil, nil, nil, nil, LOptions);
+    LResult.Free;
+  except
+    on E: EArgumentException do
+      LRejected := True;
+  end;
+  Check(LRejected, 'Invalid filename regex is rejected before file enumeration');
+
+  LRegex := TDAIRegex.Create('$', True);
+  try
+    LMatch := LRegex.Match('x', 2);
+    Check(LMatch.Success and (LMatch.Index = 2) and (LMatch.Length = 0), 'Wrapper supports a 1-based EOF start position');
+    LRejected := False;
+    try
+      LRegex.Match('x', 3);
+    except
+      on E: EArgumentOutOfRangeException do
+        LRejected := True;
+    end;
+    Check(LRejected, 'Wrapper rejects start beyond EOF');
+  finally
+    LRegex.Free;
+  end;
+  for LPattern in TArray<string>.Create('(*NO_START_OPT)^(a+)+$',
+    '(*LIMIT_MATCH=999999999)(*NO_START_OPT)^(a+)+$', '^(a(?1)?b)$') do
+  begin
+    LRegex := TDAIRegex.Create(LPattern, True);
+    try
+      LRejected := False;
+      LClock := TStopwatch.StartNew;
+      try
+        if LPattern = '^(a(?1)?b)$' then
+          LRegex.IsMatch(StringOfChar('a', 400) + StringOfChar('b', 400))
+        else
+          LRegex.IsMatch(StringOfChar('a', 100) + '!');
+      except
+        on E: EInvalidOperation do
+          LRejected := Pos('limit', E.Message) > 0;
+      end;
+      Check(LRejected, 'PCRE match/recursion budget failure is explicit, including raised inline limits');
+      Check(LClock.ElapsedMilliseconds < 1000, 'Pathological regex is stopped within bounded time');
+    finally
+      LRegex.Free;
+    end;
+  end;
+  LRegex := TDAIRegex.Create('\w+', True);
+  try
+    LMatch := LRegex.Match('漢字');
+    Check(LMatch.Success and (LMatch.Length = 2), 'PCRE_UCP gives Unicode semantics to regex character classes');
+  finally
+    LRegex.Free;
+  end;
+  LRegex := TDAIRegex.Create('needle', True);
+  try
+    LClock := TStopwatch.StartNew;
+    Check(not LRegex.IsMatch(StringOfChar('x', 128 * 1024)), 'Ordinary large no-hit regex scan completes normally');
+    Check(LClock.ElapsedMilliseconds < 500, 'Ordinary no-hit does not revalidate the entire UTF-16 subject per candidate');
+  finally
+    LRegex.Free;
+  end;
+  LRegex := TDAIRegex.Create('(*NO_START_OPT)(a+)+b', True);
+  try
+    LRejected := False;
+    LClock := TStopwatch.StartNew;
+    try
+      LRegex.IsMatch(StringOfChar('a', 100) + '!');
+    except
+      on E: EInvalidOperation do
+        LRejected := Pos('limit', E.Message) > 0;
+    end;
+    Check(LRejected, 'Unanchored pathological regex hits explicit PCRE execution budget');
+    Check(LClock.ElapsedMilliseconds < 1000, 'Unanchored pathological regex is bounded');
+  finally
+    LRegex.Free;
+  end;
+  LRegex := TDAIRegex.Create('(*NO_START_OPT)(?:a|aa){1,10}b', True);
+  try
+    LRejected := False;
+    LClock := TStopwatch.StartNew;
+    try
+      LRegex.IsMatch(StringOfChar('a', 128 * 1024));
+    except
+      on E: EInvalidOperation do
+        LRejected := Pos('time limit', E.Message) > 0;
+    end;
+    Check(LRejected, 'Many sub-budget candidate attempts hit the whole-scan time budget');
+    Check(LClock.ElapsedMilliseconds < 1500, 'Whole-scan budget bounds repeated unanchored backtracking');
+  finally
+    LRegex.Free;
+  end;
+  LOptions := EmptyOptions;
+  LOptions.UseRegex := True;
+  LFileName := TPath.Combine(FixtureRoot, 'RegexBudget.pas');
+  TFile.WriteAllText(LFileName, StringOfChar('a', 100) + '!', TEncoding.UTF8);
+  LRejected := False;
+  try
+    LResult := TDAISourceSearch.Search('(*NO_START_OPT)(a+)+b', nil, [LFileName], nil, nil, LOptions);
+    LResult.Free;
+  except
+    on E: EInvalidOperation do
+      LRejected := Pos('limit', E.Message) > 0;
+  end;
+  Check(LRejected, 'Disk-source regex limit failure is propagated instead of reporting an ordinary miss');
+  LRejected := False;
+  try
+    LResult := SnapshotResult(StringOfChar('a', 100) + '!', '(*NO_START_OPT)(a+)+b', LOptions);
+    LResult.Free;
+  except
+    on E: EInvalidOperation do
+      LRejected := Pos('limit', E.Message) > 0;
+  end;
+  Check(LRejected, 'Editor-source regex limit failure uses the same explicit failure path');
+  for LPattern in TArray<string>.Create('\Gneedle', '(*SKIP)needle', '(*COMMIT)needle', '(*PRUNE)needle', '(*THEN)needle', '(', '[',
+    StringOfChar('x', 257), 'x' + #0, 'x' + #10, 'x' + #13) do
+  begin
+    LRegex := nil;
+    LRejected := False;
+    try
+      try
+        LRegex := TDAIRegex.Create(LPattern, True);
+      except
+        on E: EArgumentException do
+          LRejected := True;
+      end;
+      Check(LRejected, 'Unsupported, invalid and unbounded regex inputs fail safely during construction');
+    finally
+      LRegex.Free;
+    end;
+  end;
+  LRegex := TDAIRegex.Create('.', True);
+  try
+    LContent := #$D83D#$DE00;
+    LMatch := LRegex.Match(LContent);
+    Check(LMatch.Success and (LMatch.Length = 2), 'PCRE16 dot consumes an entire supplementary character');
+    LRejected := False;
+    try
+      LRegex.Match(LContent, 2);
+    except
+      on E: EInvalidOperation do
+        LRejected := True;
+    end;
+    Check(LRejected, 'Wrapper rejects a start offset inside a UTF-16 surrogate pair');
+    LRejected := False;
+    try
+      LRegex.Match(#$D83D);
+    except
+      on E: EInvalidOperation do
+        LRejected := True;
+    end;
+    Check(LRejected, 'Malformed UTF-16 source is reported explicitly');
+  finally
+    LRegex.Free;
   end;
 end;
 
@@ -688,6 +980,7 @@ begin
     TestBoundedGlobs;
     TestLiteralAndCoordinates;
     TestCaseAndWholeWord;
+    TestRegex;
     TestExcerptsAndLimits;
     TestInterfaceSnapshots;
     TestInterfaceDiskAndFileKinds;

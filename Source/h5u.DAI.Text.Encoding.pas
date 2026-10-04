@@ -159,12 +159,13 @@ begin
   begin
     if AText[LIndex] = #13 then
     begin
-      if (LIndex < Length(AText)) and (AText[LIndex + 1] = #10) then
-      begin
-        Inc(LCRLFCount);
-        Inc(LIndex, 2);
-        Continue;
-      end;
+      if LIndex < Length(AText) then
+        if AText[LIndex + 1] = #10 then
+        begin
+          Inc(LCRLFCount);
+          Inc(LIndex, 2);
+          Continue;
+        end;
       Inc(LCRCount);
     end
     else if AText[LIndex] = #10 then
@@ -237,27 +238,37 @@ end;
 
 class function TDAITextEncoding.HasUTF16BEBOM(const ABytes: TBytes): Boolean;
 begin
-  Result := (Length(ABytes) >= 2) and (ABytes[0] = $FE) and (ABytes[1] = $FF);
+  if Length(ABytes) < 2 then
+    Exit(False);
+  Result := (ABytes[0] = $FE) and (ABytes[1] = $FF);
 end;
 
 class function TDAITextEncoding.HasUTF16LEBOM(const ABytes: TBytes): Boolean;
 begin
-  Result := (Length(ABytes) >= 2) and (ABytes[0] = $FF) and (ABytes[1] = $FE);
+  if Length(ABytes) < 2 then
+    Exit(False);
+  Result := (ABytes[0] = $FF) and (ABytes[1] = $FE);
 end;
 
 class function TDAITextEncoding.HasUTF32BEBOM(const ABytes: TBytes): Boolean;
 begin
-  Result := (Length(ABytes) >= 4) and (ABytes[0] = $00) and (ABytes[1] = $00) and (ABytes[2] = $FE) and (ABytes[3] = $FF);
+  if Length(ABytes) < 4 then
+    Exit(False);
+  Result := (ABytes[0] = $00) and (ABytes[1] = $00) and (ABytes[2] = $FE) and (ABytes[3] = $FF);
 end;
 
 class function TDAITextEncoding.HasUTF32LEBOM(const ABytes: TBytes): Boolean;
 begin
-  Result := (Length(ABytes) >= 4) and (ABytes[0] = $FF) and (ABytes[1] = $FE) and (ABytes[2] = $00) and (ABytes[3] = $00);
+  if Length(ABytes) < 4 then
+    Exit(False);
+  Result := (ABytes[0] = $FF) and (ABytes[1] = $FE) and (ABytes[2] = $00) and (ABytes[3] = $00);
 end;
 
 class function TDAITextEncoding.HasUTF8BOM(const ABytes: TBytes): Boolean;
 begin
-  Result := (Length(ABytes) >= 3) and (ABytes[0] = $EF) and (ABytes[1] = $BB) and (ABytes[2] = $BF);
+  if Length(ABytes) < 3 then
+    Exit(False);
+  Result := (ABytes[0] = $EF) and (ABytes[1] = $BB) and (ABytes[2] = $BF);
 end;
 
 class function TDAITextEncoding.IsDelphiTextFile(const AFileName: string): Boolean;
@@ -296,7 +307,9 @@ begin
 
     if (LByte1 >= $C2) and (LByte1 <= $DF) then
     begin
-      if (LIndex + 1 >= LLength) or not ByteIsContinuation(ABytes[LIndex + 1]) then
+      if LIndex + 1 >= LLength then
+        Exit(False);
+      if not ByteIsContinuation(ABytes[LIndex + 1]) then
         Exit(False);
       Inc(LIndex, 2);
       Continue;
@@ -304,7 +317,9 @@ begin
 
     if (LByte1 >= $E0) and (LByte1 <= $EF) then
     begin
-      if (LIndex + 2 >= LLength) or not ByteIsContinuation(ABytes[LIndex + 1]) or not ByteIsContinuation(ABytes[LIndex + 2]) then
+      if LIndex + 2 >= LLength then
+        Exit(False);
+      if not ByteIsContinuation(ABytes[LIndex + 1]) or not ByteIsContinuation(ABytes[LIndex + 2]) then
         Exit(False);
       LByte2 := ABytes[LIndex + 1];
       if ((LByte1 = $E0) and (LByte2 < $A0)) or ((LByte1 = $ED) and (LByte2 > $9F)) then
@@ -315,8 +330,9 @@ begin
 
     if (LByte1 >= $F0) and (LByte1 <= $F4) then
     begin
-      if (LIndex + 3 >= LLength) or not ByteIsContinuation(ABytes[LIndex + 1]) or not ByteIsContinuation(ABytes[LIndex + 2]) or
-         not ByteIsContinuation(ABytes[LIndex + 3]) then
+      if LIndex + 3 >= LLength then
+        Exit(False);
+      if not ByteIsContinuation(ABytes[LIndex + 1]) or not ByteIsContinuation(ABytes[LIndex + 2]) or not ByteIsContinuation(ABytes[LIndex + 3]) then
         Exit(False);
       LByte2 := ABytes[LIndex + 1];
       if ((LByte1 = $F0) and (LByte2 < $90)) or ((LByte1 = $F4) and (LByte2 > $8F)) then

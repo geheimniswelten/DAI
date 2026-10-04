@@ -174,6 +174,21 @@ begin
     Result := False;
 end;
 
+function StrictArgumentBoolean(const AArguments: TJSONObject; const AName: string; const ADefault: Boolean): Boolean;
+var
+  LValue: TJSONValue;
+begin
+  Result := ADefault;
+  if not Assigned(AArguments) then
+    Exit;
+  LValue := AArguments.GetValue(AName);
+  if not Assigned(LValue) then
+    Exit;
+  if not (LValue is TJSONBool) then
+    raise EArgumentException.Create(AName + ' muss als JSON-Boolean angegeben werden.');
+  Result := SameText(LValue.Value, 'true');
+end;
+
 function ArgumentInteger(const AArguments: TJSONObject; const AName: string; const ADefault: Integer): Integer;
 var
   LNumber: Double;
@@ -183,8 +198,31 @@ begin
   if not Assigned(AArguments) then
     Exit;
   LValue := AArguments.GetValue(AName);
-  if Assigned(LValue) and TryStrToFloat(LValue.Value, LNumber, TFormatSettings.Invariant) then
-    Result := Trunc(LNumber);
+  if Assigned(LValue) then
+    if TryStrToFloat(LValue.Value, LNumber, TFormatSettings.Invariant) then
+      Result := Trunc(LNumber);
+end;
+
+function DirectoryFilesResult(const AArguments: TJSONObject; const ADirectory: string): TJSONObject;
+var
+  LFiles: TJSONArray;
+begin
+  LFiles := TDAIFileService.DirectoryFiles(ADirectory,
+    ArgumentString(AArguments, 'search_pattern', '*'),
+    ArgumentBoolean(AArguments, 'recursive', True),
+    ArgumentInteger(AArguments, 'maximum_count', 5000),
+    StrictArgumentString(AArguments, 'filename_regex'),
+    StrictArgumentString(AArguments, 'content_query'),
+    StrictArgumentBoolean(AArguments, 'content_use_regex', False),
+    StrictArgumentBoolean(AArguments, 'case_sensitive', False),
+    StrictArgumentBoolean(AArguments, 'whole_word', False));
+  try
+    Result := TJSONObject.Create;
+  except
+    LFiles.Free;
+    raise;
+  end;
+  Result.AddPair('files', LFiles);
 end;
 
 function ArgumentUInt32(const AArguments: TJSONObject; const AName: string; const ADefault: Cardinal = 0): Cardinal;
@@ -214,6 +252,8 @@ var
 begin
   Result := [];
   if not Assigned(AArguments) then
+    Exit;
+  if not Assigned(AArguments.GetValue(AName)) then
     Exit;
   LArray := AArguments.GetValue<TJSONArray>(AName);
   if not Assigned(LArray) then
@@ -382,7 +422,10 @@ begin
 
   if SameText(AName, 'source_search') then
   begin
+    LSearchOptions := Default(TDAISourceSearchOptions);
     LSearchOptions.FilePatterns := ArgumentStringArray(AArguments, 'file_patterns');
+    LSearchOptions.UseRegex := StrictArgumentBoolean(AArguments, 'use_regex', False);
+    LSearchOptions.FilenameRegex := StrictArgumentString(AArguments, 'filename_regex');
     LSearchOptions.CaseSensitive := ArgumentBoolean(AArguments, 'case_sensitive', False);
     LSearchOptions.WholeWord := ArgumentBoolean(AArguments, 'whole_word', False);
     LSearchOptions.InterfacesOnly := ArgumentBoolean(AArguments, 'interfaces_only', True);
@@ -435,34 +478,14 @@ begin
     if not Assigned(LProjectObject) then
       raise EArgumentException.Create('Das angegebene Projekt ist nicht geöffnet.');
     LFileName := LProjectObject.FileName;
-    Result := TJSONObject.Create;
-    Result.AddPair(
-      'files',
-      TDAIFileService.DirectoryFiles(
-        TPath.GetDirectoryName(LFileName),
-        ArgumentString(AArguments, 'search_pattern', '*'),
-        ArgumentBoolean(AArguments, 'recursive', True),
-        ArgumentInteger(AArguments, 'maximum_count', 5000)
-      )
-    );
-    Exit;
+    Exit(DirectoryFilesResult(AArguments, TPath.GetDirectoryName(LFileName)));
   end;
 
   if SameText(AName, 'directory_files_list') then
   begin
     LFileName := ArgumentString(AArguments, 'directory');
     RequirePermission(pcReadAccess, 'Freigegebenes Verzeichnis auflisten', LFileName, LContext);
-    Result := TJSONObject.Create;
-    Result.AddPair(
-      'files',
-      TDAIFileService.DirectoryFiles(
-        LFileName,
-        ArgumentString(AArguments, 'search_pattern', '*'),
-        ArgumentBoolean(AArguments, 'recursive', True),
-        ArgumentInteger(AArguments, 'maximum_count', 5000)
-      )
-    );
-    Exit;
+    Exit(DirectoryFilesResult(AArguments, LFileName));
   end;
 
   if SameText(AName, 'reference_roots_list') then
@@ -477,17 +500,7 @@ begin
   begin
     LFileName := ArgumentString(AArguments, 'directory');
     RequirePermission(pcReadAccess, 'Dateien eines schreibgeschützten Referenzpfads auflisten', LFileName, LContext);
-    Result := TJSONObject.Create;
-    Result.AddPair(
-      'files',
-      TDAIFileService.DirectoryFiles(
-        LFileName,
-        ArgumentString(AArguments, 'search_pattern', '*'),
-        ArgumentBoolean(AArguments, 'recursive', True),
-        ArgumentInteger(AArguments, 'maximum_count', 5000)
-      )
-    );
-    Exit;
+    Exit(DirectoryFilesResult(AArguments, LFileName));
   end;
 
   if SameText(AName, 'file_read') or SameText(AName, 'reference_file_read') then
@@ -958,6 +971,27 @@ begin
   raise EArgumentException.CreateFmt('Unbekanntes MCP-Werkzeug: %s', [AName]);
 end;
 
+function DirectoryFilesSchema(const AProjectDirectory: Boolean): string;
+begin
+  Result := '{"type":"object","properties":{';
+  if AProjectDirectory then
+    Result := Result + '"project":{"type":"string"},'
+  else
+    Result := Result + '"directory":{"type":"string"},';
+  Result := Result +
+    '"search_pattern":{"type":"string","description":"Bestehender Dateinamenfilter mit * und ?."},' +
+    '"filename_regex":{"type":"string","maxLength":256,"description":"Zusätzlicher RegEx-Filter auf den Dateinamen; AND mit search_pattern."},' +
+    '"content_query":{"type":"string","maxLength":256,"description":"Filter auf vollständigen Editor-/Designer- oder Dateitext, einschließlich Implementierungen."},' +
+    '"content_use_regex":{"type":"boolean","default":false,"description":"content_query als RegEx auswerten; erfordert eine nichtleere content_query."},' +
+    '"case_sensitive":{"type":"boolean","default":false,"description":"Groß-/Kleinschreibung bei Inhaltsfiltern und filename_regex beachten."},' +
+    '"whole_word":{"type":"boolean","default":false,"description":"Inhaltstreffer nur an vollständigen Unicode-Bezeichnergrenzen."},' +
+    '"recursive":{"type":"boolean"},' +
+    '"maximum_count":{"type":"integer","minimum":1,"maximum":50000}},"additionalProperties":false';
+  if not AProjectDirectory then
+    Result := Result + ',"required":["directory"]';
+  Result := Result + '}';
+end;
+
 class function TDAIMCPTools.ListTools: TJSONArray;
 begin
   Result := TJSONArray.Create;
@@ -1079,22 +1113,20 @@ begin
   AddTool(
     Result,
     'project_directory_files_list',
-    'Listet Dateien im Verzeichnis eines geöffneten Projekts.',
-    '{"type":"object","properties":{"project":{"type":"string"},"search_pattern":{"type":"string"},"recursive":{"type":"boolean"},' +
-    '"maximum_count":{"type":"integer","minimum":1,"maximum":50000}},"additionalProperties":false}',
+    'Listet Projektverzeichnis-Dateien, optional mit RegEx für Dateinamen und einem vollständigen Inhaltsfilter.',
+    DirectoryFilesSchema(True),
     True
   );
   AddTool(
     Result,
     'directory_files_list',
-    'Listet Dateien in einem Workspace- oder freigegebenen Referenzverzeichnis.',
-    '{"type":"object","properties":{"directory":{"type":"string"},"search_pattern":{"type":"string"},"recursive":{"type":"boolean"},' +
-    '"maximum_count":{"type":"integer","minimum":1,"maximum":50000}},"required":["directory"],"additionalProperties":false}',
+    'Listet freigegebene Verzeichnis-Dateien, optional mit RegEx für Dateinamen und einem vollständigen Inhaltsfilter.',
+    DirectoryFilesSchema(False),
     True
   );
   AddTool(Result, 'reference_roots_list', 'Listet schreibgeschützte Delphi-, Demo-, GetIt- und zusätzliche Referenzpfade.',
     '{"type":"object","additionalProperties":false}', True);
-  AddTool(Result, 'source_search', 'Sucht wörtlichen Text; standardmäßig nur Unit-Interfaces. interfaces_only=false durchsucht auch Implementierungen.',
+  AddTool(Result, 'source_search', 'Sucht Text oder mit use_regex=true RegEx; filename_regex filtert Dateinamen. interfaces_only=false durchsucht Implementierungen.',
     {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     {
@@ -1104,6 +1136,16 @@ begin
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "use_regex": {
+          "type": "boolean",
+          "default": false,
+          "description": "query als RegEx statt als wörtlichen Text auswerten."
+        },
+        "filename_regex": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Zusätzlicher RegEx-Filter auf den Dateinamen; AND mit file_patterns."
         },
         "scope": {
           "type": "string",
@@ -1170,6 +1212,16 @@ begin
     '      "type": "string",' + sLineBreak +
     '      "minLength": 1,' + sLineBreak +
     '      "maxLength": 256' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "use_regex": {' + sLineBreak +
+    '      "type": "boolean",' + sLineBreak +
+    '      "default": false,' + sLineBreak +
+    '      "description": "query als RegEx statt als wörtlichen Text auswerten."' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "filename_regex": {' + sLineBreak +
+    '      "type": "string",' + sLineBreak +
+    '      "maxLength": 256,' + sLineBreak +
+    '      "description": "Zusätzlicher RegEx-Filter auf den Dateinamen; AND mit file_patterns."' + sLineBreak +
     '    },' + sLineBreak +
     '    "scope": {' + sLineBreak +
     '      "type": "string",' + sLineBreak +
@@ -1342,9 +1394,8 @@ begin
   AddTool(
     Result,
     'reference_files_list',
-    'Listet Dateien in einem schreibgeschützten Referenzverzeichnis.',
-    '{"type":"object","properties":{"directory":{"type":"string"},"search_pattern":{"type":"string"},"recursive":{"type":"boolean"},' +
-    '"maximum_count":{"type":"integer","minimum":1,"maximum":50000}},"required":["directory"],"additionalProperties":false}',
+    'Listet Referenzdateien, optional mit RegEx für Dateinamen und einem vollständigen Inhaltsfilter.',
+    DirectoryFilesSchema(False),
     True
   );
   AddTool(

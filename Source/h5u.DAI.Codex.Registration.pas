@@ -414,6 +414,19 @@ begin
     - Bei `.pas`-Units bleibt nur der Text vor dem echten `implementation`-Schlüsselwort; Kommentare und Strings lösen keinen Schnitt aus.
     - Für Implementierungsdetails oder Verwendungen im Methodenrumpf ausdrücklich `interfaces_only: false` setzen; andere Dateitypen bleiben vollständig.
     - Grenze mit optionalem `project`, `directory` und `file_patterns` ein, etwa `["*.pas","*.inc","*.dpr"]`.
+    - `query` ist wörtlicher Text; `use_regex: true` aktiviert RegEx. Ungültige Syntax und RegEx-Ausführungsgrenzen melden Fehler.
+    - `filename_regex` prüft zusätzlich den Dateinamen ohne Pfad und wird mit den bisherigen `file_patterns` per UND kombiniert.
+    - `file_patterns` unterstützen weiterhin nur `*` und `?`; Zeichenklassen gehören in `filename_regex`, etwa `^[a-z].*\.pas$`.
+    - `case_sensitive` gilt auch für `filename_regex`; `whole_word` prüft die Grenzen des gesamten Inhaltstreffers.
+    - Dateilisten: `directory_files_list`, `project_directory_files_list` und `reference_files_list` bieten `filename_regex`.
+    - Mit `content_query` Dateilisten zusätzlich nach Inhalt filtern; `content_use_regex: true` aktiviert RegEx und braucht eine Abfrage.
+    - `search_pattern`, Dateinamen-RegEx und Inhalt müssen alle passen. `case_sensitive`/`whole_word` steuern auch den Inhaltsfilter.
+    - Inhaltsfilter prüfen den vollständigen aktuellen Editor-/Designer- bzw. Dateiinhalt, einschließlich Pascal-Implementierung.
+    - Unlesbare, binäre, über 16 MiB große oder über Reparsepfade erreichbare Inhalte melden Fehler mit Dateipfad.
+    - RegEx suchen Teiltreffer; Dateinamen mit `^`/`$` verankern. In JSON jeden Backslash verdoppeln, etwa `"filename_regex":"\\.pas$"`.
+    - Für zeilenübergreifende Inhalts-RegEx `(?m)` für Zeilenanker und `(?s)` für `.` einschließlich Zeilenumbrüchen verwenden.
+    - RegEx nutzen Unicode-Klassen; `\G` und `(*SKIP)`/`(*COMMIT)`/`(*PRUNE)`/`(*THEN)` werden ausdrücklich abgewiesen.
+    - RegEx: 100.000 Backtracking-Aufrufe und 256 Rekursionsebenen pro Matchversuch, 500 ms Scanbudget, geprüft zwischen Matchversuchen; überschrittene Grenzen melden Fehler.
     - Optional steuern `case_sensitive`, `whole_word`, `maximum_results`, `maximum_files` und `timeout_ms` die Suche und ihre Grenzen.
     %s
     - Beispiel VCL/FMX-Typ: `source_search` mit `{"query":"TButton","scope":"references","file_patterns":["*.pas"],"whole_word":true}`.
@@ -524,6 +537,20 @@ begin
     '- Bei `.pas`-Units bleibt nur der Text vor dem echten `implementation`-Schlüsselwort; Kommentare und Strings lösen keinen Schnitt aus.' + sLineBreak +
     '- Für Implementierungsdetails oder Verwendungen im Methodenrumpf ausdrücklich `interfaces_only: false` setzen; andere Dateitypen bleiben vollständig.' + sLineBreak +
     '- Grenze mit optionalem `project`, `directory` und `file_patterns` ein, etwa `["*.pas","*.inc","*.dpr"]`.' + sLineBreak +
+    '- `query` ist wörtlicher Text; `use_regex: true` aktiviert RegEx. Ungültige Syntax und RegEx-Ausführungsgrenzen melden Fehler.' + sLineBreak +
+    '- `filename_regex` prüft zusätzlich den Dateinamen ohne Pfad und wird mit den bisherigen `file_patterns` per UND kombiniert.' + sLineBreak +
+    '- `file_patterns` unterstützen weiterhin nur `*` und `?`; Zeichenklassen gehören in `filename_regex`, etwa `^[a-z].*\.pas$`.' + sLineBreak +
+    '- `case_sensitive` gilt auch für `filename_regex`; `whole_word` prüft die Grenzen des gesamten Inhaltstreffers.' + sLineBreak +
+    '- Dateilisten: `directory_files_list`, `project_directory_files_list` und `reference_files_list` bieten `filename_regex`.' + sLineBreak +
+    '- Mit `content_query` Dateilisten zusätzlich nach Inhalt filtern; `content_use_regex: true` aktiviert RegEx und braucht eine Abfrage.' + sLineBreak +
+    '- `search_pattern`, Dateinamen-RegEx und Inhalt müssen alle passen. `case_sensitive`/`whole_word` steuern auch den Inhaltsfilter.' + sLineBreak +
+    '- Inhaltsfilter prüfen den vollständigen aktuellen Editor-/Designer- bzw. Dateiinhalt, einschließlich Pascal-Implementierung.' + sLineBreak +
+    '- Unlesbare, binäre, über 16 MiB große oder über Reparsepfade erreichbare Inhalte melden Fehler mit Dateipfad.' + sLineBreak +
+    '- RegEx suchen Teiltreffer; Dateinamen mit `^`/`$` verankern. In JSON jeden Backslash verdoppeln, etwa `"filename_regex":"\\.pas$"`.' + sLineBreak +
+    '- Für zeilenübergreifende Inhalts-RegEx `(?m)` für Zeilenanker und `(?s)` für `.` einschließlich Zeilenumbrüchen verwenden.' + sLineBreak +
+    '- RegEx nutzen Unicode-Klassen; `\G` und `(*SKIP)`/`(*COMMIT)`/`(*PRUNE)`/`(*THEN)` werden ausdrücklich abgewiesen.' + sLineBreak +
+    '- RegEx: 100.000 Backtracking-Aufrufe und 256 Rekursionsebenen pro Matchversuch, ' +
+    '500 ms Scanbudget, geprüft zwischen Matchversuchen; überschrittene Grenzen melden Fehler.' + sLineBreak +
     '- Optional steuern `case_sensitive`, `whole_word`, `maximum_results`, `maximum_files` und `timeout_ms` die Suche und ihre Grenzen.' + sLineBreak +
     '%s' + sLineBreak +
     '- Beispiel VCL/FMX-Typ: `source_search` mit `{"query":"TButton","scope":"references","file_patterns":["*.pas"],"whole_word":true}`.' + sLineBreak +

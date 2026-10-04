@@ -346,7 +346,8 @@ begin
         %s
         ''', [LOpenProjects]
         {$ELSE}
-        'DAI erstellt das neue Projekt in der aktuellen Projektgruppe. Sollte die IDE die vorhandene Gruppe nicht erweitern können, könnte sie einen Wechsel anbieten.' + sLineBreak +
+        'DAI erstellt das neue Projekt in der aktuellen Projektgruppe. Sollte die IDE die vorhandene Gruppe nicht erweitern können, ' +
+        'könnte sie einen Wechsel anbieten.' + sLineBreak +
         '' + sLineBreak +
         'Geöffnete Projekte:' + sLineBreak +
         '%s'

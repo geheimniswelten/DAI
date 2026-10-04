@@ -1,5 +1,14 @@
 # Änderungsprotokoll
 
+## 1.2.16
+
+- source_search unterstützt optional RegEx für query sowie einen zusätzlichen filename_regex-Filter auf den Dateinamen; bestehende Glob-/Interfaces-/Editorpufferregeln bleiben erhalten.
+- directory_files_list, project_directory_files_list und reference_files_list ergänzen Dateinamen-RegEx und wörtliche oder RegEx-Inhaltsfilter für vollständige aktuelle Editor-/Designer- bzw. codierungstreue Dateiinhalte.
+- RegEx werden je Suche wiederverwendet; Syntaxfehler und überschrittene Ausführungsgrenzen werden ausdrücklich gemeldet. Unlesbare, binäre und übergroße Inhalte werden bei Dateilisten nicht als fehlende Treffer ausgegeben.
+- Fehlende file_patterns und optionale Zahlen verwenden zuverlässig ihre Standards; leere/kurze Textdateien und abgeschnittene UTF-8-Sequenzen bleiben auch bei vollständiger boolescher Auswertung sicher.
+- Native Regressionen prüfen RegEx, Inhaltsfilter sowie die tatsächlichen MCP-Schemata, Argumentweitergabe und Leseberechtigungen für alle vier Suchwerkzeuge.
+- README und generierter IDE-Skill erklären Parameter, kombinierte Filter und RegEx-Beispiele einschließlich JSON-Escaping.
+
 ## 1.2.15
 
 - Nach tatsächlichem Verbreitern der Fehlersuche-Toolbar wird der gemeinsame Parent mit Realign vollständig ausgerichtet; benachbarte Toolbars erhalten das neue Layout.

@@ -11,7 +11,9 @@ type
     class function OpenFiles: TJSONArray; static;
     class function Projects: TJSONArray; static;
     class function ProjectFiles(const AProjectNameOrPath: string): TJSONArray; static;
-    class function DirectoryFiles(const ADirectory: string; const ASearchPattern: string; const ARecursive: Boolean; const AMaximumCount: Integer): TJSONArray; static;
+    class function DirectoryFiles(const ADirectory: string; const ASearchPattern: string; const ARecursive: Boolean; const AMaximumCount: Integer;
+      const AFilenameRegex: string = ''; const AContentQuery: string = ''; const AContentUseRegex: Boolean = False;
+      const ACaseSensitive: Boolean = False; const AWholeWord: Boolean = False): TJSONArray; static;
     class function ReferenceRoots: TJSONArray; static;
     class function ReadFile(const AFileName: string; const AMaximumCharacters: Integer; const AInterfacesOnly: Boolean = True): TJSONObject; static;
     class function WriteFile(const AFileName: string; const AContent: string; const AExpectedSha256: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean):
@@ -21,6 +23,7 @@ type
 implementation
 
 uses
+  System.Character,
   System.Classes,
   System.Generics.Collections,
   System.Hash,
@@ -28,10 +31,12 @@ uses
   System.Math,
   System.StrUtils,
   System.SysUtils,
+  Winapi.Windows,
   ToolsAPI,
   h5u.DAI.Consts,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Settings,
+  h5u.DAI.Source.Regex,
   h5u.DAI.Source.View,
   h5u.DAI.Text.Encoding,
   h5u.DAI.Types;
@@ -145,7 +150,8 @@ begin
       Exit(True);
 end;
 
-function ReadCompleteText(const AFileName: string; out AFromEditor: Boolean; out AFormat: TDAITextFileFormat; out AFromDesigner: Boolean): string;
+function ReadCompleteText(const AFileName: string; out AFromEditor: Boolean; out AFormat: TDAITextFileFormat; out AFromDesigner: Boolean;
+  const ARequireAvailableBuffer: Boolean = False): string;
 var
   LResult: string;
   LSourceEditor: IOTASourceEditor;
@@ -160,6 +166,9 @@ begin
     TDAIOTA.RunOnMainThread(
       procedure
       begin
+        if ARequireAvailableBuffer then
+          if not Assigned(LSourceEditor.CreateReader) then
+            raise EInvalidOperation.Create('Der aktuelle Editorpuffer ist nicht lesbar.');
         LResult := TDAIOTA.ReadEditorText(LSourceEditor);
       end);
     AFormat.EncodingKind := tekIDEBuffer;
@@ -177,6 +186,10 @@ begin
     Exit(LResult);
   end;
 
+  if ARequireAvailableBuffer then
+    if TDAIOTA.IsFormLoadedForFile(AFileName) then
+      raise EInvalidOperation.Create('Der aktuelle Designerpuffer ist nicht lesbar.');
+
   if not TFile.Exists(AFileName) then
     raise EDAIFileNotFound.CreateFmt('Datei nicht gefunden: %s', [AFileName]);
   if TFile.GetSize(AFileName) > CDAIMaxTextFileBytes then
@@ -184,8 +197,185 @@ begin
   Result := TDAITextEncoding.ReadFile(AFileName, AFormat);
 end;
 
-class function TDAIFileService.DirectoryFiles(const ADirectory: string; const ASearchPattern: string; const ARecursive: Boolean; const AMaximumCount: Integer): TJSONArray;
+procedure RequireNoReparseReadPath(const APath: string);
 var
+  LAttributes: DWORD;
+  LCurrent, LParent: string;
+begin
+  LCurrent := TDAIOTA.NormalizeFileName(APath);
+  while LCurrent <> '' do
+  begin
+    LAttributes := GetFileAttributesW(PWideChar(LCurrent));
+    if LAttributes = INVALID_FILE_ATTRIBUTES then
+      raise EInvalidOperation.CreateFmt('Der Lesepfad konnte nicht geprüft werden: %s (%s).', [LCurrent, SysErrorMessage(GetLastError)]);
+    if (LAttributes and FILE_ATTRIBUTE_REPARSE_POINT) <> 0 then
+      raise EDAIAccessDenied.CreateFmt('Inhaltsfilter dürfen nicht über Verknüpfungen oder Reparse-Punkte lesen: %s', [LCurrent]);
+    LParent := TPath.GetDirectoryName(LCurrent);
+    if (LParent = '') or TDAIOTA.SameFile(LCurrent, LParent) then
+      Break;
+    LCurrent := LParent;
+  end;
+end;
+
+function DirectoryFilterWordCharacter(const AContent: string; APosition: Integer): Boolean;
+var
+  LCategory: TUnicodeCategory;
+begin
+  if (APosition < 1) or (APosition > Length(AContent)) then
+    Exit(False);
+  if (APosition > 1) and AContent[APosition].IsLowSurrogate then
+    if AContent[APosition - 1].IsHighSurrogate then
+      Dec(APosition);
+  LCategory := Char.GetUnicodeCategory(AContent, APosition - 1);
+  Result := (AContent[APosition] = '_') or Char.IsLetterOrDigit(AContent, APosition - 1) or
+    (LCategory in [TUnicodeCategory.ucCombiningMark, TUnicodeCategory.ucEnclosingMark, TUnicodeCategory.ucNonSpacingMark]);
+end;
+
+function DirectoryFilterMatches(const AContent, AQuery: string; const ACaseSensitive, AWholeWord: Boolean; const ARegex: TDAIRegex): Boolean;
+var
+  LMatch: TDAIRegexMatch;
+  LPosition: Integer;
+begin
+  if Assigned(ARegex) then
+  begin
+    if not AWholeWord then
+      Exit(ARegex.IsMatch(AContent));
+    LPosition := 1;
+    while LPosition <= Length(AContent) + 1 do
+    begin
+      LMatch := ARegex.Match(AContent, LPosition);
+      if not LMatch.Success then
+        Exit(False);
+      if not DirectoryFilterWordCharacter(AContent, LMatch.Index - 1) and
+        not DirectoryFilterWordCharacter(AContent, LMatch.Index + LMatch.Length) then
+        Exit(True);
+      // A boundary-rejected match may cover a later valid alternative. Resume
+      // after its start, like source_search, including zero-length matches.
+      LPosition := LMatch.Index + 1;
+      if LPosition <= Length(AContent) then
+        if AContent[LPosition].IsLowSurrogate then
+          Inc(LPosition);
+    end;
+    Exit(False);
+  end;
+  for LPosition := 1 to Length(AContent) - Length(AQuery) + 1 do
+    if CompareStringOrdinal(PChar(AContent) + LPosition - 1, Length(AQuery), PChar(AQuery), Length(AQuery),
+      {$IF CompilerVersion >= 37}Ord{$IFEND}(not ACaseSensitive)) = CSTR_EQUAL then
+      if not AWholeWord or (not DirectoryFilterWordCharacter(AContent, LPosition - 1) and
+        not DirectoryFilterWordCharacter(AContent, LPosition + Length(AQuery))) then
+        Exit(True);
+  Result := False;
+end;
+
+function ContentFilterFiles(const ADirectory, APattern: string; const ARecursive: Boolean; const AFilenameRegex: TDAIRegex): TArray<string>;
+var
+  LDirectory, LFileName: string;
+  LFiles: TList<string>;
+  LFindResult: Integer;
+  LSearch: TSearchRec;
+  LStack: TStack<string>;
+begin
+  LFiles := TList<string>.Create;
+  LStack := TStack<string>.Create;
+  try
+    LStack.Push(ADirectory);
+    while LStack.Count > 0 do
+    begin
+      LDirectory := LStack.Pop;
+      RequireNoReparseReadPath(LDirectory);
+      LFindResult := FindFirst(IncludeTrailingPathDelimiter(LDirectory) + '*', faAnyFile, LSearch);
+      if LFindResult <> 0 then
+      begin
+        if (LFindResult <> ERROR_FILE_NOT_FOUND) and (LFindResult <> ERROR_NO_MORE_FILES) then
+          raise EInvalidOperation.CreateFmt('Das Verzeichnis konnte nicht durchsucht werden: %s (%s).', [LDirectory, SysErrorMessage(LFindResult)]);
+        Continue;
+      end;
+      try
+        repeat
+          if (LSearch.Name <> '.') and (LSearch.Name <> '..') then
+          begin
+            LFileName := TDAIOTA.NormalizeFileName(TPath.Combine(LDirectory, LSearch.Name));
+            if not TDAIOTA.IsPathWithin(LFileName, ADirectory) then
+              raise EDAIAccessDenied.CreateFmt('Der Suchpfad liegt außerhalb des angegebenen Verzeichnisses: %s', [LFileName]);
+            if (LSearch.Attr and faDirectory) <> 0 then
+            begin
+              if ARecursive then
+                LStack.Push(LFileName);
+            end
+            else if TPath.MatchesPattern(LSearch.Name, APattern) then
+            begin
+              if Assigned(AFilenameRegex) then
+              begin
+                if AFilenameRegex.IsMatch(LSearch.Name) then
+                  LFiles.Add(LFileName);
+              end
+              else
+                LFiles.Add(LFileName);
+            end;
+          end;
+          LFindResult := System.SysUtils.FindNext(LSearch);
+        until LFindResult <> 0;
+        if LFindResult <> ERROR_NO_MORE_FILES then
+          raise EInvalidOperation.CreateFmt('Das Verzeichnis konnte nicht vollständig durchsucht werden: %s (%s).', [LDirectory, SysErrorMessage(LFindResult)]);
+      finally
+        System.SysUtils.FindClose(LSearch);
+      end;
+    end;
+    Result := LFiles.ToArray;
+  finally
+    LStack.Free;
+    LFiles.Free;
+  end;
+end;
+
+function ReadDirectoryFilterText(const AFileName: string): string;
+var
+  LFormat: TDAITextFileFormat;
+  LFromDesigner, LFromEditor, LHasBuffer: Boolean;
+  LInformation: TByHandleFileInformation;
+  LReadGuard: THandle;
+  LSourceEditor: IOTASourceEditor;
+begin
+  if not FileAllowedForRead(AFileName) then
+    raise EDAIAccessDenied.CreateFmt('Lesezugriff außerhalb des Workspace und freigegebener Referenzpfade: %s', [AFileName]);
+  RequireNoReparseReadPath(AFileName);
+  LSourceEditor := TDAIOTA.FindSourceEditor(AFileName);
+  LHasBuffer := Assigned(LSourceEditor) or TDAIOTA.IsFormLoadedForFile(AFileName);
+  if LHasBuffer then
+  begin
+    Result := ReadCompleteText(AFileName, LFromEditor, LFormat, LFromDesigner, True);
+    if not LFromEditor then
+      raise EInvalidOperation.Create('Der aktuelle Editor- oder Designerpuffer ist nicht lesbar.');
+  end
+  else
+  begin
+    // Keep disk changes out while the existing encoding-aware reader reads the file.
+    LReadGuard := CreateFileW(PWideChar(AFileName), GENERIC_READ, FILE_SHARE_READ, nil, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, 0);
+    if LReadGuard = INVALID_HANDLE_VALUE then
+      RaiseLastOSError;
+    try
+      if not GetFileInformationByHandle(LReadGuard, LInformation) then
+        RaiseLastOSError;
+      if (LInformation.dwFileAttributes and (FILE_ATTRIBUTE_REPARSE_POINT or FILE_ATTRIBUTE_DIRECTORY)) <> 0 then
+        raise EDAIAccessDenied.Create('Der Inhaltsfilter kann keine Verknüpfung oder Verzeichnisressource lesen.');
+      if ((UInt64(LInformation.nFileSizeHigh) shl 32) or LInformation.nFileSizeLow) > CDAIMaxTextFileBytes then
+        raise EInvalidOperation.CreateFmt('Die Datei überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
+      Result := ReadCompleteText(AFileName, LFromEditor, LFormat, LFromDesigner, True);
+    finally
+      CloseHandle(LReadGuard);
+    end;
+  end;
+  if Length(Result) > CDAIMaxTextFileBytes then
+    raise EInvalidOperation.CreateFmt('Der Text überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
+  if Pos(#0, Result) <> 0 then
+    raise EInvalidOperation.Create('Binärinhalt mit NUL-Zeichen kann nicht als Text gefiltert werden.');
+end;
+
+class function TDAIFileService.DirectoryFiles(const ADirectory: string; const ASearchPattern: string; const ARecursive: Boolean; const AMaximumCount: Integer;
+  const AFilenameRegex, AContentQuery: string; const AContentUseRegex, ACaseSensitive, AWholeWord: Boolean): TJSONArray;
+var
+  LContent: string;
+  LContentRegex, LFilenameRegex: TDAIRegex;
   LCount: Integer;
   LDirectory: string;
   LFileName: string;
@@ -194,17 +384,17 @@ var
   LPattern: string;
   LSearchOption: TSearchOption;
 begin
-  LDirectory := TDAISettings.Instance.ExpandPath(ADirectory);
-  if not TDirectory.Exists(LDirectory) then
-    raise EDirectoryNotFoundException.CreateFmt('Verzeichnis nicht gefunden: %s', [LDirectory]);
-  if not DirectoryAllowedForRead(LDirectory) then
-    raise EDAIAccessDenied.Create('Das Verzeichnis gehört weder zum Workspace noch zu einem freigegebenen Referenzpfad.');
-
   LPattern := Trim(ASearchPattern);
   if LPattern = '' then
     LPattern := '*';
   if LPattern.Contains('\') or LPattern.Contains('/') or LPattern.Contains('..') then
     raise EArgumentException.Create('Das Suchmuster darf keinen Verzeichnispfad enthalten.');
+  if not TPath.HasValidFileNameChars(LPattern, True) then
+    raise EArgumentException.Create('Das Suchmuster enthält ungültige Dateinamenzeichen.');
+  if (Length(AContentQuery) > 256) or (Pos(#0, AContentQuery) <> 0) or (Pos(#10, AContentQuery) <> 0) or (Pos(#13, AContentQuery) <> 0) then
+    raise EArgumentException.Create('content_query darf höchstens 256 Zeichen ohne NUL oder Zeilenumbrüche enthalten.');
+  if AContentUseRegex and (AContentQuery = '') then
+    raise EArgumentException.Create('content_use_regex=true erfordert eine nicht leere content_query.');
 
   if ARecursive then
     LSearchOption := TSearchOption.soAllDirectories
@@ -216,16 +406,57 @@ begin
     LLimit := 5000;
   LLimit := EnsureRange(LLimit, 1, 50000);
 
-  LFiles := TDirectory.GetFiles(LDirectory, LPattern, LSearchOption);
-  TArray.Sort<string>(LFiles);
-  Result := TJSONArray.Create;
-  LCount := 0;
-  for LFileName in LFiles do
-  begin
-    Result.Add(TDAIOTA.NormalizeFileName(LFileName));
-    Inc(LCount);
-    if LCount >= LLimit then
-      Break;
+  LFilenameRegex := nil;
+  LContentRegex := nil;
+  try
+    if AFilenameRegex <> '' then
+      LFilenameRegex := TDAIRegex.Create(AFilenameRegex, ACaseSensitive);
+    if AContentUseRegex then
+      LContentRegex := TDAIRegex.Create(AContentQuery, ACaseSensitive);
+    LDirectory := TDAISettings.Instance.ExpandPath(ADirectory);
+    if not TDirectory.Exists(LDirectory) then
+      raise EDirectoryNotFoundException.CreateFmt('Verzeichnis nicht gefunden: %s', [LDirectory]);
+    if not DirectoryAllowedForRead(LDirectory) then
+      raise EDAIAccessDenied.Create('Das Verzeichnis gehört weder zum Workspace noch zu einem freigegebenen Referenzpfad.');
+    if AContentQuery <> '' then
+      LFiles := ContentFilterFiles(LDirectory, LPattern, ARecursive, LFilenameRegex)
+    else if Assigned(LFilenameRegex) then
+      LFiles := TDirectory.GetFiles(LDirectory, LPattern, LSearchOption,
+        function(const Path: string; const SearchRec: TSearchRec): Boolean
+        begin
+          Result := LFilenameRegex.IsMatch(SearchRec.Name);
+        end)
+    else
+      LFiles := TDirectory.GetFiles(LDirectory, LPattern, LSearchOption);
+    TArray.Sort<string>(LFiles);
+    Result := TJSONArray.Create;
+    try
+      LCount := 0;
+      for LFileName in LFiles do
+      begin
+        if AContentQuery <> '' then
+        begin
+          try
+            LContent := ReadDirectoryFilterText(LFileName);
+            if not DirectoryFilterMatches(LContent, AContentQuery, ACaseSensitive, AWholeWord, LContentRegex) then
+              Continue;
+          except
+            on E: Exception do
+              raise EInvalidOperation.CreateFmt('Der Inhaltsfilter konnte die Datei nicht prüfen: %s (%s).', [LFileName, E.Message]);
+          end;
+        end;
+        Result.Add(TDAIOTA.NormalizeFileName(LFileName));
+        Inc(LCount);
+        if LCount >= LLimit then
+          Break;
+      end;
+    except
+      Result.Free;
+      raise;
+    end;
+  finally
+    LContentRegex.Free;
+    LFilenameRegex.Free;
   end;
 end;
 

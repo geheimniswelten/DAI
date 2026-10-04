@@ -4,7 +4,8 @@ interface
 
 uses
   System.Generics.Collections,
-  System.JSON;
+  System.JSON,
+  h5u.DAI.Source.Regex;
 
 type
   TDAISourceSnapshot = record
@@ -14,6 +15,8 @@ type
 
   TDAISourceSearchOptions = record
     FilePatterns: TArray<string>;
+    FilenameRegex: string;
+    UseRegex: Boolean;
     CaseSensitive: Boolean;
     WholeWord: Boolean;
     InterfacesOnly: Boolean;
@@ -26,13 +29,15 @@ type
   public
     class function MatchesFilePatterns(const AFileName: string; const APatterns: TArray<string>): Boolean; static;
     class function Search(const AQuery: string; const ARootDirectories, AExplicitFileNames, AReadOnlyRoots: TArray<string>;
-      const ASnapshots: TDictionary<string, TDAISourceSnapshot>; const AOptions: TDAISourceSearchOptions): TJSONObject; static;
+      const ASnapshots: TDictionary<string, TDAISourceSnapshot>; const AOptions: TDAISourceSearchOptions;
+      const AQueryRegex: TDAIRegex = nil; const AFilenameRegex: TDAIRegex = nil): TJSONObject; static;
   end;
 
 implementation
 
 uses
   System.Character,
+  System.Classes,
   System.Diagnostics,
   System.Generics.Defaults,
   System.IOUtils,
@@ -50,6 +55,10 @@ type
   TSourceSearchRun = class
   strict private
     FQuery: string;
+    FQueryRegex: TDAIRegex;
+    FFilenameRegex: TDAIRegex;
+    FOwnsQueryRegex: Boolean;
+    FOwnsFilenameRegex: Boolean;
     FOptions: TDAISourceSearchOptions;
     FClock: TStopwatch;
     FResult: TJSONObject;
@@ -78,11 +87,12 @@ type
     procedure AddRoots(const APaths: TArray<string>; const ATarget: TList<string>);
     procedure AddMatch(const AFileName, AContent, ASource: string; APosition, ALine, ALineStart: Integer);
     procedure SearchContent(const AFileName, AContent, ASource: string);
+    procedure SearchRegexContent(const AFileName, AContent, ASource: string);
     procedure SearchFile(const AFileName: string);
     procedure SearchRoot(const ARoot: string);
     procedure Stop(const AReason: string);
   public
-    constructor Create(const AQuery: string; const AOptions: TDAISourceSearchOptions);
+    constructor Create(const AQuery: string; const AOptions: TDAISourceSearchOptions; const AQueryRegex, AFilenameRegex: TDAIRegex);
     destructor Destroy; override;
     function Execute(const ARootDirectories, AExplicitFileNames, AReadOnlyRoots: TArray<string>; const ASnapshots: TDictionary<string, TDAISourceSnapshot>): TJSONObject;
   end;
@@ -241,7 +251,8 @@ begin
 end;
 
 class function TDAISourceSearch.Search(const AQuery: string; const ARootDirectories, AExplicitFileNames, AReadOnlyRoots: TArray<string>;
-  const ASnapshots: TDictionary<string, TDAISourceSnapshot>; const AOptions: TDAISourceSearchOptions): TJSONObject;
+  const ASnapshots: TDictionary<string, TDAISourceSnapshot>; const AOptions: TDAISourceSearchOptions;
+  const AQueryRegex, AFilenameRegex: TDAIRegex): TJSONObject;
 var
   LRun: TSourceSearchRun;
   LOptions: TDAISourceSearchOptions;
@@ -250,7 +261,7 @@ begin
     raise EArgumentException.Create('query must contain 1 to 256 characters without NUL or line breaks.');
   LOptions := AOptions;
   LOptions.FilePatterns := ValidatedFilePatterns(AOptions.FilePatterns);
-  LRun := TSourceSearchRun.Create(AQuery, LOptions);
+  LRun := TSourceSearchRun.Create(AQuery, LOptions, AQueryRegex, AFilenameRegex);
   try
     Result := LRun.Execute(ARootDirectories, AExplicitFileNames, AReadOnlyRoots, ASnapshots);
   finally
@@ -258,12 +269,32 @@ begin
   end;
 end;
 
-constructor TSourceSearchRun.Create(const AQuery: string; const AOptions: TDAISourceSearchOptions);
+constructor TSourceSearchRun.Create(const AQuery: string; const AOptions: TDAISourceSearchOptions; const AQueryRegex, AFilenameRegex: TDAIRegex);
 begin
   inherited Create;
   FClock := TStopwatch.StartNew;
   FQuery := AQuery;
   FOptions := AOptions;
+  // Compile before path inspection or any content access; a service may lend the
+  // already validated instances it used to select current editor snapshots.
+  if FOptions.UseRegex then
+  begin
+    FQueryRegex := AQueryRegex;
+    if not Assigned(FQueryRegex) then
+    begin
+      FQueryRegex := TDAIRegex.Create(FQuery, FOptions.CaseSensitive);
+      FOwnsQueryRegex := True;
+    end;
+  end;
+  if FOptions.FilenameRegex <> '' then
+  begin
+    FFilenameRegex := AFilenameRegex;
+    if not Assigned(FFilenameRegex) then
+    begin
+      FFilenameRegex := TDAIRegex.Create(FOptions.FilenameRegex, FOptions.CaseSensitive);
+      FOwnsFilenameRegex := True;
+    end;
+  end;
   FOptions.MaximumResults := BoundedOption(FOptions.MaximumResults, 200, 1000);
   FOptions.MaximumFiles := BoundedOption(FOptions.MaximumFiles, 10000, 100000);
   FOptions.TimeoutMs := BoundedOption(FOptions.TimeoutMs, 5000, 30000);
@@ -285,6 +316,10 @@ end;
 
 destructor TSourceSearchRun.Destroy;
 begin
+  if FOwnsFilenameRegex then
+    FFilenameRegex.Free;
+  if FOwnsQueryRegex then
+    FQueryRegex.Free;
   FCheckBudget := nil;
   FResult.Free;
   FSnapshots.Free;
@@ -445,6 +480,9 @@ begin
   LName := TPath.GetFileName(AFileName);
   if Length(LName) > 255 then
     Exit(False);
+  if Assigned(FFilenameRegex) then
+    if not FFilenameRegex.IsMatch(LName) then
+      Exit(False);
   for LPattern in FOptions.FilePatterns do
   begin
     if not BudgetAvailable then
@@ -467,9 +505,10 @@ begin
   while (LStart > ALineStart) and (APosition - LStart < CMaximumExcerptLength div 3) do
     Dec(LStart);
   // Never cut a UTF-16 surrogate pair at an excerpt boundary.
-  if (LStart > ALineStart) and AContent[LStart].IsLowSurrogate then
-    if AContent[LStart - 1].IsHighSurrogate then
-      Dec(LStart);
+  if (LStart > ALineStart) and (LStart <= Length(AContent)) then
+    if AContent[LStart].IsLowSurrogate then
+      if AContent[LStart - 1].IsHighSurrogate then
+        Dec(LStart);
   LMaximumFinish := LStart + CMaximumExcerptLength - 1;
   LFinish := LStart;
   while (LFinish <= Length(AContent)) and (LFinish <= LMaximumFinish) do
@@ -524,6 +563,11 @@ begin
   end;
   if not BudgetAvailable then
     Exit;
+  if Assigned(FQueryRegex) then
+  begin
+    SearchRegexContent(AFileName, LContent, ASource);
+    Exit;
+  end;
   LPosition := 1;
   LLine := 1;
   LLineStart := 1;
@@ -553,6 +597,70 @@ begin
           Exit;
       end;
     Inc(LPosition);
+  end;
+end;
+
+procedure TSourceSearchRun.SearchRegexContent(const AFileName, AContent, ASource: string);
+var
+  LMatch: TDAIRegexMatch;
+  LStartPosition: Integer;
+  LPosition: Integer;
+  LLine: Integer;
+  LLineStart: Integer;
+  LLastWasCR: Boolean;
+begin
+  LStartPosition := 1;
+  LPosition := 1;
+  LLine := 1;
+  LLineStart := 1;
+  LLastWasCR := False;
+  while LStartPosition <= Length(AContent) + 1 do
+  begin
+    if not BudgetAvailable then
+      Exit;
+    LMatch := FQueryRegex.Match(AContent, LStartPosition);
+    if not LMatch.Success or not BudgetAvailable then
+      Exit;
+    // Scan each intervening UTF-16 code unit once, including multiline matches.
+    while LPosition < LMatch.Index do
+    begin
+      if ((LPosition and 1023) = 1) and not BudgetAvailable then
+        Exit;
+      if AContent[LPosition] = #13 then
+      begin
+        Inc(LLine);
+        LLineStart := LPosition + 1;
+        LLastWasCR := True;
+      end
+      else if AContent[LPosition] = #10 then
+      begin
+        if not LLastWasCR then
+          Inc(LLine);
+        LLineStart := LPosition + 1;
+        LLastWasCR := False;
+      end
+      else
+        LLastWasCR := False;
+      Inc(LPosition);
+    end;
+    if not FOptions.WholeWord or (not IsWordCharacter(AContent, LMatch.Index - 1) and
+      not IsWordCharacter(AContent, LMatch.Index + LMatch.Length)) then
+    begin
+      AddMatch(AFileName, AContent, ASource, LMatch.Index, LLine, LLineStart);
+      if FStopped then
+        Exit;
+      // Regex occurrences are non-overlapping; failed whole-word candidates
+      // advance from their start so a later valid candidate is still considered.
+      LStartPosition := LMatch.Index + LMatch.Length;
+    end
+    else
+      LStartPosition := LMatch.Index;
+    if LStartPosition <= LMatch.Index then
+    begin
+      if LMatch.Index > Length(AContent) then
+        Exit;
+      LStartPosition := LMatch.Index + UnicodeCharacterWidth(AContent, LMatch.Index);
+    end;
   end;
 end;
 
@@ -620,6 +728,8 @@ begin
     if BudgetAvailable then
       SearchContent(LFileName, LContent, 'disk');
   except
+    on E: EInvalidOperation do
+      raise;
     on E: Exception do
     begin
       Inc(FFilesSkipped);
@@ -727,6 +837,8 @@ begin
   FResult.AddPair('files_scanned', TJSONNumber.Create(FFilesScanned));
   FResult.AddPair('files_skipped', TJSONNumber.Create(FFilesSkipped));
   FResult.AddPair('interfaces_only', TJSONBool.Create(FOptions.InterfacesOnly));
+  FResult.AddPair('use_regex', TJSONBool.Create(FOptions.UseRegex));
+  FResult.AddPair('filename_regex', FOptions.FilenameRegex);
   FResult.AddPair('implementation_files_omitted', TJSONNumber.Create(FImplementationFilesOmitted));
   FResult.AddPair('truncated', TJSONBool.Create(FStopped));
   FResult.AddPair('limit_reason', FLimitReason);

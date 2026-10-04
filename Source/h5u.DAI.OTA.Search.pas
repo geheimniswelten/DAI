@@ -5,6 +5,7 @@ interface
 uses
   System.JSON,
   ToolsAPI,
+  h5u.DAI.Source.Regex,
   h5u.DAI.Source.Search;
 
 type
@@ -22,6 +23,9 @@ type
   end;
 
   TDAISourceSearchService = class sealed
+  strict private
+    class function ExecutePrepared(const AQuery: string; const APlan: TDAISourceSearchPlan; const AOptions: TDAISourceSearchOptions;
+      const AQueryRegex, AFilenameRegex: TDAIRegex): TJSONObject; static;
   public
     class function SelectedProjects(const AScope, AProject: string): TArray<IOTAProject>; static;
     class function ProjectsForPermission(const AScope, AProject, ADirectory: string): TArray<IOTAProject>; static;
@@ -255,12 +259,47 @@ end;
 class function TDAISourceSearchService.Search(const AQuery, AScope, AProject, ADirectory: string; const AOptions: TDAISourceSearchOptions): TJSONObject;
 var
   LPlan: TDAISourceSearchPlan;
+  LQueryRegex: TDAIRegex;
+  LFilenameRegex: TDAIRegex;
 begin
-  LPlan := Prepare(AScope, AProject, ADirectory, AOptions.TimeoutMs);
-  Result := SearchPrepared(AQuery, LPlan, AOptions);
+  LQueryRegex := nil;
+  LFilenameRegex := nil;
+  try
+    if AOptions.UseRegex then
+      LQueryRegex := TDAIRegex.Create(AQuery, AOptions.CaseSensitive);
+    if AOptions.FilenameRegex <> '' then
+      LFilenameRegex := TDAIRegex.Create(AOptions.FilenameRegex, AOptions.CaseSensitive);
+    LPlan := Prepare(AScope, AProject, ADirectory, AOptions.TimeoutMs);
+    Result := ExecutePrepared(AQuery, LPlan, AOptions, LQueryRegex, LFilenameRegex);
+  finally
+    LFilenameRegex.Free;
+    LQueryRegex.Free;
+  end;
 end;
 
 class function TDAISourceSearchService.SearchPrepared(const AQuery: string; const APlan: TDAISourceSearchPlan; const AOptions: TDAISourceSearchOptions): TJSONObject;
+var
+  LQueryRegex: TDAIRegex;
+  LFilenameRegex: TDAIRegex;
+begin
+  LQueryRegex := nil;
+  LFilenameRegex := nil;
+  try
+    // Validate before ownership checks or source reads and keep the instances
+    // alive through snapshot selection and the synchronous engine execution.
+    if AOptions.UseRegex then
+      LQueryRegex := TDAIRegex.Create(AQuery, AOptions.CaseSensitive);
+    if AOptions.FilenameRegex <> '' then
+      LFilenameRegex := TDAIRegex.Create(AOptions.FilenameRegex, AOptions.CaseSensitive);
+    Result := ExecutePrepared(AQuery, APlan, AOptions, LQueryRegex, LFilenameRegex);
+  finally
+    LFilenameRegex.Free;
+    LQueryRegex.Free;
+  end;
+end;
+
+class function TDAISourceSearchService.ExecutePrepared(const AQuery: string; const APlan: TDAISourceSearchPlan; const AOptions: TDAISourceSearchOptions;
+  const AQueryRegex, AFilenameRegex: TDAIRegex): TJSONObject;
 const
   CMaximumSnapshotCharacters = 2 * 1024 * 1024;
   CMaximumSnapshotTotalCharacters = 16 * 1024 * 1024;
@@ -375,6 +414,9 @@ begin
           Continue;
         if not TDAISourceSearch.MatchesFilePatterns(LFile, AOptions.FilePatterns) then
           Continue;
+        if Assigned(AFilenameRegex) then
+          if not AFilenameRegex.IsMatch(TPath.GetFileName(LFile)) then
+            Continue;
         if not Assigned(TDAIOTA.FindSourceEditor(LFile)) and not TDAIOTA.IsFormLoadedForFile(LFile) then
           Continue;
         LSnapshot.Content := #0;
@@ -421,14 +463,14 @@ begin
     begin
       LFiles.Clear;
       LSnapshots.Clear;
-      Result := TDAISourceSearch.Search(AQuery, [], [], LReferenceRoots, LSnapshots, LOptions);
+      Result := TDAISourceSearch.Search(AQuery, [], [], LReferenceRoots, LSnapshots, LOptions, AQueryRegex, AFilenameRegex);
       Result.RemovePair('truncated').Free;
       Result.AddPair('truncated', TJSONBool.Create(True));
       Result.RemovePair('limit_reason').Free;
       Result.AddPair('limit_reason', 'timeout');
     end
     else
-      Result := TDAISourceSearch.Search(AQuery, LRoots.ToArray, LFiles.ToArray, LReferenceRoots, LSnapshots, LOptions);
+      Result := TDAISourceSearch.Search(AQuery, LRoots.ToArray, LFiles.ToArray, LReferenceRoots, LSnapshots, LOptions, AQueryRegex, AFilenameRegex);
     Result.AddPair('scope', LScope);
     Result.AddPair('directory', LDirectory);
     Result.RemovePair('elapsed_ms').Free;

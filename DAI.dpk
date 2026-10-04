@@ -68,6 +68,7 @@ contains
   h5u.DAI.OTA.ProjectOptions in 'Source\h5u.DAI.OTA.ProjectOptions.pas',
   h5u.DAI.OTA.Projects in 'Source\h5u.DAI.OTA.Projects.pas',
   h5u.DAI.OTA.Search in 'Source\h5u.DAI.OTA.Search.pas',
+  h5u.DAI.Source.Regex in 'Source\h5u.DAI.Source.Regex.pas',
   h5u.DAI.Source.Search in 'Source\h5u.DAI.Source.Search.pas',
   h5u.DAI.Source.View in 'Source\h5u.DAI.Source.View.pas',
   h5u.DAI.Windows.Inspection in 'Source\h5u.DAI.Windows.Inspection.pas',
