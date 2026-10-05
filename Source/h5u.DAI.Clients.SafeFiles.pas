@@ -1,5 +1,7 @@
 ﻿unit h5u.DAI.Clients.SafeFiles;
 
+{$WARN SYMBOL_PLATFORM OFF}
+
 interface
 
 uses

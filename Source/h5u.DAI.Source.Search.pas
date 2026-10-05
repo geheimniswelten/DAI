@@ -1,5 +1,7 @@
 ﻿unit h5u.DAI.Source.Search;
 
+{$WARN SYMBOL_PLATFORM OFF}
+
 interface
 
 uses
@@ -139,8 +141,11 @@ var
   LNameWidth: Integer;
   LPatternWidth: Integer;
   LSteps: Integer;
+  LIgnoreCase: Integer;
   LMatched: Boolean;
 begin
+  // Older WinAPI bindings use LongBool, but CompareStringOrdinal requires numeric 1.
+  LIgnoreCase := 1;
   LNameIndex := 1;
   LPatternIndex := 1;
   LStarIndex := 0;
@@ -175,7 +180,8 @@ begin
       LPatternWidth := UnicodeCharacterWidth(APattern, LPatternIndex);
       if LNameWidth = LPatternWidth then
         LMatched := CompareStringOrdinal(PChar(AFileName) + LNameIndex - 1, LNameWidth,
-          PChar(APattern) + LPatternIndex - 1, LPatternWidth, {$IF CompilerVersion >= 37}Ord{$IFEND}(True)) = CSTR_EQUAL;
+          PChar(APattern) + LPatternIndex - 1, LPatternWidth,
+          {$IF CompilerVersion >= 37}DWORD{$ELSE}BOOL{$IFEND}(LIgnoreCase)) = CSTR_EQUAL;
     end;
     if LMatched then
     begin
@@ -467,7 +473,7 @@ end;
 function TSourceSearchRun.MatchAt(const AContent: string; APosition: Integer): Boolean;
 begin
   Result := CompareStringOrdinal(PChar(AContent) + APosition - 1, Length(FQuery), PChar(FQuery), Length(FQuery),
-    {$IF CompilerVersion >= 37}Ord{$IFEND}(not FOptions.CaseSensitive)) = CSTR_EQUAL;
+    {$IF CompilerVersion >= 37}DWORD{$ELSE}BOOL{$IFEND}(Ord(not FOptions.CaseSensitive))) = CSTR_EQUAL;
   if Result and FOptions.WholeWord then
     Result := not IsWordCharacter(AContent, APosition - 1) and not IsWordCharacter(AContent, APosition + Length(FQuery));
 end;

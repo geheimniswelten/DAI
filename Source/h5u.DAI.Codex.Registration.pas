@@ -350,6 +350,8 @@ end;
 
 class function TDAICodexRegistration.BuildSkillContent: string;
 const
+  // Delphi 11 scans comments even in skipped text blocks; keep comment tokens in a normal string.
+  CRegexRestrictions = '- RegEx nutzen Unicode-Klassen; `\G` und `(*SKIP)`/`(*COMMIT)`/`(*PRUNE)`/`(*THEN)` werden ausdrücklich abgewiesen.';
   CToolsAPIExample = '- Beispiel ToolsAPI: `source_search` mit `{"query":"IOTADebuggerServices","scope":"references",' +
     '"directory":"%BDS%\\source\\ToolsAPI","file_patterns":["*.pas"],"whole_word":true}`.';
 begin
@@ -450,7 +452,7 @@ begin
     - Unlesbare, binäre, über 16 MiB große oder über Reparsepfade erreichbare Inhalte melden Fehler mit Dateipfad.
     - RegEx suchen Teiltreffer; Dateinamen mit `^`/`$` verankern. In JSON jeden Backslash verdoppeln, etwa `"filename_regex":"\\.pas$"`.
     - Für zeilenübergreifende Inhalts-RegEx `(?m)` für Zeilenanker und `(?s)` für `.` einschließlich Zeilenumbrüchen verwenden.
-    - RegEx nutzen Unicode-Klassen; `\G` und `(*SKIP)`/`(*COMMIT)`/`(*PRUNE)`/`(*THEN)` werden ausdrücklich abgewiesen.
+    %s
     - RegEx: 100.000 Backtracking-Aufrufe und 256 Rekursionsebenen pro Matchversuch, 500 ms Scanbudget, geprüft zwischen Matchversuchen; überschrittene Grenzen melden Fehler.
     - Optional steuern `case_sensitive`, `whole_word`, `maximum_results`, `maximum_files` und `timeout_ms` die Suche und ihre Grenzen.
     %s
@@ -618,7 +620,7 @@ begin
     '- Unlesbare, binäre, über 16 MiB große oder über Reparsepfade erreichbare Inhalte melden Fehler mit Dateipfad.' + sLineBreak +
     '- RegEx suchen Teiltreffer; Dateinamen mit `^`/`$` verankern. In JSON jeden Backslash verdoppeln, etwa `"filename_regex":"\\.pas$"`.' + sLineBreak +
     '- Für zeilenübergreifende Inhalts-RegEx `(?m)` für Zeilenanker und `(?s)` für `.` einschließlich Zeilenumbrüchen verwenden.' + sLineBreak +
-    '- RegEx nutzen Unicode-Klassen; `\G` und `(*SKIP)`/`(*COMMIT)`/`(*PRUNE)`/`(*THEN)` werden ausdrücklich abgewiesen.' + sLineBreak +
+    '%s' + sLineBreak +
     '- RegEx: 100.000 Backtracking-Aufrufe und 256 Rekursionsebenen pro Matchversuch, ' +
     '500 ms Scanbudget, geprüft zwischen Matchversuchen; überschrittene Grenzen melden Fehler.' + sLineBreak +
     '- Optional steuern `case_sensitive`, `whole_word`, `maximum_results`, `maximum_files` und `timeout_ms` die Suche und ihre Grenzen.' + sLineBreak +
@@ -692,7 +694,7 @@ begin
     '- Werkzeuge und Argumente aus der aktuellen MCP-Werkzeugliste prüfen; eine erfolgreiche Registrierung bestätigt keine aktive Verbindung.' + sLineBreak
     ,
     {$IFEND}
-    [CDAISkillDirectoryName, CDAISkillMarker, CToolsAPIExample]);
+    [CDAISkillDirectoryName, CDAISkillMarker, CRegexRestrictions, CToolsAPIExample]);
 end;
 
 class function TDAICodexRegistration.UserProfileDirectory: string;

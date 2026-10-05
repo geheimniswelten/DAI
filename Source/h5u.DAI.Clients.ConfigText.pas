@@ -438,7 +438,6 @@ var
   LCharacterIndex: Integer;
   LEmptyMapping: Boolean;
 begin
-  Result := False;
   AHeaderStart := 0;
   AHeaderEnd := 0;
   AEntryStart := 0;

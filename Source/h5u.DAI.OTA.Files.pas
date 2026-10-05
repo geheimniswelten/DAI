@@ -1,5 +1,7 @@
 ﻿unit h5u.DAI.OTA.Files;
 
+{$WARN SYMBOL_PLATFORM OFF}
+
 interface
 
 uses
@@ -261,7 +263,7 @@ begin
   end;
   for LPosition := 1 to Length(AContent) - Length(AQuery) + 1 do
     if CompareStringOrdinal(PChar(AContent) + LPosition - 1, Length(AQuery), PChar(AQuery), Length(AQuery),
-      {$IF CompilerVersion >= 37}Ord{$IFEND}(not ACaseSensitive)) = CSTR_EQUAL then
+      {$IF CompilerVersion >= 37}DWORD{$ELSE}BOOL{$IFEND}(Ord(not ACaseSensitive))) = CSTR_EQUAL then
       if not AWholeWord or (not DirectoryFilterWordCharacter(AContent, LPosition - 1) and
         not DirectoryFilterWordCharacter(AContent, LPosition + Length(AQuery))) then
         Exit(True);
@@ -303,7 +305,7 @@ begin
               if ARecursive then
                 LStack.Push(LFileName);
             end
-            else if TPath.MatchesPattern(LSearch.Name, APattern) then
+            else if TPath.MatchesPattern(LSearch.Name, APattern, False) then
             begin
               if Assigned(AFilenameRegex) then
               begin
@@ -383,6 +385,7 @@ var
   LFiles: TArray<string>;
   LLimit: Integer;
   LPattern: string;
+  LPredicate: TDirectory.TFilterPredicate;
   LSearchOption: TSearchOption;
 begin
   LPattern := Trim(ASearchPattern);
@@ -422,11 +425,14 @@ begin
     if AContentQuery <> '' then
       LFiles := ContentFilterFiles(LDirectory, LPattern, ARecursive, LFilenameRegex)
     else if Assigned(LFilenameRegex) then
-      LFiles := TDirectory.GetFiles(LDirectory, LPattern, LSearchOption,
+    begin
+      LPredicate :=
         function(const Path: string; const SearchRec: TSearchRec): Boolean
         begin
           Result := LFilenameRegex.IsMatch(SearchRec.Name);
-        end)
+        end;
+      LFiles := TDirectory.GetFiles(LDirectory, LPattern, LSearchOption, LPredicate);
+    end
     else
       LFiles := TDirectory.GetFiles(LDirectory, LPattern, LSearchOption);
     TArray.Sort<string>(LFiles);
