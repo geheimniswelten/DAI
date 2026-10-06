@@ -3,10 +3,17 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
 
-    [ValidateSet('Win32', 'Win64', 'Both')]
+    [ValidateSet('Win32', 'Win64', 'Both', 'IDE')]
     [string]$Platform = 'Win32',
 
-    [string]$BdsRoot = $env:BDS
+    [string]$BdsRoot = $env:BDS,
+
+    [ValidateSet('11', '12', '13')]
+    [string]$DelphiVersion,
+
+    [switch]$Register,
+
+    [switch]$SkipMissing
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,13 +77,38 @@ function Assert-TargetBinary {
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectFile = Join-Path $projectRoot 'DAI.dproj'
+. (Join-Path $projectRoot 'Scripts\Build.Registration.ps1')
 
 if (-not (Test-Path -LiteralPath $projectFile)) {
     throw "DAI.dproj wurde nicht gefunden: $projectFile"
 }
 
-if ([string]::IsNullOrWhiteSpace($BdsRoot)) {
-    $BdsRoot = 'C:\Program Files (x86)\Embarcadero\Studio\37.0'
+$installation = $null
+if ($DelphiVersion) {
+    # A selected version must never inherit another compiler's BDS environment.
+    $requestedRoot = if ($PSBoundParameters.ContainsKey('BdsRoot')) { $BdsRoot } else { '' }
+    $installation = Get-DelphiInstallation -DelphiVersion $DelphiVersion -BdsRoot $requestedRoot
+    if ($null -eq $installation) {
+        $message = "Delphi $DelphiVersion (BDS $(Get-BdsVersion $DelphiVersion)) ist nicht installiert"
+        if ($requestedRoot) { $message += " oder passt nicht zum BdsRoot '$requestedRoot'" }
+        if ($SkipMissing -and -not $requestedRoot) {
+            Write-Host "$message; Build und Registrierung werden übersprungen."
+            return
+        }
+        throw "$message."
+    }
+    $BdsRoot = $installation.RootDir
+}
+else {
+    if ([string]::IsNullOrWhiteSpace($BdsRoot)) {
+        $BdsRoot = 'C:\Program Files (x86)\Embarcadero\Studio\37.0'
+    }
+    if ($Register -or $Platform -eq 'IDE') {
+        $installation = Get-DelphiInstallation -BdsRoot $BdsRoot
+        if ($null -eq $installation) {
+            throw "Für BdsRoot '$BdsRoot' wurde keine registrierte Delphi-11/12/13-Installation gefunden. Verwende -DelphiVersion."
+        }
+    }
 }
 
 $rsvars = Join-Path $BdsRoot 'bin\rsvars.bat'
@@ -84,7 +116,26 @@ if (-not (Test-Path -LiteralPath $rsvars)) {
     throw "rsvars.bat wurde nicht gefunden: $rsvars"
 }
 
-$platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
+[string[]]$idePlatforms = @(if ($null -ne $installation) { Get-IDEPlatforms -Installation $installation })
+[string[]]$platforms = @(if ($Platform -eq 'IDE') { $idePlatforms } elseif ($Platform -eq 'Both') { 'Win32'; 'Win64' } else { $Platform })
+if ($platforms.Count -eq 0) { throw "Keine IDE in der Delphi-Installation '$BdsRoot' gefunden." }
+if ($Platform -eq 'IDE' -and $idePlatforms -notcontains 'Win64') {
+    Write-Host 'Keine 64-Bit-IDE installiert; Win64-Build und Known Packages x64 werden übersprungen.'
+}
+if ($Register) {
+    foreach ($target in $platforms) {
+        if ($idePlatforms -notcontains $target) {
+            throw "Für $target ist keine passende IDE installiert. Verwende -Platform IDE für die vorhandenen IDE-Architekturen."
+        }
+    }
+}
+# Check all tools before starting any build or registration.
+foreach ($target in $platforms) {
+    $compilerName = if ($target -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
+    $compiler = Join-Path $BdsRoot "bin\$compilerName"
+    if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) { throw "Compiler fehlt: $compiler" }
+}
+$packagesToRegister = @()
 
 foreach ($currentPlatform in $platforms) {
     Write-Host "Baue DAI: Configuration=$Configuration Platform=$currentPlatform"
@@ -141,6 +192,16 @@ foreach ($currentPlatform in $platforms) {
 
     Assert-TargetBinary -Path (Join-Path $bridgeOutput 'DAI.McpBridge.exe') -TargetPlatform $currentPlatform -IsPackage $false
     Write-Host "Package $([System.IO.Path]::GetFileName($packageFile)) und Bridge als $currentPlatform geprüft."
+    $packagesToRegister += [pscustomobject]@{ Path = $packageFile; Platform = $currentPlatform }
+}
+
+if ($Register) {
+    # No registry writes until all requested packages and bridges passed validation.
+    foreach ($package in $packagesToRegister) {
+        Register-DAIPackage -PackageFile $package.Path -TargetPlatform $package.Platform `
+            -BdsVersion $installation.BdsVersion -ProjectRoot $projectRoot
+    }
+    Write-Host 'DAI wurde für den aktuellen Benutzer registriert. Die jeweilige IDE zum Laden des Packages neu starten.'
 }
 
 Write-Host 'DAI wurde erfolgreich gebaut.'

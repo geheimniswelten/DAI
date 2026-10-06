@@ -785,10 +785,25 @@ Build\Win64\Release\Bpl\DAI.McpBridge.exe
 ```
 
 Win32 und Win64 sind im DPROJ aktiviert. Mit `-Platform Win32` oder `-Platform Win64` kann auch nur eine Architektur gebaut werden.
+`-Platform IDE` baut nur die Architekturen der installierten IDEs. Dazu werden die Registrywerte `App` und `App x64` sowie die Existenz der jeweiligen
+`bds.exe` geprüft. Ein vorhandener Win64-Compiler allein bedeutet keine installierte 64-Bit-IDE.
 `DllSuffix=$(Auto)` im DPROJ und `{$LIBSUFFIX AUTO}` im DPK verwenden automatisch das Package-Versionssuffix des Compilers.
 Die Ausgabeverzeichnisse bleiben gleich; BPLs verschiedener Delphi-Versionen erhalten unterschiedliche Namen. DCP-/DCU-Dateien bleiben ohne Versionssuffix.
 `Build.ps1` prüft die beim aktuellen Build neu geschriebene versionierte BPL sowie die Bridge auf PE-Signatur, Zielarchitektur und DLL-/EXE-Typ.
 Eine vorhandene alte `DAI.bpl` oder eine unveränderte BPL eines früheren Builds zählt dabei nicht als erfolgreiches Build-Ergebnis.
+
+Mit `-DelphiVersion 11`, `12` oder `13` wird die passende Installation anhand ihrer BDS-Registryversion gesucht:
+
+| Delphi | BDS-Registryversion | AUTO-Suffix / Package |
+| --- | --- | --- |
+| 11 Alexandria | `22.0` | `280` / `DAI280.bpl` |
+| 12 Athens | `23.0` | `290` / `DAI290.bpl` |
+| 13 Florence | `37.0` | `370` / `DAI370.bpl` |
+
+Die Suche berücksichtigt die Installationswerte unter HKCU und HKLM in beiden Registryansichten. Mit `-DelphiVersion` wird ein geerbtes `%BDS%`
+ignoriert, damit beispielsweise Delphi 11 nicht versehentlich mit der Delphi-13-Toolchain gebaut wird. Ein ausdrücklich angegebenes `-BdsRoot`
+wählt das Installationsverzeichnis; zusammen mit `-DelphiVersion` muss es zu dieser Version passen.
+`-SkipMissing` überspringt eine nicht installierte Version mit einer Meldung und ohne Fehler. Build- oder Registrierungsfehler bleiben Fehler.
 
 ## Installation in der 32- und 64-Bit-IDE
 
@@ -809,13 +824,45 @@ HKEY_CURRENT_USER\Software\Embarcadero\BDS\37.0\Known Packages x64
 Die Tabelle zeigt Delphi 13; andere Compiler erzeugen ihr eigenes AUTO-Suffix.
 In der jeweiligen IDE über `Component → Install Packages → Add` das passende BPL auswählen. Eine zuvor installierte unsuffigierte `DAI.bpl` dabei ersetzen,
 damit DAI nicht doppelt geladen wird. Die native Bridge aus demselben Buildverzeichnis neben dem BPL belassen.
-Die Package-Zuordnung erfolgt über die verschiedenen Schlüsselnamen; ein Wechsel der Registry-View allein ersetzt sie nicht. DAI verändert diese Schlüssel nicht selbst.
+Die Package-Zuordnung erfolgt über die verschiedenen Schlüsselnamen; ein Wechsel der Registry-View allein ersetzt sie nicht.
+
+Alternativ kann `Build.ps1` das Package nach einem erfolgreichen Build für den aktuellen Windowsbenutzer registrieren:
+
+```powershell
+.\Build.ps1 -Configuration Release -Platform IDE -DelphiVersion 13 -Register
+```
+
+`-Register` ist optional; ohne diesen Schalter baut das Skript ausschließlich. Die Registrierung schreibt den vollständigen Pfad der beim aktuellen
+Build neu erzeugten und geprüften BPL als Zeichenfolgenwert mit einer DAI-Beschreibung in den passenden `Known Packages`-Schlüssel unter
+`HKEY_CURRENT_USER\Software\Embarcadero\BDS\<BDS-Version>`. Sie erfolgt erst, nachdem alle angeforderten Package- und Bridge-Builds erfolgreich waren.
+Alte Einträge mit demselben BPL-Namen oder dem früheren `DAI.bpl` aus den Debug-/Release-Ausgaben dieses Projekts und derselben Architektur werden ersetzt;
+zugehörige deaktivierte DAI-Einträge werden entfernt.
+Andere Packages bleiben erhalten. Es werden keine HKLM-Schlüssel geschrieben und keine Administratorrechte benötigt.
+Die betreffende IDE vor Build und Registrierung schließen und anschließend wieder öffnen, damit sie das Package lädt und keine alten Registrierungen
+beim Beenden zurückschreibt. Eine fehlende 64-Bit-IDE wird bei `-Platform IDE` übersprungen.
+
+Für Delphi 11 bis 13 gemeinsam:
+
+```bat
+BUILD+REGISTER.cmd
+```
+
+Die CMD-Datei ruft für jede Version `Build.ps1 -Configuration Release -Platform IDE -DelphiVersion <Version> -Register -SkipMissing` auf.
+Nicht installierte Versionen werden übersprungen. Nach einem Fehler werden die übrigen Versionen trotzdem versucht; der abschließende Exitcode
+ist `1`, wenn mindestens ein Build oder eine Registrierung fehlschlug, sonst `0`. Standardmäßig bleibt das Fenster mit `pause` geöffnet.
+Für unbeaufsichtigte Aufrufe entfällt die Pause:
+
+```bat
+BUILD+REGISTER.cmd --no-pause
+```
+
 Beide vollständigen Package-Builds wurden mit Delphi 13 / BDS 37.0 geprüft. Der Nutzer bestätigte außerdem Build und Package-Installation unter Delphi 11.
 Jedes Package muss mit der Toolchain und den ToolsAPI-Units seiner IDE-Version gebaut werden. Der Delphi-12-Build und die vollständigen Funktionstests
 unter Delphi 11/12 stehen noch aus. Die globale Instanzsperre selbst ist versionsunabhängig.
 
 Referenzen: [64-Bit-IDE](https://docwiki.embarcadero.com/RADStudio/Florence/en/64-bit_IDE),
-[Package-Installation](https://docwiki.embarcadero.com/RADStudio/Florence/en/InstallIDEPackage).
+[Package-Installation](https://docwiki.embarcadero.com/RADStudio/Florence/en/InstallIDEPackage),
+[Compiler- und Package-Versionen](https://docwiki.embarcadero.com/RADStudio/Florence/en/Compiler_Versions_Table).
 
 ## Verbindungstest
 
@@ -830,6 +877,7 @@ Mit `-Mode Modern` verwendet es `server/discover` und die erforderlichen MCP-Met
 Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 
 ```powershell
+.\Scripts\Test.BuildRegistration.ps1
 .\Scripts\Test-ClientRegistration.ps1 -Platform Win32
 .\Scripts\Test-ClientRegistration.ps1 -Platform Win64
 .\Scripts\Test.Protocol.ps1 -Platform Win32
