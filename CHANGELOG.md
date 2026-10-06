@@ -1,5 +1,16 @@
 # Änderungsprotokoll
 
+## 1.2.20
+
+- Build.ps1 benennt eine durch Dateisperren blockierte Ausgabe-BPL bei Compilerfehler F2039 nach *.bpl.deleted um und wiederholt den Package-Build einmal. Vorhandene Sicherungen werden ersetzt; ebenfalls gesperrte Sicherungen erhalten einen nummerierten Ausweichnamen.
+- form_components_search und form_components_select suchen beziehungsweise selektieren geladene Designerkomponenten; Namenssuche unterstützt optional RegEx, Klasse und Parent sind zusätzliche Filter.
+- form_component_properties liest einzelne und verschachtelte Properties; form_component_set_property setzt Werte einschließlich Name über die offiziellen Designer-Propertyeditoren.
+- form_component_move ändert Position und Größe sowie optional den visuellen Parent. Native Parentwechsel werden dem Designer als Änderung gemeldet.
+- form_palette_list liest Komponenten und Kategorien der IDE-Palette; form_component_create fügt registrierte Klassen über IOTAFormEditor.CreateComponent ein.
+- Parentwahl unterstützt explizite Container, aktuelle Auswahl, deren Parent und Formularwurzel. Auswahlfallback und Containereignung werden geprüft.
+- Die Werkzeuge arbeiten im geladenen Designer und speichern weder Formular noch PAS-Unit automatisch. Mutationen benötigen Lese- und IDE-Bearbeitungsrechte und bleiben auf Workspace-Dateien beschränkt.
+- README und generierter IDE-Skill beschreiben die Designeroperationen und ihre Grenzen; isolierte SDK- und MCP-Fixtures prüfen Verhalten und Berechtigungsreihenfolge ohne Änderungen an Benutzerformularen.
+
 ## 1.2.19
 
 - debugger_evaluate wertet Ausdrücke im angehaltenen Prozess/Thread über ToolsAPI aus. debugger_modify prüft die Beschreibbarkeit und weist im selben SDK-Vorgang einen neuen Wert zu.

@@ -110,6 +110,25 @@ function Invoke-BuildRegistrationFixtureCompiler {
     if ($command -match '\bmsbuild\b') {
         if ($command -notmatch '/p:Platform=(Win32|Win64)') { throw 'Fixture package platform missing.' }
         $platform = $Matches[1]
+        $state.PackageAttempts++
+        if ($state.Mode -eq 'syntax-failure-with-lock') {
+            Write-Output '[dcc32 Error] E2003 Undeclared identifier: Broken'
+            $global:LASTEXITCODE = 41
+            return
+        }
+        if ($state.Mode -in @('locked-output-retry', 'rename-blocked', 'retry-failure')) {
+            if ($state.PackageAttempts -eq 1) {
+                $packagePath = Join-Path $state.ProjectRoot "Build\$platform\Release\Bpl\DAI$($state.PackageSuffix).bpl"
+                Write-Output "[dcc32 Fatal Error] F2039 Could not create output file '$packagePath'"
+                $global:LASTEXITCODE = 41
+                return
+            }
+            if ($state.Mode -eq 'retry-failure') {
+                Write-Output '[dcc32 Error] E2003 Undeclared identifier: BrokenAfterRename'
+                $global:LASTEXITCODE = 43
+                return
+            }
+        }
         if ($state.Mode -eq 'package-failure') { $global:LASTEXITCODE = 41; return }
         if ($state.Mode -eq 'stale-package') { return }
         $binaryPlatform = if ($state.Mode -eq 'wrong-package-architecture') { 'Win64' } else { $platform }
@@ -138,6 +157,7 @@ function Test-BuildPipeline {
     $fixtureProject = Join-Path $script:FixtureRoot ('Pipeline-' + $Mode)
     [System.IO.Directory]::CreateDirectory((Join-Path $fixtureProject 'Scripts')) | Out-Null
     Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'Build.ps1') -Destination (Join-Path $fixtureProject 'Build.ps1')
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Build.Output.ps1') -Destination (Join-Path $fixtureProject 'Scripts\Build.Output.ps1')
     [System.IO.File]::WriteAllText((Join-Path $fixtureProject 'DAI.dproj'), '<Project />')
     $helperPath = (Join-Path $PSScriptRoot 'Build.Registration.ps1').Replace("'", "''")
     $mockHelpers = @'
@@ -159,7 +179,7 @@ function Register-DAIPackage {
                                   $mockHelpers.Replace('__HELPER_PATH__', $helperPath))
     $suffix = if ($Version -eq '11') { '280' } elseif ($Version -eq '12') { '290' } else { '370' }
     $global:DAIBuildRegistrationFixture = [pscustomobject] @{
-        ProjectRoot = $fixtureProject; Mode = $Mode; PackageSuffix = $suffix;
+        ProjectRoot = $fixtureProject; Mode = $Mode; PackageSuffix = $suffix; PackageAttempts = 0;
         RegistryRows = $script:RegistryRows;
         Commands = [System.Collections.Generic.List[string]]::new();
         Registrations = [System.Collections.Generic.List[object]]::new()
@@ -167,17 +187,39 @@ function Register-DAIPackage {
     if ($Mode -eq 'stale-package') {
         New-TestBinary -Path (Join-Path $fixtureProject "Build\Win32\Release\Bpl\DAI$suffix.bpl") -Package
     }
+    $lockedPackagePath = Join-Path $fixtureProject "Build\Win32\Release\Bpl\DAI$suffix.bpl"
+    $packageLock = $null
+    if ($Mode -in @('locked-output-retry', 'syntax-failure-with-lock', 'rename-blocked', 'retry-failure')) {
+        New-TestBinary -Path $lockedPackagePath -Package
+        $shareMode = if ($Mode -eq 'rename-blocked') { [System.IO.FileShare]::Read }
+            else { [System.IO.FileShare]::Read -bor [System.IO.FileShare]::Delete }
+        $packageLock = [System.IO.File]::Open($lockedPackagePath, [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read, $shareMode)
+    }
     $arguments = @{ DelphiVersion = $Version; Platform = $Platform;
         Register = $Register; SkipMissing = $SkipMissing.IsPresent }
     if ($BdsRoot) { $arguments.BdsRoot = $BdsRoot }
     $failed = $false
-    try { & (Join-Path $fixtureProject 'Build.ps1') @arguments | Out-Null }
-    catch { $failed = $true }
+    try {
+        try { & (Join-Path $fixtureProject 'Build.ps1') @arguments | Out-Null }
+        catch { $failed = $true }
+    }
+    finally { if ($null -ne $packageLock) { $packageLock.Dispose() } }
     Assert-Test ($failed -eq $ExpectFailure) "Pipeline '$Mode' has the expected success/failure status."
     Assert-Test ($global:DAIBuildRegistrationFixture.Commands.Count -eq $ExpectedCommands) "Pipeline '$Mode' invokes only the expected build commands."
     Assert-Test ($global:DAIBuildRegistrationFixture.Registrations.Count -eq $ExpectedRegistrations) "Pipeline '$Mode' performs only the expected registration writes."
     foreach ($registration in $global:DAIBuildRegistrationFixture.Registrations) {
         Assert-Test ($registration.BdsVersion -eq (Get-BdsVersion $Version)) "Pipeline '$Mode' registers the correct IDE version."
+    }
+    if ($Mode -in @('locked-output-retry', 'retry-failure')) {
+        Assert-Test (Test-Path -LiteralPath "$lockedPackagePath.deleted") "Pipeline '$Mode' preserves the renamed old package."
+        Assert-Test ($global:DAIBuildRegistrationFixture.PackageAttempts -eq 2) "Pipeline '$Mode' retries the package build exactly once."
+        Assert-Test ((Test-Path -LiteralPath $lockedPackagePath) -eq ($Mode -eq 'locked-output-retry')) "Pipeline '$Mode' has only the expected replacement output."
+    }
+    if ($Mode -in @('syntax-failure-with-lock', 'rename-blocked')) {
+        Assert-Test (Test-Path -LiteralPath $lockedPackagePath) "Pipeline '$Mode' keeps the original package."
+        Assert-Test (-not (Test-Path -LiteralPath "$lockedPackagePath.deleted")) "Pipeline '$Mode' does not create a renamed backup."
+        Assert-Test ($global:DAIBuildRegistrationFixture.PackageAttempts -eq 1) "Pipeline '$Mode' does not retry the compiler."
     }
 }
 
@@ -318,10 +360,15 @@ try {
     Test-BuildPipeline -Mode second-bridge-failure -ExpectFailure $true -ExpectedCommands 4
     Test-BuildPipeline -Mode win32-only-ide -Version 11 -ExpectedRegistrations 1 -ExpectedCommands 2
     Test-BuildPipeline -Mode missing-x64-ide -Version 11 -Platform Both -ExpectFailure $true
+    Test-BuildPipeline -Mode locked-output-retry -Platform Win32 -ExpectedRegistrations 1 -ExpectedCommands 3
+    Test-BuildPipeline -Mode syntax-failure-with-lock -Platform Win32 -ExpectFailure $true -ExpectedCommands 1
+    Test-BuildPipeline -Mode rename-blocked -Platform Win32 -ExpectFailure $true -ExpectedCommands 1
+    Test-BuildPipeline -Mode retry-failure -Platform Win32 -ExpectFailure $true -ExpectedCommands 2
 
     # Parse the executable scripts with the same Windows PowerShell grammar used
     # by BUILD+REGISTER.cmd; helper tests above exercise their mutable behavior.
     foreach ($scriptPath in @((Join-Path $PSScriptRoot 'Build.Registration.ps1'),
+                              (Join-Path $PSScriptRoot 'Build.Output.ps1'),
                               (Join-Path (Split-Path -Parent $PSScriptRoot) 'Build.ps1'))) {
         $tokens = $null
         $parseErrors = $null

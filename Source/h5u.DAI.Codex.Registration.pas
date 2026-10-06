@@ -464,6 +464,19 @@ begin
     ## Formulare, Code Insight und Debugger
 
     - `form_designer_inspect` liest den Designer; `form_show_designer` öffnet/zeigt ihn, `form_show_as_text` öffnet den DFM-Textmodus.
+    - Direkte Komponentenoperationen brauchen einen geladenen Designer und file als PAS-/DFM-/FMX-Pfad; Änderungen bleiben im IDE-Puffer.
+    - `form_components_search`: query sucht im Namen; use_regex/case_sensitive, class_name und parent filtern zusätzlich; maximum_results ist 100.
+    - `form_components_select`: components ist eine Liste vorhandener Namen; add_to_selection erweitert, focus ist standardmäßig true.
+    - `form_component_properties`: component und optional properties lesen auch verschachtelte Pfade wie Font.Size.
+    - `form_component_set_property`: component/property/value setzen über den offiziellen Propertyeditor; Name darüber ändern, keine native Name-Zuweisung.
+    - `form_component_move`: component mit x/y/width/height und optional parent/parent_mode verschieben; fehlende Werte bleiben erhalten.
+    - `form_palette_list`: query/category filtern registrierte Klassen; include_unavailable ergänzt deaktivierte Einträge, maximum_results ist 500.
+    - `form_component_create`: class_name aus der Palette über CreateComponent einfügen; optional name, Parent, Integerposition/-größe und select.
+    - parent wählt explizit; parent_mode ist explicit/selected/selected_parent/root. Create nutzt selected mit Containerfallback, Move behält sonst den Parent.
+    - Create-Koordinaten -1 überlassen den Wert dem Designer; bei Move unterstützt FMX auch Dezimalpositionen. Owner und visuellen Parent unterscheiden.
+    - Mutationen benötigen Lese- und IDE-Bearbeitungsrechte, sind Workspace-begrenzt und speichern nie automatisch. Tatsächlichen modified-Status prüfen.
+    - Parentwechsel darf nativ erfolgen und meldet Designeränderung; keine gemeinsame Undo-Transaktion behaupten. Komplexe Properties nicht frei erfinden.
+    - Beim Erzeugen/Umbenennen tatsächlichen Namen prüfen; source_declaration_verified: false bedeutet keine unabhängig bestätigte Pascal-Feldsynchronisierung.
     - DFM mit `file_read` lesen und `file_write` bearbeiten; Delphi entscheidet beim Speichern über die Codierung. Designerobjekte nicht frei erfinden.
     - Formulartext kann Unicode-Stringzeichen als `#nnn` normalisieren; den zurückgegebenen Hash und anschließend den Designerwert prüfen.
     - Für den DFM-Textmodus muss die zugehörige PAS-Unit gespeichert und unverändert sein; sonst verhindert DAI den Wechsel zum Schutz des Puffers.
@@ -633,6 +646,25 @@ begin
     '## Formulare, Code Insight und Debugger' + sLineBreak +
     '' + sLineBreak +
     '- `form_designer_inspect` liest den Designer; `form_show_designer` öffnet/zeigt ihn, `form_show_as_text` öffnet den DFM-Textmodus.' + sLineBreak +
+    '- Direkte Komponentenoperationen brauchen einen geladenen Designer und file als PAS-/DFM-/FMX-Pfad; Änderungen bleiben im IDE-Puffer.' + sLineBreak +
+    '- `form_components_search`: query sucht im Namen; use_regex/case_sensitive, class_name und parent filtern zusätzlich; maximum_results ist 100.' + sLineBreak +
+    '- `form_components_select`: components ist eine Liste vorhandener Namen; add_to_selection erweitert, focus ist standardmäßig true.' + sLineBreak +
+    '- `form_component_properties`: component und optional properties lesen auch verschachtelte Pfade wie Font.Size.' + sLineBreak +
+    '- `form_component_set_property`: component/property/value setzen über den offiziellen Propertyeditor; ' +
+    'Name darüber ändern, keine native Name-Zuweisung.' + sLineBreak +
+    '- `form_component_move`: component mit x/y/width/height und optional parent/parent_mode verschieben; fehlende Werte bleiben erhalten.' + sLineBreak +
+    '- `form_palette_list`: query/category filtern registrierte Klassen; include_unavailable ergänzt deaktivierte Einträge, maximum_results ist 500.' + sLineBreak +
+    '- `form_component_create`: class_name aus der Palette über CreateComponent einfügen; optional name, Parent, Integerposition/-größe und select.' + sLineBreak +
+    '- parent wählt explizit; parent_mode ist explicit/selected/selected_parent/root. ' +
+    'Create nutzt selected mit Containerfallback, Move behält sonst den Parent.' + sLineBreak +
+    '- Create-Koordinaten -1 überlassen den Wert dem Designer; bei Move unterstützt FMX auch Dezimalpositionen. ' +
+    'Owner und visuellen Parent unterscheiden.' + sLineBreak +
+    '- Mutationen benötigen Lese- und IDE-Bearbeitungsrechte, sind Workspace-begrenzt und speichern nie automatisch. ' +
+    'Tatsächlichen modified-Status prüfen.' + sLineBreak +
+    '- Parentwechsel darf nativ erfolgen und meldet Designeränderung; keine gemeinsame Undo-Transaktion behaupten. ' +
+    'Komplexe Properties nicht frei erfinden.' + sLineBreak +
+    '- Beim Erzeugen/Umbenennen tatsächlichen Namen prüfen; source_declaration_verified: false bedeutet ' +
+    'keine unabhängig bestätigte Pascal-Feldsynchronisierung.' + sLineBreak +
     '- DFM mit `file_read` lesen und `file_write` bearbeiten; Delphi entscheidet beim Speichern über die Codierung. Designerobjekte nicht frei erfinden.' + sLineBreak +
     '- Formulartext kann Unicode-Stringzeichen als `#nnn` normalisieren; den zurückgegebenen Hash und anschließend den Designerwert prüfen.' + sLineBreak +
     '- Für den DFM-Textmodus muss die zugehörige PAS-Unit gespeichert und unverändert sein; sonst verhindert DAI den Wechsel zum Schutz des Puffers.' + sLineBreak +

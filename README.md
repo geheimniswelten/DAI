@@ -553,6 +553,9 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `codex_registration_status`
 - `clients_registration_status`
 - `form_designer_inspect`
+- `form_components_search`
+- `form_component_properties`
+- `form_palette_list`
 - `debugger_status`
 - `debugger_cursor_expression`
 - `debugger_evaluation_status`
@@ -579,6 +582,10 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `project_file_remove`
 - `form_show_as_text`
 - `form_show_designer`
+- `form_components_select`
+- `form_component_set_property`
+- `form_component_move`
+- `form_component_create`
 - `breakpoint_set`
 - `breakpoint_remove`
 - `ui_message_box`
@@ -667,8 +674,46 @@ Ein vorhandener fremder `dai-delphi-ide`-Skill wird nicht überschrieben. Die au
 ## Formdesigner und Debugger
 
 `form_designer_inspect(file)` liest Komponenten, Auswahl und skalare veröffentlichte Eigenschaften aus einem geladenen Formularmodul.
-`form_show_designer(file)` öffnet das Formular bei Bedarf und zeigt dessen Designer. Komplexe Objekte und Ereignisse werden nicht als frei beschreibbare Eigenschaften angeboten.
-DFM-/FMX-Inhalte können bei geladenem Designer auch dessen ungespeicherten Zustand liefern (`source: designer_buffer`). Für Änderungen weiterhin den IDE-Textpuffer verwenden.
+`form_show_designer(file)` öffnet das Formular bei Bedarf und zeigt dessen Designer.
+Die Komponentenwerkzeuge arbeiten mit diesem geladenen Designer; `file` bezeichnet dessen PAS-, DFM- oder FMX-Datei.
+
+| Werkzeug | Funktion / Parameter |
+| --- | --- |
+| `form_components_search` | Namen mit `query` durchsuchen, optional `use_regex` und `case_sensitive`; `class_name` und `parent` filtern zusätzlich. `maximum_results`: 100, höchstens 4096. |
+| `form_components_select` | Benannte `components` über ToolsAPI selektieren; `add_to_selection` erweitert die Auswahl, `focus` ist standardmäßig `true`. |
+| `form_component_properties` | Properties von `component` lesen. Optional `properties` als Namensliste, auch verschachtelte Pfade wie `Font.Size`. |
+| `form_component_set_property` | `component`, `property` und skalaren JSON-`value` über den offiziellen Designer-Propertyeditor setzen, einschließlich `Name`. |
+| `form_component_move` | Position mit `x`/`y`, Größe mit `width`/`height` und optional Parent ändern. Nicht angegebene Werte bleiben erhalten. |
+| `form_component_create` | Registrierte `class_name` über `IOTAFormEditor.CreateComponent` einfügen; optional `name`, Parent, Position/Größe und `select` (Standard `true`). |
+| `form_palette_list` | Komponenten und Kategorien der IDE-Palette auslesen; `query`, `category`, `include_unavailable` und `maximum_results` (500, höchstens 4096). |
+
+Beim Einfügen und Parentwechsel wählt `parent` einen expliziten Container. `parent_mode` erlaubt `explicit`, `selected`, `selected_parent` oder `root`.
+Einfügen verwendet standardmäßig `selected`: Kann die ausgewählte Komponente keine Controls aufnehmen, wird ihr geeigneter Parent verwendet;
+ohne Auswahl wird der Formularcontainer verwendet. `selected_parent` fügt neben der ausgewählten Komponente ein.
+Beim Verschieben bleibt der bisherige Parent ohne `parent` oder abweichenden `parent_mode` erhalten.
+Die Eignung des Containers wird geprüft; nichtvisuelle Komponenten haben keinen visuellen Parent.
+Die Create-Koordinaten sind Ganzzahlen; `-1` überlässt den jeweiligen Wert dem Designer. Beim Move können FMX-Koordinaten Dezimalzahlen sein.
+
+```json
+{"file":"MainForm.pas","query":"^Button[0-9]+$","use_regex":true}
+```
+
+```json
+{"file":"MainForm.pas","component":"Button1","property":"Name","value":"SaveButton"}
+```
+
+```json
+{"file":"MainForm.pas","class_name":"TButton","name":"SaveButton","parent":"Panel1","x":16,"y":16}
+```
+
+Eigenschaftsänderungen und Umbenennungen verwenden die IDE-Propertyeditoren, Auswahl und Erzeugen die öffentliche ToolsAPI.
+Bei Umbenennungen und beim Erzeugen wird der tatsächliche Komponentenname zurückgelesen. `source_declaration_verified: false` kennzeichnet,
+dass DAI die Pascal-Felddeklaration nicht unabhängig verifiziert; insbesondere wird bei selbst umbenennenden Komponenten keine Synchronisierung aus `ValidateRename` abgeleitet.
+Der Parentwechsel kann über die native Komponente erfolgen und meldet die Änderung dem Designer.
+Die Werkzeuge speichern weder Formular noch PAS-Unit automatisch. Ergebnisse melden den tatsächlichen Designerzustand;
+eine gemeinsame Undo-Transaktion für mehrere Änderungen wird nicht garantiert. Lesen benötigt Leserechte, Auswahl und Änderungen zusätzlich IDE-Bearbeitungsrechte.
+Mutationen sind auf Workspace-Dateien beschränkt; schreibgeschützte Referenzformulare bleiben unverändert.
+DFM-/FMX-Inhalte können auch den ungespeicherten Zustand liefern (`source: designer_buffer`). Für direkte Formtextänderungen weiterhin den IDE-Textpuffer verwenden.
 
 `debugger_status` liefert Prozess-/Threadzustände; `breakpoints_list` die Quellhaltepunkte.
 `debugger_threads_list` liest standardmäßig den aktuellen Debuggerprozess; `process_id` wählt eine gelistete Windows-Prozess-ID,
@@ -792,6 +837,12 @@ Die Ausgabeverzeichnisse bleiben gleich; BPLs verschiedener Delphi-Versionen erh
 `Build.ps1` prüft die beim aktuellen Build neu geschriebene versionierte BPL sowie die Bridge auf PE-Signatur, Zielarchitektur und DLL-/EXE-Typ.
 Eine vorhandene alte `DAI.bpl` oder eine unveränderte BPL eines früheren Builds zählt dabei nicht als erfolgreiches Build-Ergebnis.
 
+Kann der Compiler die aktuelle BPL wegen einer Dateisperre nicht erstellen (`F2039`), versucht `Build.ps1`, sie nach
+`DAI<Version>.bpl.deleted` umzubenennen, und wiederholt den Package-Build einmal. Eine vorhandene Sicherung wird gelöscht;
+ist auch sie gesperrt, wird ein nummerierter Name wie `DAI370.1.bpl.deleted` verwendet. Andere Compilerfehler lösen diesen
+Versuch nicht aus. Die laufende IDE verwendet weiterhin das bereits geladene Package; zum Laden des neuen Builds die IDE neu starten.
+Scheitert der wiederholte Build, bleibt die bisherige BPL unter dem gemeldeten Sicherungsnamen erhalten.
+
 Mit `-DelphiVersion 11`, `12` oder `13` wird die passende Installation anhand ihrer BDS-Registryversion gesucht:
 
 | Delphi | BDS-Registryversion | AUTO-Suffix / Package |
@@ -878,6 +929,7 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 
 ```powershell
 .\Scripts\Test.BuildRegistration.ps1
+.\Scripts\Test.BuildOutput.ps1
 .\Scripts\Test-ClientRegistration.ps1 -Platform Win32
 .\Scripts\Test-ClientRegistration.ps1 -Platform Win64
 .\Scripts\Test.Protocol.ps1 -Platform Win32

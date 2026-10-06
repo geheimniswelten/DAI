@@ -45,6 +45,7 @@ uses
   h5u.DAI.OTA.Helpers,
   h5u.DAI.OTA.Messages,
   h5u.DAI.OTA.Packages,
+  h5u.DAI.OTA.Palette,
   h5u.DAI.OTA.Projects,
   h5u.DAI.OTA.ProjectOptions,
   h5u.DAI.OTA.Search,
@@ -193,6 +194,112 @@ begin
   if not (LValue is TJSONBool) then
     raise EArgumentException.Create(AName + ' muss als JSON-Boolean angegeben werden.');
   Result := SameText(LValue.Value, 'true');
+end;
+
+procedure ValidateDesignerNumber(const AArguments: TJSONObject; const AName: string; const ANonNegative: Boolean = False);
+var
+  LNumber: Double;
+  LValue: TJSONValue;
+begin
+  if not Assigned(AArguments) then
+    Exit;
+  LValue := AArguments.GetValue(AName);
+  if not Assigned(LValue) then
+    Exit;
+  if not (LValue is TJSONNumber) or
+     not TryStrToFloat(LValue.Value, LNumber, TFormatSettings.Invariant) then
+    raise EArgumentException.Create(AName + ' muss eine JSON-Zahl sein.');
+  if IsNan(LNumber) or IsInfinite(LNumber) then
+    raise EArgumentException.Create(AName + ' muss eine endliche JSON-Zahl sein.');
+  if ANonNegative and (LNumber < 0) then
+    raise EArgumentOutOfRangeException.Create(AName + ' darf nicht negativ sein.');
+end;
+
+procedure ValidateDesignerArguments(const AName: string; const AArguments: TJSONObject);
+var
+  LNames: TArray<string>;
+  LName, LParentMode: string;
+  LValue: TJSONValue;
+begin
+  // Validate argument types before a permission dialog can alter IDE selection.
+  if SameText(AName, 'form_palette_list') then
+  begin
+    StrictArgumentString(AArguments, 'query');
+    StrictArgumentString(AArguments, 'category');
+    StrictArgumentBoolean(AArguments, 'include_unavailable', False);
+    StrictArgumentInteger(AArguments, 'maximum_results', 500, 1, 4096);
+    Exit;
+  end;
+  RequiredArgumentString(AArguments, 'file');
+  if SameText(AName, 'form_components_search') then
+  begin
+    StrictArgumentString(AArguments, 'query');
+    StrictArgumentString(AArguments, 'class_name');
+    StrictArgumentString(AArguments, 'parent');
+    StrictArgumentBoolean(AArguments, 'use_regex', False);
+    StrictArgumentBoolean(AArguments, 'case_sensitive', False);
+    StrictArgumentInteger(AArguments, 'maximum_results', 100, 1, 4096);
+    Exit;
+  end;
+  if SameText(AName, 'form_components_select') then
+  begin
+    if not Assigned(AArguments.GetValue('components')) then
+      raise EArgumentException.Create('components muss ausdrücklich angegeben werden.');
+    LNames := StrictArgumentStringArray(AArguments, 'components');
+    if Length(LNames) = 0 then
+      raise EArgumentException.Create('components darf nicht leer sein.');
+    for LName in LNames do
+      if Trim(LName) = '' then
+        raise EArgumentException.Create('components darf keine leeren Namen enthalten.');
+    StrictArgumentBoolean(AArguments, 'add_to_selection', False);
+    StrictArgumentBoolean(AArguments, 'focus', True);
+    Exit;
+  end;
+  if not SameText(AName, 'form_component_create') then
+    RequiredArgumentString(AArguments, 'component');
+  if SameText(AName, 'form_component_properties') then
+  begin
+    LNames := StrictArgumentStringArray(AArguments, 'properties');
+    for LName in LNames do
+      if Trim(LName) = '' then
+        raise EArgumentException.Create('properties darf keine leeren Namen enthalten.');
+    Exit;
+  end;
+  if SameText(AName, 'form_component_set_property') then
+  begin
+    RequiredArgumentString(AArguments, 'property');
+    LValue := AArguments.GetValue('value');
+    if not Assigned(LValue) then
+      raise EArgumentException.Create('value muss ausdrücklich angegeben werden.');
+    if not ((LValue is TJSONString) or (LValue is TJSONNumber) or
+            (LValue is TJSONBool) or (LValue is TJSONNull)) then
+      raise EArgumentException.Create('value muss ein JSON-String, eine Zahl, ein Boolean oder null sein.');
+    if LValue is TJSONNumber then
+      ValidateDesignerNumber(AArguments, 'value');
+    Exit;
+  end;
+  StrictArgumentString(AArguments, 'parent');
+  LParentMode := StrictArgumentString(AArguments, 'parent_mode', 'explicit');
+  if not SameText(LParentMode, 'explicit') and not SameText(LParentMode, 'selected') and
+     not SameText(LParentMode, 'selected_parent') and not SameText(LParentMode, 'root') then
+    raise EArgumentException.Create('parent_mode muss explicit, selected, selected_parent oder root sein.');
+  if SameText(AName, 'form_component_create') then
+  begin
+    RequiredArgumentString(AArguments, 'class_name');
+    StrictArgumentString(AArguments, 'name');
+    StrictArgumentInteger(AArguments, 'x', -1, -1, MaxInt);
+    StrictArgumentInteger(AArguments, 'y', -1, -1, MaxInt);
+    StrictArgumentInteger(AArguments, 'width', -1, -1, MaxInt);
+    StrictArgumentInteger(AArguments, 'height', -1, -1, MaxInt);
+    StrictArgumentBoolean(AArguments, 'select', True);
+  end
+  else
+  begin
+    ValidateDesignerNumber(AArguments, 'x');
+    ValidateDesignerNumber(AArguments, 'y');
+    ValidateDesignerNumber(AArguments, 'width', True);
+    ValidateDesignerNumber(AArguments, 'height', True);
+  end;
 end;
 
 function ArgumentInteger(const AArguments: TJSONObject; const AName: string; const ADefault: Integer): Integer;
@@ -805,6 +912,34 @@ begin
     LFileName := ArgumentString(AArguments, 'file');
     RequirePermission(pcEditInsideIDE, 'Formdesigner in der IDE anzeigen', LFileName, LContext);
     Exit(TDAIDesignerService.ShowDesigner(LFileName));
+  end;
+
+  if SameText(AName, 'form_palette_list') then
+  begin
+    ValidateDesignerArguments(AName, AArguments);
+    RequirePermission(pcReadAccess, 'Komponenten und Kategorien der IDE-Palette lesen', '', LContext);
+    Exit(TDAIPaletteService.ListComponents(AArguments));
+  end;
+
+  if SameText(AName, 'form_components_search') or SameText(AName, 'form_components_select') or
+     SameText(AName, 'form_component_properties') or SameText(AName, 'form_component_set_property') or
+     SameText(AName, 'form_component_move') or SameText(AName, 'form_component_create') then
+  begin
+    ValidateDesignerArguments(AName, AArguments);
+    LFileName := RequiredArgumentString(AArguments, 'file');
+    RequirePermission(pcReadAccess, 'Komponenten und Eigenschaften des Formdesigners lesen', LFileName, LContext);
+    if SameText(AName, 'form_components_search') then
+      Exit(TDAIDesignerService.SearchComponents(LFileName, AArguments));
+    if SameText(AName, 'form_component_properties') then
+      Exit(TDAIDesignerService.ReadProperties(LFileName, AArguments));
+    RequirePermission(pcEditInsideIDE, 'Komponenten im Formdesigner bearbeiten oder auswählen', LFileName, LContext);
+    if SameText(AName, 'form_components_select') then
+      Exit(TDAIDesignerService.SelectComponents(LFileName, AArguments));
+    if SameText(AName, 'form_component_set_property') then
+      Exit(TDAIDesignerService.SetProperty(LFileName, AArguments));
+    if SameText(AName, 'form_component_move') then
+      Exit(TDAIDesignerService.MoveComponent(LFileName, AArguments));
+    Exit(TDAIDesignerService.CreateComponent(LFileName, AArguments));
   end;
 
   if SameText(AName, 'debugger_status') then
@@ -2120,6 +2255,40 @@ begin
     '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}', True);
   AddTool(Result, 'form_show_designer', 'Öffnet ein Workspace-Formular bei Bedarf und zeigt seinen Formdesigner.',
     '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}', False);
+  AddTool(Result, 'form_components_search', 'Sucht geladene Designerkomponenten nach Name, Klasse und Parent; optional RegEx für den Namen.',
+    '{"type":"object","properties":{"file":{"type":"string","minLength":1},"query":{"type":"string","default":""},' +
+    '"class_name":{"type":"string","default":""},"parent":{"type":"string"},"use_regex":{"type":"boolean","default":false},' +
+    '"case_sensitive":{"type":"boolean","default":false},"maximum_results":{"type":"integer","minimum":1,"maximum":4096,"default":100}},' +
+    '"required":["file"],"additionalProperties":false}', True);
+  AddTool(Result, 'form_components_select', 'Selektiert benannte Komponenten über ToolsAPI; optional Auswahl erweitern und fokussieren.',
+    '{"type":"object","properties":{"file":{"type":"string","minLength":1},' +
+    '"components":{"type":"array","items":{"type":"string","minLength":1},"minItems":1,"maxItems":1000},' +
+    '"add_to_selection":{"type":"boolean","default":false},"focus":{"type":"boolean","default":true}},' +
+    '"required":["file","components"],"additionalProperties":false}', False);
+  AddTool(Result, 'form_component_properties', 'Liest Eigenschaften einer Designerkomponente; Propertypfade wie Font.Size sind optional auswählbar.',
+    '{"type":"object","properties":{"file":{"type":"string","minLength":1},"component":{"type":"string","minLength":1},' +
+    '"properties":{"type":"array","items":{"type":"string","minLength":1},"maxItems":1000}},' +
+    '"required":["file","component"],"additionalProperties":false}', True);
+  AddTool(Result, 'form_component_set_property', 'Ändert eine Property einschließlich Name über den offiziellen Designer-Propertyeditor; speichert nicht.',
+    '{"type":"object","properties":{"file":{"type":"string","minLength":1},"component":{"type":"string","minLength":1},' +
+    '"property":{"type":"string","minLength":1},"value":{"type":["string","number","boolean","null"]}},' +
+    '"required":["file","component","property","value"],"additionalProperties":false}', False);
+  AddTool(Result, 'form_component_move', 'Ändert Position/Größe und optional Parent im geladenen Designer; Parentwechsel kann nativ erfolgen. Speichert nicht.',
+    '{"type":"object","properties":{"file":{"type":"string","minLength":1},"component":{"type":"string","minLength":1},' +
+    '"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number","minimum":0},"height":{"type":"number","minimum":0},' +
+    '"parent":{"type":"string"},"parent_mode":{"type":"string","enum":["explicit","selected","selected_parent","root"],"default":"explicit"}},' +
+    '"required":["file","component"],"additionalProperties":false}', False);
+  AddTool(Result, 'form_component_create', 'Fügt eine Komponentenklasse über IOTAFormEditor.CreateComponent ein; Parent explizit oder aus Auswahl. Speichert nicht.',
+    '{"type":"object","properties":{"file":{"type":"string","minLength":1},"class_name":{"type":"string","minLength":1},"name":{"type":"string"},' +
+    '"parent":{"type":"string"},"parent_mode":{"type":"string","enum":["explicit","selected","selected_parent","root"],"default":"selected"},' +
+    '"x":{"type":"integer","minimum":-1,"maximum":2147483647,"default":-1},"y":{"type":"integer","minimum":-1,"maximum":2147483647,"default":-1},' +
+    '"width":{"type":"integer","minimum":-1,"maximum":2147483647,"default":-1},' +
+    '"height":{"type":"integer","minimum":-1,"maximum":2147483647,"default":-1},"select":{"type":"boolean","default":true}},' +
+    '"required":["file","class_name"],"additionalProperties":false}', False);
+  AddTool(Result, 'form_palette_list', 'Liest registrierte Komponenten und Kategorien der IDE-Palette; optional auch momentan nicht verfügbare Einträge.',
+    '{"type":"object","properties":{"query":{"type":"string","default":""},"category":{"type":"string","default":""},' +
+    '"include_unavailable":{"type":"boolean","default":false},"maximum_results":{"type":"integer","minimum":1,"maximum":4096,"default":500}},' +
+    '"additionalProperties":false}', True);
   AddTool(Result, 'debugger_status', 'Liest den Debuggerstatus einschließlich aktueller Prozesse und Threads.',
     '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'debugger_cursor_expression', 'Liest den markierten Ausdruck oder einen einfachen Delphi-Zugriff am Cursor im aktiven Quelleditor.',

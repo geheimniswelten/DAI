@@ -46,6 +46,7 @@ contains
   h5u.DAI.IDE.Control in 'Source\h5u.DAI.IDE.Control.pas',
   h5u.DAI.IDE.Toolbar in 'Source\h5u.DAI.IDE.Toolbar.pas',
   h5u.DAI.OTA.Designer in 'Source\h5u.DAI.OTA.Designer.pas',
+  h5u.DAI.OTA.Palette in 'Source\h5u.DAI.OTA.Palette.pas',
   h5u.DAI.OTA.Debugger in 'Source\h5u.DAI.OTA.Debugger.pas',
   h5u.DAI.OTA.CursorExpression in 'Source\h5u.DAI.OTA.CursorExpression.pas',
   h5u.DAI.OTA.Evaluation in 'Source\h5u.DAI.OTA.Evaluation.pas',

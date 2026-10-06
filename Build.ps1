@@ -78,6 +78,7 @@ function Assert-TargetBinary {
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectFile = Join-Path $projectRoot 'DAI.dproj'
 . (Join-Path $projectRoot 'Scripts\Build.Registration.ps1')
+. (Join-Path $projectRoot 'Scripts\Build.Output.ps1')
 
 if (-not (Test-Path -LiteralPath $projectFile)) {
     throw "DAI.dproj wurde nicht gefunden: $projectFile"
@@ -155,9 +156,34 @@ foreach ($currentPlatform in $platforms) {
         '/verbosity:minimal'
     ) -join ' '
 
-    & $env:ComSpec /d /s /c $command
-    if ($LASTEXITCODE -ne 0) {
-        throw "Der DAI-Build für $currentPlatform ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
+    $buildLines = [System.Collections.Generic.List[string]]::new()
+    & $env:ComSpec /d /s /c $command | ForEach-Object {
+        $line = $_.ToString()
+        $buildLines.Add($line)
+        Write-Host $line
+    }
+    $buildExitCode = $LASTEXITCODE
+    if ($buildExitCode -ne 0) {
+        $failedOutput = Get-PackageOutputFailurePath -OutputLines $buildLines.ToArray() `
+            -ProjectRoot $projectRoot -OutputDirectory $bridgeOutput
+        $renamedPackage = $null
+        if ($failedOutput) {
+            try {
+                $renamedPackage = Move-BlockedPackageOutput -Path $failedOutput -OutputDirectory $bridgeOutput
+            }
+            catch { Write-Warning "Blockierte BPL konnte nicht umbenannt werden: $($_.Exception.Message)" }
+        }
+        if ($renamedPackage) {
+            # The moved package must not count as a successful fresh build.
+            $previousPackages = Get-PackageSnapshot -Directory $bridgeOutput
+            Write-Host "Wiederhole den DAI-Build für $currentPlatform einmal."
+            & $env:ComSpec /d /s /c $command
+            $buildExitCode = $LASTEXITCODE
+        }
+        if ($buildExitCode -ne 0) {
+            $backupMessage = if ($renamedPackage) { " Die bisherige BPL liegt unter '$renamedPackage'." } else { '' }
+            throw "Der DAI-Build für $currentPlatform ist mit Exitcode $buildExitCode fehlgeschlagen.$backupMessage"
+        }
     }
 
     # LIBSUFFIX AUTO is resolved by the compiler. Accept only its current output,
