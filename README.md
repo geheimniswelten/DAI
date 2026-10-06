@@ -11,6 +11,8 @@ und keinen Server; Clients mit direkter HTTP-Anbindung verwenden sie nicht.
 
 Die bestehende Fehlersuche-Toolbar (`sDebugToolBar`) erhält einen DAI-Schalter mit Serverzustand und Port im Tooltip. Ein Klick startet/stoppt den Server;
 das Dropdown öffnet die DAI-Optionen/Berechtigungen oder setzt Sitzungsfreigaben zurück. DAI erstellt dafür keine eigene Toolbar.
+Solange ein IDE-Menü geöffnet ist, werden Status- und Layoutaktualisierungen der DAI-Werkzeugleiste zurückgestellt.
+Das DAI-Dropdown verwendet feste Tastenkürzel, damit der Statustimer keinen Neuaufbau des angezeigten Menüs auslöst.
 Transparente Serversymbole zeigen eine graue Pause für inaktiv, ein grünes Startdreieck für aktiv und ein rotes Warndreieck bei Fehlern.
 Die primäre Größe beträgt 16×16; weitere Auflösungen werden der IDE über `INTAServices280.AddImage` angeboten. Dafür wird Delphis Standardpackage `vclimg` verwendet.
 Die DAI-Aktion hat denselben stabilen Besitzer wie die IDE-ActionList. Beim Entfernen werden auch Toolbar-Klone derselben Aktion beseitigt.
@@ -959,6 +961,7 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.Runtime.ps1 -Platform Both
 .\Scripts\Test.Options.ps1 -Platform Both
 .\Scripts\Test.Toolbar.ps1 -Platform Both
+.\Scripts\Test.Toolbar.ps1 -Platform Both -Focus Popup
 .\Scripts\Test.IDEControl.ps1 -Platform Both
 .\Scripts\Test.Messages.ps1 -Platform Both
 .\Scripts\Test.Stack.ps1 -Platform Both

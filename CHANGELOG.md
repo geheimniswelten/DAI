@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 1.2.21
+
+- Die DAI-Werkzeugleiste stellt Status- und Layoutaktualisierungen während geöffneter IDE-Menüs zurück. Nach dem Schließen übernimmt der nächste Refresh den aktuellen Zustand.
+- Das DAI-Dropdown verwendet feste Tastenkürzel. Der 500-ms-Statustimer entfernt dadurch keine von der VCL ergänzten Kürzel und baut das angezeigte Menü nicht wiederholt neu auf.
+- Isolierte VCL-Tests prüfen echte native Popups über mehrere Timerzyklen sowie nachgeholte Statusänderungen ohne Eingriffe in die laufende Delphi-IDE.
+- Der Toolbar-Test-Runner liest Prozessausgaben asynchron und meldet bei Zeitüberschreitungen die erreichten Prüfabschnitte. Die Gesamtsuite ist auf 300 Sekunden je Architektur begrenzt, gezielte Tests auf 120 Sekunden.
+
 ## 1.2.20
 
 - Build.ps1 benennt eine durch Dateisperren blockierte Ausgabe-BPL bei Compilerfehler F2039 nach *.bpl.deleted um und wiederholt den Package-Build einmal. Vorhandene Sicherungen werden ersetzt; ebenfalls gesperrte Sicherungen erhalten einen nummerierten Ausweichnamen.

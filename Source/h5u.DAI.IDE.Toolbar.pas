@@ -155,6 +155,16 @@ begin
     raise EInvalidOperation.Create('Die DAI-Werkzeugleiste muss auf dem IDE-Hauptthread verwaltet werden.');
 end;
 
+function IDEMenuTracking: Boolean;
+var
+  LInfo: TGUIThreadInfo;
+begin
+  LInfo := Default(TGUIThreadInfo);
+  LInfo.cbSize := SizeOf(LInfo);
+  Result := GetGUIThreadInfo(GetCurrentThreadId, LInfo) and
+    ((LInfo.flags and (GUI_INMENUMODE or GUI_POPUPMENUMODE or GUI_SYSTEMMENUMODE)) <> 0);
+end;
+
 procedure UnregisterToolbarReadNotifier(const AServices: INTAServices; const AIndex: Integer);
 var
   LModule: HMODULE;
@@ -866,6 +876,8 @@ begin
   // AddToolButton requires dropdown ownership to match its returned button.
   FPopup := TPopupMenu.Create(FButton.Owner);
   FPopup.Name := 'DAIServerPopupMenu';
+  // VCL's automatic '&' insertion must not conflict with later status captions.
+  FPopup.AutoHotkeys := maManual;
   FPopup.FreeNotification(Self);
   FToggleItem := TMenuItem.Create(FPopup);
   FToggleItem.FreeNotification(Self);
@@ -873,12 +885,12 @@ begin
   FPopup.Items.Add(FToggleItem);
   FOptionsItem := TMenuItem.Create(FPopup);
   FOptionsItem.FreeNotification(Self);
-  FOptionsItem.Caption := 'DAI-Optionen und Berechtigungen …';
+  FOptionsItem.Caption := 'DAI-&Optionen und Berechtigungen …';
   FOptionsItem.OnClick := OpenOptions;
   FPopup.Items.Add(FOptionsItem);
   FResetItem := TMenuItem.Create(FPopup);
   FResetItem.FreeNotification(Self);
-  FResetItem.Caption := 'Sitzungsfreigaben zurücksetzen';
+  FResetItem.Caption := 'Sitzungsfreigaben &zurücksetzen';
   FResetItem.OnClick := ResetSessionPermissions;
   FPopup.Items.Add(FResetItem);
   FButton.DropdownMenu := FPopup;
@@ -1105,7 +1117,7 @@ var
   LCommand: string;
   LImage: Integer;
 begin
-  if not Assigned(FAction) then
+  if not Assigned(FAction) or IDEMenuTracking then
     Exit;
   LActive := TDAIRuntime.ServerActive;
   LError := TDAIRuntime.LastServerError;
@@ -1115,14 +1127,14 @@ begin
   begin
     LCaption := 'DAI aktiv';
     LHint := Format('DAI aktiv auf Port %d. Klicken zum Stoppen.', [TDAIRuntime.ServerPort]);
-    LCommand := 'Server stoppen';
+    LCommand := 'Server &stoppen';
     LImage := FImages[1];
   end
   else
   begin
     LCaption := 'DAI inaktiv';
     LHint := Format('DAI inaktiv; kein aktiver Port. Klicken zum Starten mit gespeichertem Port %d.', [TDAISettings.Instance.Port]);
-    LCommand := 'Server starten';
+    LCommand := 'Server &starten';
     LImage := FImages[0];
   end;
   if LError <> '' then
@@ -1145,14 +1157,18 @@ begin
   FAction.Enabled := not FBusy;
   if Assigned(FToggleItem) then
   begin
-    FToggleItem.Caption := LCommand;
-    FToggleItem.Enabled := not FBusy;
+    if FToggleItem.Caption <> LCommand then
+      FToggleItem.Caption := LCommand;
+    if FToggleItem.Enabled <> not FBusy then
+      FToggleItem.Enabled := not FBusy;
   end;
 end;
 
 procedure TDAIToolbarController.Refresh;
 begin
-  if FShuttingDown or FRefreshing then
+  // Timers run inside TrackPopupMenu too. Leave all IDE menu/toolbar UI stable
+  // until tracking ends; the next refresh then applies the latest state.
+  if FShuttingDown or FRefreshing or IDEMenuTracking then
     Exit;
   if Application.Terminated or (csDestroying in Application.ComponentState) then
     Exit;

@@ -3,7 +3,7 @@ param(
     [ValidateSet('Win32', 'Win64', 'Both')]
     [string]$Platform = 'Both',
     [string]$BdsRoot = $env:BDS,
-    [ValidateSet('All', 'LegacyDrag', 'Stream', 'LayoutGrow')]
+    [ValidateSet('All', 'LegacyDrag', 'Stream', 'LayoutGrow', 'Popup')]
     [string]$Focus = 'All'
 )
 
@@ -104,14 +104,25 @@ foreach ($currentPlatform in $platforms) {
         $testProcess.StartInfo = $testInfo
         try {
             [void]$testProcess.Start()
-            if (-not $testProcess.WaitForExit(120000)) {
+            $testOutputTask = $testProcess.StandardOutput.ReadToEndAsync()
+            $testErrorTask = $testProcess.StandardError.ReadToEndAsync()
+            # All includes hundreds of real VCL rendering/streaming cases;
+            # focused regressions retain the tighter per-process bound.
+            $timeoutSeconds = if ($Focus -eq 'All') { 300 } else { 120 }
+            $completed = $testProcess.WaitForExit($timeoutSeconds * 1000)
+            if (-not $completed) {
                 $testProcess.Kill()
                 $testProcess.WaitForExit()
-                throw "Toolbar-Test fuer $currentPlatform hat sein isoliertes 120-Sekunden-Limit ueberschritten."
             }
-            $testOutput = $testProcess.StandardOutput.ReadToEnd()
-            $testError = $testProcess.StandardError.ReadToEnd()
+            $testOutput = $testOutputTask.GetAwaiter().GetResult()
+            $testError = $testErrorTask.GetAwaiter().GetResult()
             Write-Output "$currentPlatform $($testOutput.TrimEnd())"
+            if (-not $completed) {
+                if (-not [string]::IsNullOrWhiteSpace($testError)) {
+                    Write-Output $testError.TrimEnd()
+                }
+                throw "Toolbar-Test fuer $currentPlatform hat sein isoliertes $timeoutSeconds-Sekunden-Limit ueberschritten."
+            }
             if ($testProcess.ExitCode -ne 0 -or -not $testOutput.Contains('checks passed.')) {
                 throw "Toolbar-Test fuer $currentPlatform fehlgeschlagen (Exitcode $($testProcess.ExitCode)). $testError"
             }

@@ -8,6 +8,7 @@ uses
   System.Generics.Collections,
   System.SysUtils,
   Winapi.Windows,
+  Winapi.Messages,
   Winapi.CommCtrl,
   ToolsAPI,
   Vcl.ActnList,
@@ -1067,6 +1068,7 @@ end;
 
 {$I ToolbarTests\Toolbar.Stream.Tests.inc}
 {$I ToolbarTests\Toolbar.Layout.Tests.inc}
+{$I ToolbarTests\Toolbar.Popup.Tests.inc}
 
 begin
   try
@@ -1077,23 +1079,50 @@ begin
       TestToolbarStream
     else if ParamStr(3) = 'LayoutGrow' then
       TestToolbarLayoutGrowth
+    else if ParamStr(3) = 'Popup' then
+      TestToolbarPopup
     else
     begin
+      Writeln('Toolbar checks: readiness and status');
+      Flush(Output);
       TestReadinessAndStatus;
+      Writeln('Toolbar checks: failed transitions');
+      Flush(Output);
       TestFailures;
+      Writeln('Toolbar checks: status glyphs');
+      Flush(Output);
       TestGlyphs;
+      Writeln('Toolbar checks: external destruction and collisions');
+      Flush(Output);
       TestExternalDestructionAndCollisions;
+      Writeln('Toolbar checks: action ownership and clones');
+      Flush(Output);
       TestActionOwnerAndCloneCleanup;
+      Writeln('Toolbar checks: legacy layouts');
+      Flush(Output);
       TestLegacyMigration;
+      Writeln('Toolbar checks: late legacy layouts');
+      Flush(Output);
       TestLateLegacyMigration(3);
       TestLateLegacyMigration(4);
       TestLateLegacyMigration(5);
       TestLateUnavailableMigration;
       TestLegacyDragSafety;
+      Writeln('Toolbar checks: reentry and main-thread guard');
+      Flush(Output);
       TestReentryAndThreadGuard;
+      Writeln('Toolbar checks: pinned package lifecycle');
+      Flush(Output);
       TestPinnedPackageLifecycle;
+      Writeln('Toolbar checks: native toolbar streaming');
+      Flush(Output);
       TestToolbarStream;
+      Writeln('Toolbar checks: native toolbar layout');
+      Flush(Output);
       TestToolbarLayoutGrowth;
+      Writeln('Toolbar checks: native popup tracking');
+      Flush(Output);
+      TestToolbarPopup;
     end;
     TDAIIDEToolbar.Shutdown;
     BorlandIDEServices := nil;
