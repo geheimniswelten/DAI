@@ -825,17 +825,26 @@ Mit explizitem BDS-Verzeichnis:
 Erwartete Ausgaben mit Delphi 13 / BDS 37.0:
 
 ```text
-Build\Win32\Release\Bpl\DAI370.bpl
-Build\Win32\Release\Bpl\DAI.McpBridge.exe
-Build\Win64\Release\Bpl\DAI370.bpl
-Build\Win64\Release\Bpl\DAI.McpBridge.exe
+Build\Win32\DAI370.bpl
+Build\Win32\DAI.McpBridge.exe
+Build\Win32\DAI.dcp
+Build\Win64\DAI370.bpl
+Build\Win64\DAI.McpBridge.exe
+Build\Win64\DAI.dcp
 ```
+
+EXE, BPL und DCP liegen unabhängig von Debug/Release gemeinsam in `Build\Win32` beziehungsweise `Build\Win64`.
+Ein Konfigurationswechsel ersetzt die Ausgabe derselben Plattform. DCUs bleiben unter `Build\<Plattform>-<Konfiguration>-Dcu` getrennt;
+die Bridge verwendet `Build\<Plattform>-<Konfiguration>-BridgeDcu`.
+Auch Testausgaben verwenden flache Namen wie `Build\Tests-CodeInsight-Win64` und `Build\Tests-CodeInsight-Win64-Dcu`.
+Alle Ausgabeverzeichnisse liegen direkt unter `Build`; Testdaten mit eigenen Unterverzeichnissen liegen im temporären Verzeichnis.
 
 Win32 und Win64 sind im DPROJ aktiviert. Mit `-Platform Win32` oder `-Platform Win64` kann auch nur eine Architektur gebaut werden.
 `-Platform IDE` baut nur die Architekturen der installierten IDEs. Dazu werden die Registrywerte `App` und `App x64` sowie die Existenz der jeweiligen
 `bds.exe` geprüft. Ein vorhandener Win64-Compiler allein bedeutet keine installierte 64-Bit-IDE.
 `DllSuffix=$(Auto)` im DPROJ und `{$LIBSUFFIX AUTO}` im DPK verwenden automatisch das Package-Versionssuffix des Compilers.
 Die Ausgabeverzeichnisse bleiben gleich; BPLs verschiedener Delphi-Versionen erhalten unterschiedliche Namen. DCP-/DCU-Dateien bleiben ohne Versionssuffix.
+DCP, Importbibliotheken und Bridge derselben Plattform werden jeweils durch den letzten Build ersetzt, auch bei einem Wechsel der Delphi-Version.
 `Build.ps1` prüft die beim aktuellen Build neu geschriebene versionierte BPL sowie die Bridge auf PE-Signatur, Zielarchitektur und DLL-/EXE-Typ.
 Eine vorhandene alte `DAI.bpl` oder eine unveränderte BPL eines früheren Builds zählt dabei nicht als erfolgreiches Build-Ergebnis.
 
@@ -864,8 +873,8 @@ Das Design-Time-Package muss zur Architektur der **IDE** passen. Die Zielplattfo
 
 | IDE | Programm relativ zu `%BDS%` | Package relativ zum DAI-Projekt | Package-Schlüssel unter dem BDS-Benutzerprofil |
 | --- | --- | --- | --- |
-| 32 Bit | `bin\bds.exe` | `Build\Win32\Release\Bpl\DAI370.bpl` | `Known Packages` |
-| 64 Bit | `bin64\bds.exe` | `Build\Win64\Release\Bpl\DAI370.bpl` | `Known Packages x64` |
+| 32 Bit | `bin\bds.exe` | `Build\Win32\DAI370.bpl` | `Known Packages` |
+| 64 Bit | `bin64\bds.exe` | `Build\Win64\DAI370.bpl` | `Known Packages x64` |
 
 Bei der vorliegenden Installation lauten die Schlüssel:
 
@@ -888,7 +897,8 @@ Alternativ kann `Build.ps1` das Package nach einem erfolgreichen Build für den 
 `-Register` ist optional; ohne diesen Schalter baut das Skript ausschließlich. Die Registrierung schreibt den vollständigen Pfad der beim aktuellen
 Build neu erzeugten und geprüften BPL als Zeichenfolgenwert mit einer DAI-Beschreibung in den passenden `Known Packages`-Schlüssel unter
 `HKEY_CURRENT_USER\Software\Embarcadero\BDS\<BDS-Version>`. Sie erfolgt erst, nachdem alle angeforderten Package- und Bridge-Builds erfolgreich waren.
-Alte Einträge mit demselben BPL-Namen oder dem früheren `DAI.bpl` aus den Debug-/Release-Ausgaben dieses Projekts und derselben Architektur werden ersetzt;
+Alte Einträge mit demselben BPL-Namen oder dem früheren `DAI.bpl` aus dem gemeinsamen Ausgabeordner sowie den bisherigen
+Debug-/Release-Ausgaben dieses Projekts und derselben Architektur werden ersetzt;
 zugehörige deaktivierte DAI-Einträge werden entfernt.
 Andere Packages bleiben erhalten. Es werden keine HKLM-Schlüssel geschrieben und keine Administratorrechte benötigt.
 Die betreffende IDE vor Build und Registrierung schließen und anschließend wieder öffnen, damit sie das Package lädt und keine alten Registrierungen

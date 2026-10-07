@@ -140,7 +140,7 @@ $packagesToRegister = @()
 
 foreach ($currentPlatform in $platforms) {
     Write-Host "Baue DAI: Configuration=$Configuration Platform=$currentPlatform"
-    $bridgeOutput = Join-Path $projectRoot "Build\$currentPlatform\$Configuration\Bpl"
+    $bridgeOutput = Join-Path $projectRoot "Build\$currentPlatform"
     $previousPackages = Get-PackageSnapshot -Directory $bridgeOutput
 
     $command = @(
@@ -198,7 +198,7 @@ foreach ($currentPlatform in $platforms) {
     $packageFile = $builtPackages[0]
     Assert-TargetBinary -Path $packageFile -TargetPlatform $currentPlatform -IsPackage $true
 
-    $bridgeDcu = Join-Path $projectRoot "Build\$currentPlatform\$Configuration\BridgeDcu"
+    $bridgeDcu = Join-Path $projectRoot "Build\$currentPlatform-$Configuration-BridgeDcu"
     New-Item -ItemType Directory -Path $bridgeOutput, $bridgeDcu -Force | Out-Null
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $bridgeCommand = @(

@@ -16,8 +16,8 @@ $sourceDirectory = Join-Path $projectRoot 'Source'
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\DirectorySearch\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-DirectorySearch-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"
@@ -42,7 +42,7 @@ foreach ($currentPlatform in $platforms) {
     if ($LASTEXITCODE -ne 0) {
         throw "Dateisuchtest für $currentPlatform konnte nicht kompiliert werden (Exitcode $LASTEXITCODE)."
     }
-    $fixtureDirectory = Join-Path $outputDirectory ('JunctionFixture-' + [guid]::NewGuid().ToString('N'))
+    $fixtureDirectory = Join-Path ([IO.Path]::GetTempPath()) ('DAI-DirectorySearch-JunctionFixture-' + [guid]::NewGuid().ToString('N'))
     $fixtureRoot = Join-Path $fixtureDirectory 'Workspace'
     $fixtureTarget = Join-Path $fixtureDirectory 'Outside'
     $fixtureLink = Join-Path $fixtureRoot 'Alias'
@@ -55,11 +55,12 @@ foreach ($currentPlatform in $platforms) {
             throw "Dateisuchtest für $currentPlatform fehlgeschlagen (Exitcode $LASTEXITCODE)."
         }
     } finally {
-        $resolvedOutput = [IO.Path]::GetFullPath($outputDirectory).TrimEnd('\') + '\'
+        $resolvedTemp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
         $resolvedFixture = [IO.Path]::GetFullPath($fixtureDirectory)
         $resolvedLink = [IO.Path]::GetFullPath($fixtureLink)
         $linkItem = Get-Item -LiteralPath $resolvedLink -Force
-        if (-not $resolvedFixture.StartsWith($resolvedOutput, [StringComparison]::OrdinalIgnoreCase) -or
+        if (-not $resolvedFixture.StartsWith($resolvedTemp, [StringComparison]::OrdinalIgnoreCase) -or
+            (Split-Path -Leaf $resolvedFixture) -notmatch '^DAI-DirectorySearch-JunctionFixture-[0-9a-f]{32}$' -or
             -not $resolvedLink.StartsWith($resolvedFixture + '\', [StringComparison]::OrdinalIgnoreCase) -or
             ($linkItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 -or
             $linkItem.Target -ne $fixtureTarget) {

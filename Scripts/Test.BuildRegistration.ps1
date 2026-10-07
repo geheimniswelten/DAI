@@ -118,7 +118,7 @@ function Invoke-BuildRegistrationFixtureCompiler {
         }
         if ($state.Mode -in @('locked-output-retry', 'rename-blocked', 'retry-failure')) {
             if ($state.PackageAttempts -eq 1) {
-                $packagePath = Join-Path $state.ProjectRoot "Build\$platform\Release\Bpl\DAI$($state.PackageSuffix).bpl"
+                $packagePath = Join-Path $state.ProjectRoot "Build\$platform\DAI$($state.PackageSuffix).bpl"
                 Write-Output "[dcc32 Fatal Error] F2039 Could not create output file '$packagePath'"
                 $global:LASTEXITCODE = 41
                 return
@@ -132,12 +132,12 @@ function Invoke-BuildRegistrationFixtureCompiler {
         if ($state.Mode -eq 'package-failure') { $global:LASTEXITCODE = 41; return }
         if ($state.Mode -eq 'stale-package') { return }
         $binaryPlatform = if ($state.Mode -eq 'wrong-package-architecture') { 'Win64' } else { $platform }
-        New-TestBinary -Path (Join-Path $state.ProjectRoot "Build\$platform\Release\Bpl\DAI$($state.PackageSuffix).bpl") -Platform $binaryPlatform -Package
+        New-TestBinary -Path (Join-Path $state.ProjectRoot "Build\$platform\DAI$($state.PackageSuffix).bpl") -Platform $binaryPlatform -Package
     }
     else {
         if ($command -notmatch '-E"([^"]+)"') { throw 'Fixture bridge output missing.' }
         $output = $Matches[1]
-        $platform = if ($output -match '\\Win64\\') { 'Win64' } else { 'Win32' }
+        $platform = if ($output -match '\\Win64(?:\\|$)') { 'Win64' } else { 'Win32' }
         if ($state.Mode -eq 'bridge-failure' -or
             ($state.Mode -eq 'second-bridge-failure' -and $platform -eq 'Win64')) {
             $global:LASTEXITCODE = 42
@@ -151,6 +151,7 @@ function Invoke-BuildRegistrationFixtureCompiler {
 function Test-BuildPipeline {
     param([string] $Mode, [string] $Version = '13', [string] $Platform = 'IDE',
           [bool] $Register = $true, [bool] $ExpectFailure = $false,
+          [string] $Configuration = 'Release',
           [int] $ExpectedRegistrations = 0, [int] $ExpectedCommands = 0,
           [switch] $SkipMissing, [string] $BdsRoot = '')
 
@@ -185,9 +186,9 @@ function Register-DAIPackage {
         Registrations = [System.Collections.Generic.List[object]]::new()
     }
     if ($Mode -eq 'stale-package') {
-        New-TestBinary -Path (Join-Path $fixtureProject "Build\Win32\Release\Bpl\DAI$suffix.bpl") -Package
+        New-TestBinary -Path (Join-Path $fixtureProject "Build\Win32\DAI$suffix.bpl") -Package
     }
-    $lockedPackagePath = Join-Path $fixtureProject "Build\Win32\Release\Bpl\DAI$suffix.bpl"
+    $lockedPackagePath = Join-Path $fixtureProject "Build\Win32\DAI$suffix.bpl"
     $packageLock = $null
     if ($Mode -in @('locked-output-retry', 'syntax-failure-with-lock', 'rename-blocked', 'retry-failure')) {
         New-TestBinary -Path $lockedPackagePath -Package
@@ -196,7 +197,7 @@ function Register-DAIPackage {
         $packageLock = [System.IO.File]::Open($lockedPackagePath, [System.IO.FileMode]::Open,
             [System.IO.FileAccess]::Read, $shareMode)
     }
-    $arguments = @{ DelphiVersion = $Version; Platform = $Platform;
+    $arguments = @{ DelphiVersion = $Version; Platform = $Platform; Configuration = $Configuration;
         Register = $Register; SkipMissing = $SkipMissing.IsPresent }
     if ($BdsRoot) { $arguments.BdsRoot = $BdsRoot }
     $failed = $false
@@ -210,6 +211,8 @@ function Register-DAIPackage {
     Assert-Test ($global:DAIBuildRegistrationFixture.Registrations.Count -eq $ExpectedRegistrations) "Pipeline '$Mode' performs only the expected registration writes."
     foreach ($registration in $global:DAIBuildRegistrationFixture.Registrations) {
         Assert-Test ($registration.BdsVersion -eq (Get-BdsVersion $Version)) "Pipeline '$Mode' registers the correct IDE version."
+        $expectedOutput = Join-Path $fixtureProject "Build\$($registration.Platform)\DAI$suffix.bpl"
+        Assert-Test ($registration.Path -eq $expectedOutput) "Pipeline '$Mode' registers the shared platform output."
     }
     if ($Mode -in @('locked-output-retry', 'retry-failure')) {
         Assert-Test (Test-Path -LiteralPath "$lockedPackagePath.deleted") "Pipeline '$Mode' preserves the renamed old package."
@@ -296,9 +299,14 @@ try {
     Assert-Test ((Get-DelphiInstallation -DelphiVersion 13 -BdsRoot $staleInstallationRoot) -eq $null) 'A stale existing installation directory without an IDE is unavailable.'
 
     $project = Join-Path $script:FixtureRoot 'Project with spaces'
-    $package32 = Join-Path $project 'Build\Win32\Release\Bpl\DAI370.bpl'
-    $package64 = Join-Path $project 'Build\Win64\Release\Bpl\DAI370.bpl'
+    $package32 = Join-Path $project 'Build\Win32\DAI370.bpl'
+    $package64 = Join-Path $project 'Build\Win64\DAI370.bpl'
     $stale32 = Join-Path $project 'Build\Win32\Debug\Bpl\DAI370.bpl'
+    $staleRelease32 = Join-Path $project 'Build\Win32\Release\Bpl\DAI370.bpl'
+    $staleDebug64 = Join-Path $project 'Build\Win64\Debug\Bpl\DAI370.bpl'
+    $staleRelease64 = Join-Path $project 'Build\Win64\Release\Bpl\DAI370.bpl'
+    $legacyOutput32 = Join-Path $project 'Build\Win32\DAI.bpl'
+    $nested32 = Join-Path $project 'Build\Win32\Other\DAI370.bpl'
     $legacy32 = Join-Path $project 'Build\Win32\Release\Bpl\DAI.bpl'
     $otherVersion = Join-Path $project 'Build\Win32\Release\Bpl\DAI280.bpl'
     $external = Join-Path $script:FixtureRoot 'OtherProject\Build\Win32\Release\Bpl\DAI370.bpl'
@@ -311,29 +319,42 @@ try {
     $disabled32Path = 'Software\Embarcadero\BDS\37.0\Disabled Packages'
     $disabled64Path = 'Software\Embarcadero\BDS\37.0\Disabled Packages x64'
     $script:RegistryKeys[$known32Path] = @{
-        $stale32 = 'previous config'; $legacy32 = 'old package'; $otherVersion = 'Delphi 11';
+        $stale32 = 'previous Debug'; $staleRelease32 = 'previous Release';
+        $legacy32 = 'old package'; $legacyOutput32 = 'old shared package';
+        $nested32 = 'unrelated subdirectory'; $otherVersion = 'Delphi 11';
         $external = 'another project'; $package64 = 'another architecture'; $otherPackage = 'unrelated'
     }
     $script:RegistryKeys[$disabled32Path] = @{
-        $package32 = 'disabled'; $stale32 = 'disabled'; $legacy32 = 'disabled';
+        $package32 = 'disabled'; $stale32 = 'disabled'; $staleRelease32 = 'disabled';
+        $legacy32 = 'disabled'; $legacyOutput32 = 'disabled'; $nested32 = 'disabled';
         $external = 'disabled'; $otherPackage = 'disabled'
     }
-    $script:RegistryKeys[$known64Path] = @{ $external = 'another project' }
-    $script:RegistryKeys[$disabled64Path] = @{ $package64 = 'disabled'; $external = 'disabled' }
+    $script:RegistryKeys[$known64Path] = @{
+        $external = 'another project'; $staleDebug64 = 'previous Debug'; $staleRelease64 = 'previous Release'
+    }
+    $script:RegistryKeys[$disabled64Path] = @{
+        $package64 = 'disabled'; $external = 'disabled'; $staleDebug64 = 'disabled'; $staleRelease64 = 'disabled'
+    }
 
     Register-DAIPackage -PackageFile $package32 -TargetPlatform Win32 -BdsVersion '37.0' -ProjectRoot $project | Out-Null
     $known32 = $script:RegistryKeys[$known32Path]
     $disabled32 = $script:RegistryKeys[$disabled32Path]
     Assert-Test ($known32.ContainsKey($package32)) 'Win32 registration uses the absolute built package path.'
     Assert-Test ($known32[$package32] -eq 'DelphiAI (DAI)') 'Package registration has its description.'
-    Assert-Test (-not $known32.ContainsKey($stale32)) 'Previous configuration registration is removed.'
+    Assert-Test (-not $known32.ContainsKey($stale32)) 'Previous Debug registration is removed.'
+    Assert-Test (-not $known32.ContainsKey($staleRelease32)) 'Previous Release registration is removed.'
+    Assert-Test (-not $known32.ContainsKey($legacyOutput32)) 'Legacy unsuffixed shared-output registration is removed.'
+    Assert-Test ($known32.ContainsKey($nested32)) 'A matching package in an unrelated subdirectory is preserved.'
     Assert-Test (-not $known32.ContainsKey($legacy32)) 'Legacy unsuffixed registration is removed.'
     Assert-Test ($known32.ContainsKey($otherVersion)) 'Different compiler package is preserved.'
     Assert-Test ($known32.ContainsKey($external)) 'A package from another project is preserved.'
     Assert-Test ($known32.ContainsKey($package64)) 'Another architecture is preserved.'
     Assert-Test ($known32.ContainsKey($otherPackage)) 'An unrelated package is preserved.'
     Assert-Test (-not $disabled32.ContainsKey($package32)) 'The new package is enabled.'
-    Assert-Test (-not $disabled32.ContainsKey($stale32)) 'Stale disabled registration is removed.'
+    Assert-Test (-not $disabled32.ContainsKey($stale32)) 'Stale disabled Debug registration is removed.'
+    Assert-Test (-not $disabled32.ContainsKey($staleRelease32)) 'Stale disabled Release registration is removed.'
+    Assert-Test (-not $disabled32.ContainsKey($legacyOutput32)) 'Legacy disabled shared-output registration is removed.'
+    Assert-Test ($disabled32.ContainsKey($nested32)) 'An unrelated disabled subdirectory entry is preserved.'
     Assert-Test (-not $disabled32.ContainsKey($legacy32)) 'Legacy disabled registration is removed.'
     Assert-Test ($disabled32.ContainsKey($external) -and $disabled32.ContainsKey($otherPackage)) 'Unrelated disabled entries are preserved.'
     Assert-Test (-not $script:RegistryKeys[$known64Path].ContainsKey($package64)) 'Win32 registration does not write the x64 package key.'
@@ -341,6 +362,10 @@ try {
     Register-DAIPackage -PackageFile $package64 -TargetPlatform Win64 -BdsVersion '37.0' -ProjectRoot $project | Out-Null
     Assert-Test ($script:RegistryKeys[$known64Path].ContainsKey($package64)) 'Win64 registration uses Known Packages x64.'
     Assert-Test (-not $script:RegistryKeys[$disabled64Path].ContainsKey($package64)) 'Win64 registration enables its package.'
+    Assert-Test (-not $script:RegistryKeys[$known64Path].ContainsKey($staleDebug64)) 'Win64 migration removes the old Debug registration.'
+    Assert-Test (-not $script:RegistryKeys[$known64Path].ContainsKey($staleRelease64)) 'Win64 migration removes the old Release registration.'
+    Assert-Test (-not $script:RegistryKeys[$disabled64Path].ContainsKey($staleDebug64)) 'Win64 migration removes the old disabled Debug registration.'
+    Assert-Test (-not $script:RegistryKeys[$disabled64Path].ContainsKey($staleRelease64)) 'Win64 migration removes the old disabled Release registration.'
     Assert-Test ($script:RegistryKeys[$known64Path].ContainsKey($external)) 'Unrelated Win64 registrations are preserved.'
     $writes = @($script:RegistryChanges | Where-Object { $_.Operation -eq 'Set' })
     Assert-Test ($writes.Count -eq 2) 'Only the two requested packages are written.'
@@ -349,6 +374,7 @@ try {
 
     $env:ComSpec = 'Invoke-BuildRegistrationFixtureCompiler'
     Test-BuildPipeline -Mode success -ExpectedRegistrations 2 -ExpectedCommands 4
+    Test-BuildPipeline -Mode debug-shared-output -Configuration Debug -ExpectedRegistrations 2 -ExpectedCommands 4
     Test-BuildPipeline -Mode no-registration -Register $false -ExpectedCommands 4
     Test-BuildPipeline -Mode missing-version -Version 12 -SkipMissing
     Test-BuildPipeline -Mode explicit-mismatched-root -Version 11 -BdsRoot $delphi13.RootDir -SkipMissing -ExpectFailure $true

@@ -115,7 +115,7 @@ function Test-OwnedDAIPackage {
         $buildRoot = (Get-NormalizedBuildPath (Join-Path $ProjectRoot "Build\$TargetPlatform")) + '\'
         if (-not $pathName.StartsWith($buildRoot, [StringComparison]::OrdinalIgnoreCase)) { return $false }
         $relativePath = $pathName.Substring($buildRoot.Length)
-        return $relativePath -match '^(Debug|Release)\\Bpl\\DAI(?:[0-9]+)?\.bpl$'
+        return $relativePath -match '^(?:(?:Debug|Release)\\Bpl\\)?DAI(?:[0-9]+)?\.bpl$'
     }
     catch { return $false }
 }

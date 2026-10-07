@@ -15,8 +15,8 @@ $sourceDirectory = Join-Path $projectRoot 'Source'
 $executables = @{}
 
 foreach ($currentPlatform in @('Win32', 'Win64')) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\Windows\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-Windows-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"

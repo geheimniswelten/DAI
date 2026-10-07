@@ -183,7 +183,7 @@ var
   LPreviousEnvironment: string;
 begin
   CreateGUID(LGuid);
-  LDirectory := TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'PackageFixture-' + GUIDToString(LGuid));
+  LDirectory := TPath.Combine(TPath.GetTempPath, 'DAI-PackageSummary-Fixture-' + GUIDToString(LGuid));
   TDirectory.CreateDirectory(LDirectory);
   LTarget := TPath.Combine(LDirectory, 'Package370.bpl');
   LAlias := TPath.Combine(LDirectory, 'DifferentAlias.bpl');

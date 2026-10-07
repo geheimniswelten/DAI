@@ -16,8 +16,8 @@ $executables = @{}
 
 # Build both isolated test executables so every requested run covers cross-bitness contention.
 foreach ($currentPlatform in @('Win32', 'Win64')) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\Instance\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-Instance-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"

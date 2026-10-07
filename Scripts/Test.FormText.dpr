@@ -281,7 +281,7 @@ begin
     Check(LView.SwapCount = 0, 'unsaved Pascal protection runs before any posted swap');
     Check(not TFile.Exists(LUnitName), 'preflight never saves Pascal implicitly');
 
-    // Only a disposable fixture under Build/Tests is saved; no IDE/project file is written.
+    // Only a disposable fixture in the Build test output directory is saved; no IDE/project file is written.
     TFile.WriteAllText(LUnitName, LSavedContent);
     LSource.IsModified := True;
     LSource.Content := LSavedContent + ' { changed }';

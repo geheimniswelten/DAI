@@ -16,9 +16,9 @@ $sourceDirectory = Join-Path $projectRoot 'Source'
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\Messages\$currentPlatform"
-    $packageDcuDirectory = Join-Path $outputDirectory 'PackageDcu'
-    $hostDcuDirectory = Join-Path $outputDirectory 'HostDcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-Messages-$currentPlatform"
+    $packageDcuDirectory = ($outputDirectory + '-PackageDcu')
+    $hostDcuDirectory = ($outputDirectory + '-HostDcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"

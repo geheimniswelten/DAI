@@ -16,8 +16,8 @@ $sourceDirectory = Join-Path $projectRoot 'Source'
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\CodeInsight\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-CodeInsight-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"
@@ -51,9 +51,9 @@ foreach ($currentPlatform in $platforms) {
 
         # Load/unload an isolated BPL with the complete production CodeInsight unit.
         # Windows PIN and Delphi FinalizePackage are distinct; late callbacks exercise both.
-        $probeOutputDirectory = Join-Path $projectRoot "Build\Tests\CodeInsight\PackageProbe\$currentPlatform"
-        $probeDcuDirectory = Join-Path $probeOutputDirectory 'Dcu'
-        $hostDcuDirectory = Join-Path $probeOutputDirectory 'HostDcu'
+        $probeOutputDirectory = Join-Path $projectRoot "Build\Tests-CodeInsight-PackageProbe-$currentPlatform"
+        $probeDcuDirectory = ($probeOutputDirectory + '-Dcu')
+        $hostDcuDirectory = ($probeOutputDirectory + '-HostDcu')
         New-Item -ItemType Directory -Force -Path $probeOutputDirectory, $probeDcuDirectory, $hostDcuDirectory | Out-Null
         $probeArguments = @(
             '-B'

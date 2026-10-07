@@ -30,8 +30,8 @@ foreach ($currentPlatform in $platforms) {
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"
     if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) { throw "Delphi-Compiler nicht gefunden: $compiler" }
     foreach ($currentLinkage in $linkages) {
-        $outputDirectory = Join-Path $projectRoot "Build\Tests\ServerLifecycle\$currentPlatform\$currentLinkage"
-        $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+        $outputDirectory = Join-Path $projectRoot "Build\Tests-ServerLifecycle-$currentPlatform-$currentLinkage"
+        $dcuDirectory = ($outputDirectory + '-Dcu')
         New-Item -ItemType Directory -Force -Path $outputDirectory, $dcuDirectory | Out-Null
         # Actual MCP server/instance/sessions/TCP code; only existing non-IDE protocol stubs are substituted.
         $compilerArguments = @(

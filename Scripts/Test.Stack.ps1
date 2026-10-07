@@ -16,10 +16,10 @@ $sourceDirectory = Join-Path $projectRoot 'Source'
 $toolsApiDirectory = Join-Path $BdsRoot 'source\ToolsAPI'
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\Stack\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
-    $sdkDirectory = Join-Path $outputDirectory 'SDK'
-    $sdkDcuDirectory = Join-Path $sdkDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-Stack-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
+    $sdkDirectory = ($outputDirectory + '-SDK')
+    $sdkDcuDirectory = ($sdkDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"

@@ -32,9 +32,9 @@ foreach ($currentPlatform in $platforms) {
     if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
         throw "Delphi-Compiler nicht gefunden: $compiler"
     }
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\Palette\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
-    $generatedDirectory = Join-Path $outputDirectory 'Generated'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-Palette-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
+    $generatedDirectory = ($outputDirectory + '-Generated')
     New-Item -ItemType Directory -Force -Path $outputDirectory, $dcuDirectory, $generatedDirectory | Out-Null
     # Test the exact production traversal/parsing with original SDK interface doubles.
     [IO.File]::WriteAllText((Join-Path $generatedDirectory 'DAI.Palette.Functions.inc'),

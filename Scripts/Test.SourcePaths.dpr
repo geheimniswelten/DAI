@@ -100,7 +100,7 @@ var
 begin
   CreateGUID(LGuid);
   LBaseRegistryKey := 'Software\DAI.SourcePaths.Tests\' + GUIDToString(LGuid) + '\99.7';
-  LFixtureDirectory := TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'Fixture-' + GUIDToString(LGuid));
+  LFixtureDirectory := TPath.Combine(TPath.GetTempPath, 'DAI-SourcePaths-Fixture-' + GUIDToString(LGuid));
   LInstallationDirectory := TPath.Combine(LFixtureDirectory, 'Installed Studio');
   LProfileDirectory := TPath.Combine(LFixtureDirectory, 'Profile');
   LPublicDirectory := TPath.Combine(LFixtureDirectory, 'Public');
@@ -183,6 +183,14 @@ begin
       if LEnvironment.ContainsKey(LName) then
         SetEnvironment(LName, LEnvironment[LName]);
     LEnvironment.Free;
+    if TDirectory.Exists(LFixtureDirectory) then
+    begin
+      if not SameText(TPath.GetDirectoryName(TPath.GetFullPath(LFixtureDirectory)),
+        ExcludeTrailingPathDelimiter(TPath.GetFullPath(TPath.GetTempPath))) or
+        not TPath.GetFileName(LFixtureDirectory).StartsWith('DAI-SourcePaths-Fixture-{') then
+        raise EInvalidOperation.Create('Fixture cleanup path is outside the temporary directory.');
+      TDirectory.Delete(LFixtureDirectory, True);
+    end;
   end;
 end;
 

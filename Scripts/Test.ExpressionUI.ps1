@@ -12,8 +12,8 @@ $stubDirectory = Join-Path $PSScriptRoot 'ExpressionUITests'
 $sourceDirectory = Join-Path $projectRoot 'Source'
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\ExpressionUI\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-ExpressionUI-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"

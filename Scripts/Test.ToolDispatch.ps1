@@ -15,7 +15,7 @@ $sourceDirectory = Join-Path $projectRoot 'Source'
 $sourcePath = Join-Path $sourceDirectory 'h5u.DAI.MCP.Tools.pas'
 $sourceText = [IO.File]::ReadAllText($sourcePath)
 $fixtureDirectory = Join-Path $PSScriptRoot 'ToolDispatchTests'
-$generatedDirectory = Join-Path $projectRoot 'Build\Tests\ToolDispatch\ProductionBranch'
+$generatedDirectory = Join-Path $projectRoot 'Build\Tests-ToolDispatch-ProductionBranch'
 $utf8Bom = [Text.UTF8Encoding]::new($true)
 
 function Extract-One([string]$pattern, [string]$description) {
@@ -113,8 +113,8 @@ finally {
 
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\ToolDispatch\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-ToolDispatch-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"

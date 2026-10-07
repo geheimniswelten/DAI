@@ -50,10 +50,10 @@
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
         <DCC_CBuilderOutput>All</DCC_CBuilderOutput>
         <SanitizedProjectName>DAI</SanitizedProjectName>
-        <DCC_ExeOutput>.\Build\$(Platform)\$(Config)\Bpl</DCC_ExeOutput>
-        <DCC_BplOutput>.\Build\$(Platform)\$(Config)\Bpl</DCC_BplOutput>
-        <DCC_DcuOutput>.\Build\$(Platform)\$(Config)\Dcu</DCC_DcuOutput>
-        <DCC_DcpOutput>.\Build\$(Platform)\$(Config)\Dcp</DCC_DcpOutput>
+        <DCC_ExeOutput>.\Build\$(Platform)</DCC_ExeOutput>
+        <DCC_BplOutput>.\Build\$(Platform)</DCC_BplOutput>
+        <DCC_DcuOutput>.\Build\$(Platform)-$(Config)-Dcu</DCC_DcuOutput>
+        <DCC_DcpOutput>.\Build\$(Platform)</DCC_DcpOutput>
         <VerInfo_Locale>1031</VerInfo_Locale>
         <DllSuffix>$(Auto)</DllSuffix>
         <DCC_OutputNeverBuildDcps>true</DCC_OutputNeverBuildDcps>

@@ -16,7 +16,7 @@ $sourcePath = Join-Path $sourceDirectory 'h5u.DAI.MCP.Tools.pas'
 $sourceText = [IO.File]::ReadAllText($sourcePath)
 $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
 $fixtureDirectory = Join-Path $PSScriptRoot 'SearchDispatchTests'
-$generatedDirectory = Join-Path $projectRoot 'Build\Tests\SearchDispatch\ProductionBranch'
+$generatedDirectory = Join-Path $projectRoot 'Build\Tests-SearchDispatch-ProductionBranch'
 $utf8Bom = [Text.UTF8Encoding]::new($true)
 $crlf = "`r`n"
 $toolNames = @('source_search', 'directory_files_list', 'project_directory_files_list', 'reference_files_list')
@@ -173,8 +173,8 @@ finally {
 
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\SearchDispatch\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-SearchDispatch-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"

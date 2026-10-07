@@ -22,8 +22,8 @@ foreach ($currentPlatform in $platforms) {
     if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
         throw "Delphi-Compiler nicht gefunden: $compiler"
     }
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\DesignerOperations\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-DesignerOperations-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     New-Item -ItemType Directory -Force -Path $outputDirectory, $dcuDirectory | Out-Null
     # Compile the complete production Designer unit against real SDK interfaces and local doubles.
     & $compiler '-LUrtl;vcl;designide' '-B' '-Q' '-$B+' '-$Q+' '-$R+' "-E$outputDirectory" "-N0$dcuDirectory" `

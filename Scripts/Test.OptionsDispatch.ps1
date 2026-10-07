@@ -15,7 +15,7 @@ $sourcePath = Join-Path $sourceDirectory 'h5u.DAI.MCP.Tools.pas'
 $sourceText = [IO.File]::ReadAllText($sourcePath)
 $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
 $fixtureDirectory = Join-Path $PSScriptRoot 'OptionsDispatchTests'
-$generatedDirectory = Join-Path $projectRoot 'Build\Tests\OptionsDispatch\ProductionBranch'
+$generatedDirectory = Join-Path $projectRoot 'Build\Tests-OptionsDispatch-ProductionBranch'
 $utf8Bom = [Text.UTF8Encoding]::new($true)
 $crlf = "`r`n"
 $toolNames = @('options_search', 'options_open')
@@ -130,8 +130,8 @@ finally { Pop-Location }
 
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\OptionsDispatch\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-OptionsDispatch-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"

@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--bridge', type=Path, default=Path(__file__).resolve().parents[1] /
-                        'Build/Win32/Release/Bpl/DAI.McpBridge.exe')
+                        'Build/Win32/DAI.McpBridge.exe')
     args = parser.parse_args()
     seen: list[dict] = []
     deleted: list[str] = []

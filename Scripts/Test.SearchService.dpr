@@ -433,7 +433,7 @@ var
   LGuid: TGUID;
 begin
   CreateGUID(LGuid);
-  FixtureDirectory := TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'Fixture-' + GUIDToString(LGuid));
+  FixtureDirectory := TPath.Combine(TPath.GetTempPath, 'DAI-SearchService-Fixture-' + GUIDToString(LGuid));
   WriteFixture('A\A.dpr', 'program A; begin end.');
   WriteFixture('A\Main.pas', 'disk-stale');
   WriteFixture('A\Nested\B.dpr', 'program B; begin end.');
@@ -472,15 +472,15 @@ end;
 
 procedure CleanFixtures;
 var
-  LOutputDirectory: string;
+  LTemporaryDirectory: string;
 begin
   TDAIOTA.TestBuffers.Clear;
   TDAIOTA.TestProjects := nil;
   TDAIOTA.TestActiveProject := nil;
   TDAIOTA.TestGroup := nil;
-  LOutputDirectory := IncludeTrailingPathDelimiter(TPath.GetFullPath(TPath.GetDirectoryName(ParamStr(0))));
-  if (FixtureDirectory <> '') and TPath.GetFullPath(FixtureDirectory).StartsWith(LOutputDirectory, True) and
-    TPath.GetFileName(FixtureDirectory).StartsWith('Fixture-{') and TDirectory.Exists(FixtureDirectory) then
+  LTemporaryDirectory := ExcludeTrailingPathDelimiter(TPath.GetFullPath(TPath.GetTempPath));
+  if (FixtureDirectory <> '') and SameText(TPath.GetDirectoryName(TPath.GetFullPath(FixtureDirectory)), LTemporaryDirectory) and
+    TPath.GetFileName(FixtureDirectory).StartsWith('DAI-SearchService-Fixture-{') and TDirectory.Exists(FixtureDirectory) then
     TDirectory.Delete(FixtureDirectory, True);
 end;
 

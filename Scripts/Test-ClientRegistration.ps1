@@ -14,7 +14,7 @@ if ([string]::IsNullOrWhiteSpace($Compiler)) {
     $Compiler = Join-Path $BdsRoot "bin\$compilerName"
 }
 $testProjectRoot = Split-Path -Parent $PSScriptRoot
-$testRunRoot = Join-Path $testProjectRoot ('work\client-registration-tests-' + [Guid]::NewGuid().ToString('N'))
+$testRunRoot = Join-Path $testProjectRoot ('Work\client-registration-tests-' + [Guid]::NewGuid().ToString('N'))
 $testBin = Join-Path $testRunRoot 'bin'
 $testFixtures = Join-Path $testRunRoot 'fixtures'
 New-Item -ItemType Directory -Path $testBin, $testFixtures -Force | Out-Null

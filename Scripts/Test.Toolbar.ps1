@@ -22,16 +22,16 @@ if ($sdkText -notmatch "sDebugToolBar\s*=\s*'DebugToolBar'\s*;") {
 }
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\Toolbar\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-Toolbar-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"
     New-Item -ItemType Directory -Force -Path $outputDirectory, $dcuDirectory | Out-Null
     # Compile the production unit against designide.dcp's real ToolsAPI as well.
     # Only runtime dependencies are doubled here; no ToolsAPI double is copied.
-    $sdkFixtureDirectory = Join-Path $outputDirectory 'SDKFixtures'
-    $sdkDcuDirectory = Join-Path $outputDirectory 'SDKDcu'
+    $sdkFixtureDirectory = ($outputDirectory + '-SDKFixtures')
+    $sdkDcuDirectory = ($outputDirectory + '-SDKDcu')
     New-Item -ItemType Directory -Force -Path $sdkFixtureDirectory, $sdkDcuDirectory | Out-Null
     Get-ChildItem -LiteralPath $fixtureDirectory -File -Filter 'h5u.*.pas' |
         Copy-Item -Destination $sdkFixtureDirectory

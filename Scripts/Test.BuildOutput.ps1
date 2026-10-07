@@ -31,15 +31,15 @@ function Get-FailurePath {
 
 try {
     $projectRoot = Join-Path $fixtureRoot 'Project with spaces'
-    $outputDirectory = Join-Path $projectRoot 'Build\Win32\Release\Bpl'
+    $outputDirectory = Join-Path $projectRoot 'Build\Win32'
     $packagePath = Join-Path $outputDirectory 'DAI370.bpl'
     $backupPath = "$packagePath.deleted"
     [System.IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
 
     $absoluteDiagnostic = "[dcc32 Fatal Error] F2039 Could not create output file '$packagePath'"
     Assert-Test ((Get-FailurePath @($absoluteDiagnostic)) -eq $packagePath) 'A quoted absolute F2039 target identifies the current output.'
-    Assert-Test ((Get-FailurePath @("DAI.dpk(124): error F2039: Ausgabedatei '.\Build\Win32\Release\Bpl\DAI370.bpl' kann nicht erstellt werden")) -eq $packagePath) 'A localized MSBuild diagnostic with a colon identifies the current output.'
-    Assert-Test ((Get-FailurePath @("F2039 Could not create output file '.\Build\Win32\Release\Bpl\DAI370.bpl'")) -eq $packagePath) 'A relative output target resolves against the project directory.'
+    Assert-Test ((Get-FailurePath @("DAI.dpk(124): error F2039: Ausgabedatei '.\Build\Win32\DAI370.bpl' kann nicht erstellt werden")) -eq $packagePath) 'A localized MSBuild diagnostic with a colon identifies the current output.'
+    Assert-Test ((Get-FailurePath @("F2039 Could not create output file '.\Build\Win32\DAI370.bpl'")) -eq $packagePath) 'A relative output target resolves against the project directory.'
     Assert-Test ((Get-FailurePath @('F2039 Could not create output file "DAI370.bpl"')) -eq $packagePath) 'A quoted bare filename resolves against the output directory.'
     Assert-Test ((Get-FailurePath @($absoluteDiagnostic, $absoluteDiagnostic)) -eq $packagePath) 'Repeated diagnostics for one target are unambiguous.'
     Assert-Test ($null -eq (Get-FailurePath @('E2003 Undeclared identifier: Broken'))) 'An ordinary compiler error does not trigger a fallback.'
@@ -50,6 +50,8 @@ try {
     Assert-Test ($null -eq (Get-FailurePath @("F2039 Could not create output file 'DAI.McpBridge.exe'"))) 'An executable is not renamed.'
     Assert-Test ($null -eq (Get-FailurePath @("F2039 Could not create output file '..\Other\DAI370.bpl'"))) 'A target outside the current output directory is rejected.'
     Assert-Test ($null -eq (Get-FailurePath @($absoluteDiagnostic, "F2039 Could not create output file 'DAI280.bpl'"))) 'Two distinct output targets are ambiguous.'
+    Assert-Test ($null -eq (Get-FailurePath @("F2039 Could not create output file '.\Build\Win32\Release\Bpl\DAI370.bpl'"))) 'An old Release output does not qualify for the shared-output fallback.'
+    Assert-Test ($null -eq (Get-FailurePath @("F2039 Could not create output file '.\Build\Win32\Debug\Bpl\DAI370.bpl'"))) 'An old Debug output does not qualify for the shared-output fallback.'
     Assert-Test ($null -eq (Get-FailurePath @())) 'No compiler output means no fallback.'
 
     Assert-Test ($null -eq (Move-BlockedPackageOutput -Path $packagePath -OutputDirectory $outputDirectory)) 'A missing package is not renamed.'

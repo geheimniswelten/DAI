@@ -1,5 +1,18 @@
 # Änderungsprotokoll
 
+## 1.2.23
+
+- Das Arbeitsverzeichnis heißt Work; Testskript und Git-Ignore verwenden dieselbe Schreibweise.
+- Alle Build-Ausgabeverzeichnisse liegen direkt unter Build. Plattform, Konfiguration und Ausgabeart werden mit Bindestrichen verbunden, zum Beispiel Win32-Debug-Dcu.
+- Package- und Bridge-DCUs sowie Testausgaben und generierte Testquellen verwenden das flache Verzeichnislayout. EXE, BPL und DCP bleiben gemeinsam unter Build\Win32 beziehungsweise Build\Win64.
+- Testdaten mit erforderlicher Verzeichnishierarchie verwenden temporäre Fixture-Verzeichnisse.
+
+## 1.2.22
+
+- EXE, BPL und DCP verwenden je Plattform das gemeinsame Ausgabeverzeichnis Build\Win32 beziehungsweise Build\Win64 ohne Debug/Release im Pfad.
+- DCUs und Bridge-DCUs bleiben je Plattform und Konfiguration getrennt. Build.ps1 und damit Build+Register.cmd verwenden das neue Ausgabeziel.
+- Die optionale Package-Registrierung ersetzt passende alte DAI-Einträge sowohl aus dem gemeinsamen Ausgabeordner als auch aus den bisherigen Debug-/Release-Verzeichnissen.
+
 ## 1.2.21
 
 - Die DAI-Werkzeugleiste stellt Status- und Layoutaktualisierungen während geöffneter IDE-Menüs zurück. Nach dem Schließen übernimmt der nächste Refresh den aktuellen Zustand.

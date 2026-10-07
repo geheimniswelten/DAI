@@ -75,9 +75,9 @@ foreach ($currentPlatform in $platforms) {
     }
 
     foreach ($suiteName in @('Designer', 'FormText')) {
-        $outputDirectory = Join-Path $projectRoot "Build\Tests\$suiteName\$currentPlatform"
-        $dcuDirectory = Join-Path $outputDirectory 'Dcu'
-        $generatedDirectory = Join-Path $outputDirectory 'Generated'
+        $outputDirectory = Join-Path $projectRoot "Build\Tests-$suiteName-$currentPlatform"
+        $dcuDirectory = ($outputDirectory + '-Dcu')
+        $generatedDirectory = ($outputDirectory + '-Generated')
         New-Item -ItemType Directory -Force -Path $outputDirectory, $dcuDirectory, $generatedDirectory | Out-Null
 
         # Private production routines are included verbatim. Only test inputs and interface doubles

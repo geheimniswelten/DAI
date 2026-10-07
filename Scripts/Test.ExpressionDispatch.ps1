@@ -12,7 +12,7 @@ $sourcePath = Join-Path $sourceDirectory 'h5u.DAI.MCP.Tools.pas'
 $sourceText = [IO.File]::ReadAllText($sourcePath)
 $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
 $fixtureDirectory = Join-Path $PSScriptRoot 'ExpressionDispatchTests'
-$generatedDirectory = Join-Path $projectRoot 'Build\Tests\ExpressionDispatch\ProductionBranch'
+$generatedDirectory = Join-Path $projectRoot 'Build\Tests-ExpressionDispatch-ProductionBranch'
 $utf8Bom = [Text.UTF8Encoding]::new($true)
 $crlf = "`r`n"
 $toolNames = @('debugger_cursor_expression', 'debugger_evaluate', 'debugger_modify', 'debugger_evaluation_status', 'debugger_expression_ui')
@@ -112,8 +112,8 @@ try {
 finally { Pop-Location }
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 foreach ($currentPlatform in $platforms) {
-    $outputDirectory = Join-Path $projectRoot "Build\Tests\ExpressionDispatch\$currentPlatform"
-    $dcuDirectory = Join-Path $outputDirectory 'Dcu'
+    $outputDirectory = Join-Path $projectRoot "Build\Tests-ExpressionDispatch-$currentPlatform"
+    $dcuDirectory = ($outputDirectory + '-Dcu')
     $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
     $compiler = Join-Path $BdsRoot "bin\$compilerName"
     $libraryDirectory = Join-Path $BdsRoot "lib\$currentPlatform\release"

@@ -14,8 +14,8 @@ if ([string]::IsNullOrWhiteSpace($BdsRoot)) {
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $stubDirectory = Join-Path $PSScriptRoot 'ProtocolTests'
 $sourceDirectory = Join-Path $projectRoot 'Source'
-$outputDirectory = Join-Path $projectRoot "Build\Tests\Protocol\$Platform"
-$dcuDirectory = Join-Path $outputDirectory 'Dcu'
+$outputDirectory = Join-Path $projectRoot "Build\Tests-Protocol-$Platform"
+$dcuDirectory = ($outputDirectory + '-Dcu')
 $compilerName = if ($Platform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
 $compiler = Join-Path $BdsRoot "bin\$compilerName"
 $libraryDirectory = Join-Path $BdsRoot "lib\$Platform\release"

@@ -238,7 +238,7 @@ var
   LStream: TFileStream;
 begin
   CreateGUID(LGuid);
-  FixtureDirectory := TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'Fixture-' + GUIDToString(LGuid));
+  FixtureDirectory := TPath.Combine(TPath.GetTempPath, 'DAI-DirectorySearch-Fixture-' + GUIDToString(LGuid));
   WriteFixture('Workspace\Alpha1.pas', 'unit Alpha1; interface implementation' + #13#10 + 'Needle' + #13#10 + 'second' + #13#10 + 'MARK_IMPL ALL_FILES end.');
   WriteFixture('Workspace\Beta2.PAS', 'Needle ALL_FILES');
   WriteFixture('Workspace\Regex.pas', 'TButton ALL_FILES');
@@ -283,17 +283,17 @@ end;
 
 procedure CleanFixtures;
 var
-  LOutputDirectory: string;
+  LTemporaryDirectory: string;
 begin
   TDAIOTA.TestBuffers.Clear;
   TDAIOTA.TestWorkspaceRoots := nil;
   TDAISettings.TestReadRoots := nil;
-  LOutputDirectory := IncludeTrailingPathDelimiter(TPath.GetFullPath(TPath.GetDirectoryName(ParamStr(0))));
+  LTemporaryDirectory := ExcludeTrailingPathDelimiter(TPath.GetFullPath(TPath.GetTempPath));
   if FixtureDirectory = '' then
     Exit;
-  if not TPath.GetFullPath(FixtureDirectory).StartsWith(LOutputDirectory, True) or
-    not TPath.GetFileName(FixtureDirectory).StartsWith('Fixture-{') then
-    raise EInvalidOperation.Create('Fixture cleanup path is outside the test output directory.');
+  if not SameText(TPath.GetDirectoryName(TPath.GetFullPath(FixtureDirectory)), LTemporaryDirectory) or
+    not TPath.GetFileName(FixtureDirectory).StartsWith('DAI-DirectorySearch-Fixture-{') then
+    raise EInvalidOperation.Create('Fixture cleanup path is outside the temporary directory.');
   if TFile.Exists(Path('References\Reference.pas')) then
     TFile.SetAttributes(Path('References\Reference.pas'), []);
   if TDirectory.Exists(FixtureDirectory) then

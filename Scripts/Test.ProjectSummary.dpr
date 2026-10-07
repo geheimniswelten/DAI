@@ -384,11 +384,15 @@ begin
   try
     CoInitialize(nil);
     try
-      FixtureRoot := TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'Fixture-' + TGUID.NewGuid.ToString);
+      FixtureRoot := TPath.Combine(TPath.GetTempPath, 'DAI-ProjectSummary-Fixture-' + TGUID.NewGuid.ToString);
       ForceDirectories(FixtureRoot);
       try
         RunTests;
       finally
+        if not SameText(TPath.GetDirectoryName(TPath.GetFullPath(FixtureRoot)),
+          ExcludeTrailingPathDelimiter(TPath.GetFullPath(TPath.GetTempPath))) or
+          not TPath.GetFileName(FixtureRoot).StartsWith('DAI-ProjectSummary-Fixture-{') then
+          raise EInvalidOperation.Create('Fixture cleanup path is outside the temporary directory.');
         TDirectory.Delete(FixtureRoot, True);
       end;
     finally
