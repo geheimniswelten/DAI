@@ -13,7 +13,11 @@ Die bestehende Fehlersuche-Toolbar (`sDebugToolBar`) erhält einen DAI-Schalter 
 das Dropdown öffnet die DAI-Optionen/Berechtigungen oder setzt Sitzungsfreigaben zurück. DAI erstellt dafür keine eigene Toolbar.
 Solange ein IDE-Menü geöffnet ist, werden Status- und Layoutaktualisierungen der DAI-Werkzeugleiste zurückgestellt.
 Das DAI-Dropdown verwendet feste Tastenkürzel, damit der Statustimer keinen Neuaufbau des angezeigten Menüs auslöst.
-Transparente Serversymbole zeigen eine graue Pause für inaktiv, ein grünes Startdreieck für aktiv und ein rotes Warndreieck bei Fehlern.
+Transparente Serversymbole zeigen eine graue Pause für inaktiv, ein grünes Play-Dreieck für aktiv und ein rotes X bei Fehlern.
+Bei aktivem Server zeigt ein gelber Kreis MCP-Zugriff innerhalb der letzten 15 Sekunden, danach ein ockerfarbener Kreis bis 15 Minuten.
+Ohne Zugriff oder nach mehr als 15 Minuten erscheint wieder Play. Inaktiv und Fehler haben Vorrang vor der Zugriffsanzeige.
+Gezählt werden authentifizierte MCP-POSTs nach den Transport-/Sitzungsprüfungen und erfolgreiche Session-DELETEs, auch wenn ein Tool einen Fehler meldet.
+Health-Abfragen und abgewiesene HTTP-Zugriffe verändern die Anzeige nicht. Der bestehende Statustimer aktualisiert sie alle 500 ms.
 Die primäre Größe beträgt 16×16; weitere Auflösungen werden der IDE über `INTAServices280.AddImage` angeboten. Dafür wird Delphis Standardpackage `vclimg` verwendet.
 Die DAI-Aktion hat denselben stabilen Besitzer wie die IDE-ActionList. Beim Entfernen werden auch Toolbar-Klone derselben Aktion beseitigt.
 Ein öffentlicher ToolsAPI-Lesenotifier erfasst den ursprünglich benannten DAI-Button beim Toolbarrestore. Nach dem Lesen wird dieses

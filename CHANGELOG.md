@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## Unveröffentlicht
+
+- Statussymbole im 16×16-Toolbaricon sind einen Pixel größer. Play und Pause unterscheiden sich durch kräftigeres grünes Dreieck beziehungsweise ein deutliches graues Pausesymbol; Fehler erscheinen als rotes X.
+- Ein gelber Kreis zeigt MCP-Zugriff in den letzten 15 Sekunden, ein ockerfarbener Kreis Zugriff innerhalb der letzten 15 Minuten. Danach erscheint wieder Play; inaktive Server und Fehler behalten ihre eigenen Symbole.
+- Der HTTP-Server erfasst MCP-Zugriffe mit einem atomaren monotonen Zeitstempel. Der bestehende Statustimer liest diesen ohne Worker-/UI-Aufrufe; Health- und abgewiesene Transportanfragen zählen nicht.
+- Isolierte Tests prüfen Zeitgrenzen, Vorrang der Grundzustände, Aktualisierung nach Popupende sowie alle fünf Symbole in fünf Auflösungen.
+
 ## 1.2.23
 
 - Das Arbeitsverzeichnis heißt Work; Testskript und Git-Ignore verwenden dieselbe Schreibweise.

@@ -19,11 +19,13 @@ type
     class function StopServer: Boolean; static;
     class function ServerActive: Boolean; static;
     class function LastServerError: string; static;
+    class function TryGetMCPAccessAgeMs(out AAgeMs: UInt64): Boolean; static;
   end;
 
 implementation
 
 uses
+  System.Classes,
   System.SysUtils,
   h5u.DAI.Log,
   h5u.DAI.MCP.Server,
@@ -143,6 +145,23 @@ begin
     Result := TDAIMCPServer(FServer).Active
   else
     Result := False;
+end;
+
+class function TDAIRuntime.TryGetMCPAccessAgeMs(out AAgeMs: UInt64): Boolean;
+var
+  LLastAccess: UInt64;
+  LNow: UInt64;
+begin
+  AAgeMs := 0;
+  if not Assigned(FServer) then
+    Exit(False);
+  LLastAccess := TDAIMCPServer(FServer).LastMCPAccessTick;
+  if LLastAccess = 0 then
+    Exit(False);
+  LNow := TThread.GetTickCount64;
+  if LNow >= LLastAccess then
+    AAgeMs := LNow - LLastAccess;
+  Result := True;
 end;
 
 class procedure TDAIRuntime.Start;

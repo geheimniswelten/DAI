@@ -10,6 +10,8 @@ type
   TDAIRuntime = class sealed
   public
     class var Active: Boolean;
+    class var HasMCPAccess: Boolean;
+    class var MCPAccessAgeMs: UInt64;
     class var Port: Integer;
     class var ErrorText: string;
     class var FailStart: Boolean;
@@ -25,6 +27,7 @@ type
     class function ServerActive: Boolean; static;
     class function ServerPort: Integer; static;
     class function LastServerError: string; static;
+    class function TryGetMCPAccessAgeMs(out AAgeMs: UInt64): Boolean; static;
     class procedure Reset; static;
   end;
 
@@ -81,9 +84,17 @@ begin
   Result := ErrorText;
 end;
 
+class function TDAIRuntime.TryGetMCPAccessAgeMs(out AAgeMs: UInt64): Boolean;
+begin
+  AAgeMs := MCPAccessAgeMs;
+  Result := HasMCPAccess;
+end;
+
 class procedure TDAIRuntime.Reset;
 begin
   Active := False;
+  HasMCPAccess := False;
+  MCPAccessAgeMs := 0;
   Port := 0;
   ErrorText := '';
   FailStart := False;

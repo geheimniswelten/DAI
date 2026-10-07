@@ -41,6 +41,8 @@ type
     FPort: Integer;
     FToken: string;
     FSessions: TDAIMCPSessions;
+    FLastMCPAccessTick: Int64;
+    procedure RecordMCPAccess;
     procedure HandleCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
     procedure HandleParseAuthentication(AContext: TIdContext; const AAuthType, AAuthData: string; var VUsername, VPassword: string; var VHandled: Boolean);
     procedure HandleDeleteSession(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
@@ -58,6 +60,7 @@ type
     function Stop: Boolean;
     function ApplySettings: Boolean;
     function Active: Boolean;
+    function LastMCPAccessTick: UInt64;
     property LastError: string read FLastError;
     property Port: Integer read GetPort;
   end;
@@ -67,6 +70,7 @@ implementation
 uses
   System.JSON,
   System.RegularExpressions,
+  System.SyncObjs,
   IdException,
   IdStack,
   Winapi.Windows,
@@ -470,6 +474,7 @@ begin
       Exit;
     end;
     FSessions.Remove(LSessionId);
+    RecordMCPAccess;
     AResponseInfo.ResponseNo := 204;
     AResponseInfo.ContentText := '';
     AResponseInfo.ContentLength := 0;
@@ -481,6 +486,32 @@ end;
 function TDAIMCPServer.Active: Boolean;
 begin
   Result := Assigned(FHTTPServer) and FHTTPServer.Active;
+end;
+
+procedure TDAIMCPServer.RecordMCPAccess;
+var
+  LTick: Int64;
+  LPrevious: Int64;
+  LObserved: Int64;
+begin
+  LTick := Int64(TThread.GetTickCount64);
+  if LTick = 0 then
+    LTick := 1;
+  // Concurrent workers must not replace a newer access with an older tick.
+  LPrevious := TInterlocked.Read(FLastMCPAccessTick);
+  while LTick > LPrevious do
+  begin
+    LObserved := TInterlocked.CompareExchange(FLastMCPAccessTick, LTick, LPrevious);
+    if LObserved = LPrevious then
+      Exit;
+    LPrevious := LObserved;
+  end;
+end;
+
+function TDAIMCPServer.LastMCPAccessTick: UInt64;
+begin
+  // The toolbar must never wait for the lifecycle lock held during shutdown.
+  Result := UInt64(TInterlocked.Read(FLastMCPAccessTick));
 end;
 
 function TDAIMCPServer.GetPort: Integer;
@@ -718,6 +749,7 @@ begin
           end;
         end;
       end;
+      RecordMCPAccess;
       LResponseJson := TDAIMCPProtocol.HandleMessage(LMessage, LSessionId, LHTTPStatus, LSession.ClientName);
       try
         if not LModern then
@@ -869,6 +901,7 @@ begin
     LBinding.Port := APort;
     FPort := APort;
     FToken := Trim(AToken);
+    TInterlocked.Exchange(FLastMCPAccessTick, 0);
     FHTTPServer.Active := True;
     TDAILog.Access(Format('MCP-Server gestartet: http://%s:%d%s', [CDAIDefaultBindAddress, APort, CDAIMcpPath]));
     Result := True;

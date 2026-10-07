@@ -3,6 +3,7 @@
 {$APPTYPE CONSOLE}
 
 uses
+  System.Classes,
   System.SysUtils,
   DAI.Runtime.TestState,
   h5u.DAI.Log,
@@ -31,9 +32,17 @@ procedure FalseAndReentrantChecks;
 var
   LDefaultCalls: Integer;
   LExplicitCalls: Integer;
+  LAgeMs: UInt64;
+  LPreviousAgeMs: UInt64;
 begin
+  LAgeMs := 123;
+  Check(not TDAIRuntime.TryGetMCPAccessAgeMs(LAgeMs) and (LAgeMs = 0), 'absent runtime has no MCP access age');
   Check(TDAIRuntime.StartServer(7777, 'isolated-test-token'), 'isolated endpoint starts');
   Check(TDAIMCPServer.CreatedCount = 1, 'one runtime owner created');
+  Check(not TDAIRuntime.TryGetMCPAccessAgeMs(LAgeMs), 'fresh server has no MCP access age');
+  TDAIMCPServer.AccessTick := TThread.GetTickCount64 - 2000;
+  Check(TDAIRuntime.TryGetMCPAccessAgeMs(LAgeMs) and (LAgeMs >= 2000), 'runtime reports elapsed monotone access age');
+  LPreviousAgeMs := LAgeMs;
   TDAISettings.Instance.Port := 7999;
   TDAISettings.Instance.Token := 'different-persisted-test-token';
   LDefaultCalls := TDAIMCPServer.DefaultStartCount;
@@ -41,6 +50,7 @@ begin
   Check(TDAIRuntime.StartServer, 'parameterless start is idempotent for active temporary endpoint');
   Check(TDAIMCPServer.DefaultStartCount = LDefaultCalls + 1, 'active start reaches the server state guard');
   Check(TDAIMCPServer.ExplicitStartCount = LExplicitCalls, 'active start never reapplies explicit persisted values');
+  Check(TDAIRuntime.TryGetMCPAccessAgeMs(LAgeMs) and (LAgeMs >= LPreviousAgeMs), 'idempotent start preserves increasing access age');
   Check(TDAIRuntime.ServerPort = 7777, 'active temporary port remains unchanged');
   Check(TDAIMCPServer.LastAppliedToken = 'isolated-test-token', 'active temporary token remains unchanged');
   Check(TDAISettings.Instance.Port = 7999, 'persisted port remains distinct from runtime');
@@ -50,6 +60,7 @@ begin
     procedure
     begin
       Check(TDAIRuntime.ServerActive, 'server still reports active while its stop callback drains');
+      Check(TDAIRuntime.TryGetMCPAccessAgeMs(LAgeMs), 'access age is available during reentrant shutdown');
       Check(not TDAIRuntime.StartServer, 'parameterless start during drain is rejected');
       Check(TDAIRuntime.LastServerError.Contains('gestoppt'), 'drain refusal exposes the server reason');
       Check(TDAIRuntime.ServerPort = 7777, 'rejected drain start preserves active port until stop finishes');
@@ -89,6 +100,8 @@ begin
   Check(TDAIMCPServer.DestroyedCount = 1, 'successful retry destroys server once');
   Check(TDAIMCPServer.UnsafeDestroyedCount = 0, 'no server is destroyed before a successful drain');
   Check(not TDAIRuntime.ServerActive and (TDAIRuntime.ServerPort = 0), 'successful retry clears runtime owner');
+  LAgeMs := 123;
+  Check(not TDAIRuntime.TryGetMCPAccessAgeMs(LAgeMs) and (LAgeMs = 0), 'destroyed server clears runtime access age');
   Check(TDAIRuntime.LastServerError = '', 'successful retry clears previous error');
   Check(TDAIPermissionManager.ClearCount = 1, 'successful retry clears permissions once');
   Check(TDAIBuildService.ShutdownCount = 1, 'successful retry closes build state once');

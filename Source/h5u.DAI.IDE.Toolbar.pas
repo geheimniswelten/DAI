@@ -35,12 +35,16 @@ uses
   h5u.DAI.Runtime,
   h5u.DAI.Settings;
 
+type
+  TDAIServerGlyphState = (sgInactive, sgActive, sgError, sgRecentAccess, sgEarlierAccess);
+
 const
   CDAIActionName = 'DAIServerToggleAction';
   CDAIButtonName = 'DAIServerToolButton';
-  // New identifiers replace the old D glyphs even within the same IDE session.
-  CDAIImageIds: array[0..2] of string = ('h5u.DAI.ServerGlyph.v2.Inactive', 'h5u.DAI.ServerGlyph.v2.Active', 'h5u.DAI.ServerGlyph.v2.Error');
-  CDAIImageColors: array[0..2] of TColor = ($00857769, $004AA52A, $004244DB);
+  // New identifiers replace earlier glyphs even within the same IDE session.
+  CDAIImageIds: array[TDAIServerGlyphState] of string = ('h5u.DAI.ServerGlyph.v3.Inactive', 'h5u.DAI.ServerGlyph.v3.Active',
+    'h5u.DAI.ServerGlyph.v3.Error', 'h5u.DAI.ServerGlyph.v3.RecentAccess', 'h5u.DAI.ServerGlyph.v3.EarlierAccess');
+  CDAIImageColors: array[TDAIServerGlyphState] of TColor = ($00808080, $004AA52A, $003636D9, $0000D0FF, $000B86B8);
   CDAIImageSizes: array[0..4] of Integer = (16, 20, 24, 32, 48);
 
 type
@@ -107,7 +111,7 @@ type
     FToggleItem: TMenuItem;
     FOptionsItem: TMenuItem;
     FResetItem: TMenuItem;
-    FImages: array[0..2] of Integer;
+    FImages: array[TDAIServerGlyphState] of Integer;
     FCallbackDepth: Integer;
     FBusy: Boolean;
     FRefreshing: Boolean;
@@ -725,7 +729,7 @@ begin
   TDAILog.Error('DAI-Werkzeugleiste: ' + AError);
 end;
 
-function CreateServerGlyph(const AState: Integer; const ASize: Integer): TPngImage;
+function CreateServerGlyph(const AState: TDAIServerGlyphState; const ASize: Integer): TPngImage;
 var
   LBitmap: TBitmap;
   LSmallBitmap: TBitmap;
@@ -746,6 +750,11 @@ var
   function P(const ACoordinate: Integer): Integer;
   begin
     Result := MulDiv(ACoordinate, ASize * 4, 16);
+  end;
+
+  function H(const AHalfCoordinate: Integer): Integer;
+  begin
+    Result := MulDiv(AHalfCoordinate, ASize * 4, 32);
   end;
 
 begin
@@ -776,22 +785,21 @@ begin
     LCanvas.Ellipse(P(2), P(7), P(4), P(9));
     LCanvas.Pen.Color := clWhite;
     case AState of
-      0:
+      sgInactive:
         begin
-          LCanvas.RoundRect(P(8), P(8), P(15), P(15), P(2), P(2));
+          LCanvas.RoundRect(P(7), P(7), P(15), P(15), P(2), P(2));
           LCanvas.Brush.Color := clWhite;
-          LCanvas.FillRect(Rect(P(10), P(10), P(11), P(13)));
-          LCanvas.FillRect(Rect(P(12), P(10), P(13), P(13)));
+          LCanvas.FillRect(Rect(P(9), P(9), P(11), P(14)));
+          LCanvas.FillRect(Rect(P(12), P(9), P(14), P(14)));
         end;
-      1:
-        LCanvas.Polygon([Point(P(9), P(8)), Point(P(15), P(11)), Point(P(9), P(15))]);
-      2:
-        begin
-          LCanvas.Polygon([Point(P(11), P(7)), Point(P(15), P(15)), Point(P(7), P(15))]);
-          LCanvas.Brush.Color := clWhite;
-          LCanvas.FillRect(Rect(P(11), P(10), P(12), P(12)));
-          LCanvas.FillRect(Rect(P(11), P(13), P(12), P(14)));
-        end;
+      sgActive:
+        LCanvas.Polygon([Point(P(8), P(7)), Point(P(15), P(11)), Point(P(8), P(15))]);
+      sgError:
+        LCanvas.Polygon([Point(H(15), H(19)), Point(H(19), H(15)), Point(H(22), H(18)), Point(H(25), H(15)),
+          Point(H(29), H(19)), Point(H(26), H(22)), Point(H(29), H(25)), Point(H(25), H(29)),
+          Point(H(22), H(26)), Point(H(19), H(29)), Point(H(15), H(25)), Point(H(18), H(22))]);
+      sgRecentAccess, sgEarlierAccess:
+        LCanvas.Ellipse(P(7), P(7), P(15), P(15));
     end;
     LSmallBitmap := TBitmap.Create;
     LSmallBitmap.PixelFormat := pf24bit;
@@ -848,7 +856,7 @@ end;
 procedure TDAIToolbarController.InstallImages(const AServices: INTAServices; AImages: TCustomImageList);
 var
   LGraphics: TGraphicArray;
-  LState: Integer;
+  LState: TDAIServerGlyphState;
   LSize: Integer;
 begin
   if (AImages.Width < 8) or (AImages.Height < 8) then
@@ -1071,7 +1079,7 @@ begin
     FAction.Category := 'DAI';
     FAction.Caption := 'DAI inaktiv';
     FAction.ActionList := FActionList;
-    FAction.ImageIndex := FImages[0];
+    FAction.ImageIndex := FImages[sgInactive];
     FAction.OnExecute := ToggleServer;
     FAction.FreeNotification(Self);
     if Assigned(LRestored) then
@@ -1116,6 +1124,7 @@ var
   LHint: string;
   LCommand: string;
   LImage: Integer;
+  LAccessAgeMs: UInt64;
 begin
   if not Assigned(FAction) or IDEMenuTracking then
     Exit;
@@ -1128,20 +1137,33 @@ begin
     LCaption := 'DAI aktiv';
     LHint := Format('DAI aktiv auf Port %d. Klicken zum Stoppen.', [TDAIRuntime.ServerPort]);
     LCommand := 'Server &stoppen';
-    LImage := FImages[1];
+    LImage := FImages[sgActive];
+    if TDAIRuntime.TryGetMCPAccessAgeMs(LAccessAgeMs) then
+    begin
+      if LAccessAgeMs <= 15000 then
+      begin
+        LImage := FImages[sgRecentAccess];
+        LHint := LHint + sLineBreak + 'MCP-Zugriff in den letzten 15 Sekunden.';
+      end
+      else if LAccessAgeMs <= 900000 then
+      begin
+        LImage := FImages[sgEarlierAccess];
+        LHint := LHint + sLineBreak + 'MCP-Zugriff vor mehr als 15 Sekunden, innerhalb der letzten 15 Minuten.';
+      end;
+    end;
   end
   else
   begin
     LCaption := 'DAI inaktiv';
     LHint := Format('DAI inaktiv; kein aktiver Port. Klicken zum Starten mit gespeichertem Port %d.', [TDAISettings.Instance.Port]);
     LCommand := 'Server &starten';
-    LImage := FImages[0];
+    LImage := FImages[sgInactive];
   end;
   if LError <> '' then
   begin
     LCaption := 'DAI Fehler';
     LHint := LHint + sLineBreak + 'Fehler: ' + LError;
-    LImage := FImages[2];
+    LImage := FImages[sgError];
   end;
   if FBusy then
   begin

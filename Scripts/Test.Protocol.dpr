@@ -156,6 +156,74 @@ begin
   Check((Response.StatusCode = 200) and (TDAIIDEControl.Completed = 1), 'next request cannot inherit failed close');
 end;
 
+procedure WaitForNextAccessTick;
+var
+  LTick: UInt64;
+begin
+  LTick := TThread.GetTickCount64;
+  while TThread.GetTickCount64 <= LTick do
+    Sleep(1);
+end;
+
+procedure RunAccessTrackingChecks;
+var
+  LTick: UInt64;
+  LSession: string;
+  LHeaders: TNetHeaders;
+begin
+  Check(Server.Stop and Server.Start, 'access checks begin with a fresh listener');
+  Check(Server.LastMCPAccessTick = 0, 'a fresh listener has no MCP access');
+  Response := Client.Get(Format('http://127.0.0.1:%d/health', [Server.Port]));
+  Check((Response.StatusCode = 200) and (Server.LastMCPAccessTick = 0), 'health polling is not MCP access');
+  LHeaders := [TNameValuePair.Create('Authorization', 'Bearer isolated-test-token')];
+  Response := Client.Get(Format('http://127.0.0.1:%d/mcp', [Server.Port]), nil, LHeaders);
+  Check((Response.StatusCode = 405) and (Server.LastMCPAccessTick = 0), 'unsupported MCP GET is not access');
+  Response := Post('{"jsonrpc":"2.0","id":"access","method":"ping","params":{' + CModernMeta + '}}',
+    '', '2026-07-28', 'ping', '', '', False);
+  Check((Response.StatusCode = 401) and (Server.LastMCPAccessTick = 0), 'unauthenticated POST is not access');
+  Response := Post('{"jsonrpc":"2.0","id":"access","method":"ping","params":{' + CModernMeta + '}}',
+    '', '2026-07-28', 'ping', '', 'http://evil.example');
+  Check((Response.StatusCode = 403) and (Server.LastMCPAccessTick = 0), 'rejected origin is not access');
+  Response := Post('not JSON');
+  Check((Response.StatusCode = 400) and (Server.LastMCPAccessTick = 0), 'malformed JSON is not access');
+  Response := Post('{"jsonrpc":"2.0","id":"access","method":"ping"}', 'unknown-session');
+  Check((Response.StatusCode = 404) and (Server.LastMCPAccessTick = 0), 'missing transport session is not access');
+  Response := Post('{"jsonrpc":"2.0","id":"access","method":"ping","params":{' + CModernMeta + '}}',
+    '', '2026-07-28', 'tools/list');
+  Check((Response.StatusCode = 400) and (Server.LastMCPAccessTick = 0), 'mismatched transport header is not access');
+
+  Response := Post('{"jsonrpc":"2.0","id":"access","method":"tools/list","params":{' + CModernMeta + '}}',
+    '', '2026-07-28', 'tools/list');
+  LTick := Server.LastMCPAccessTick;
+  Check((Response.StatusCode = 200) and (LTick <> 0), 'stateless tools/list records MCP access');
+  Check(Server.Start and Server.Start(Server.Port, 'isolated-test-token'), 'both active start overloads are idempotent');
+  Check(Server.LastMCPAccessTick = LTick, 'idempotent start preserves the last access');
+  WaitForNextAccessTick;
+  Response := Post('{"jsonrpc":"2.0","method":"notifications/initialized","params":{' + CModernMeta + '}}',
+    '', '2026-07-28', 'notifications/initialized');
+  Check((Response.StatusCode = 202) and (Server.LastMCPAccessTick > LTick), 'accepted notification refreshes MCP access');
+  LTick := Server.LastMCPAccessTick;
+  WaitForNextAccessTick;
+  Response := Post('{"jsonrpc":"2.0","id":"access","method":"tools/call","params":{"name":"failed-deferred-close",' +
+    '"arguments":{},' + CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'failed-deferred-close');
+  Check((Response.StatusCode = 200) and (Pos('"isError":true', Response.ContentAsString) > 0) and
+    (Server.LastMCPAccessTick > LTick), 'an authenticated tool failure still records access');
+  LTick := Server.LastMCPAccessTick;
+  WaitForNextAccessTick;
+  Response := DeleteSession('unknown-session');
+  Check((Response.StatusCode = 404) and (Server.LastMCPAccessTick = LTick), 'rejected DELETE preserves the last access');
+  Response := InitializeSession;
+  LSession := Response.HeaderValue['Mcp-Session-Id'];
+  Check((Response.StatusCode = 200) and (LSession <> '') and (Server.LastMCPAccessTick > LTick),
+    'legacy initialize records MCP access');
+  LTick := Server.LastMCPAccessTick;
+  WaitForNextAccessTick;
+  Response := DeleteSession(LSession);
+  Check((Response.StatusCode = 204) and (Server.LastMCPAccessTick > LTick), 'successful DELETE refreshes MCP access');
+  Check(Server.Stop and Server.Start, 'access listener restarts');
+  Check(Server.LastMCPAccessTick = 0, 'a restarted listener clears previous access');
+end;
+
 procedure RunChecks;
 begin
   Response := Post('{"jsonrpc":"2.0","id":1,"method":"initialize","params":' +
@@ -449,6 +517,7 @@ begin
   TDAIMCPTools.SynchronizeCallback :=
     procedure
     begin
+      Check(Server.LastMCPAccessTick <> 0, 'access getter remains available inside synchronized shutdown');
       LReentrantStartRejected := not Server.Start(LPort + 1, LToken);
       LReentrantStartError := Server.LastError;
       LReentrantDefaultStartRejected := not Server.Start;
@@ -554,6 +623,7 @@ begin
           raise Exception.Create(Server.LastError);
       end;
       RunChecks;
+      RunAccessTrackingChecks;
       RunDeferredCloseChecks;
       RunInstanceChecks;
       RunExplicitSettingsChecks;

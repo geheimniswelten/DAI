@@ -22,6 +22,7 @@ type
     class var LastAppliedPort: Integer;
     class var LastAppliedToken: string;
     class var RaiseDefaultStart: Boolean;
+    class var AccessTick: UInt64;
     class var OnStop, OnDestroy: TProc;
     constructor Create;
     destructor Destroy; override;
@@ -31,6 +32,7 @@ type
     function Stop: Boolean;
     function Active: Boolean;
     function ApplySettings: Boolean;
+    function LastMCPAccessTick: UInt64;
     property LastError: string read FLastError;
     property Port: Integer read FPort;
   end;
@@ -67,6 +69,11 @@ end;
 function TDAIMCPServer.Active: Boolean;
 begin
   Result := FActive;
+end;
+
+function TDAIMCPServer.LastMCPAccessTick: UInt64;
+begin
+  Result := AccessTick;
 end;
 
 function TDAIMCPServer.ApplySettings: Boolean;
@@ -110,6 +117,7 @@ begin
     Exit;
   end;
   FActive := True;
+  AccessTick := 0;
   FDrainSucceeded := False;
   FPort := APort;
   FToken := AToken;

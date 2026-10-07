@@ -145,6 +145,8 @@ begin
     begin
       TDAIRuntime.Active := True;
       TDAIRuntime.Port := 7444;
+      TDAIRuntime.HasMCPAccess := True;
+      TDAIRuntime.MCPAccessAgeMs := 0;
       FRuntimeChanged := True;
       TDAIIDEToolbar.Refresh;
       CheckStable;
@@ -182,6 +184,7 @@ begin
     PumpFor(650);
     Check(GHost.DAIAction.Caption = 'DAI aktiv', 'Deferred status is applied by the first timer tick after popup close');
     Check(Pos('7444', GHost.DAIAction.Hint) > 0, 'Deferred live port is applied after popup close');
+    Check(Pos('ServerGlyph.v3.RecentAccess', GHost.DAIAction.ImageName) > 0, 'Deferred recent activity is applied after popup close');
   end;
 end;
 
