@@ -728,6 +728,11 @@ Vorgeschriebene gemeinsame Clientdateinamen wie `config.toml`, `settings.json`, 
 Ein bereits vorhandener, nicht markierter `[mcp_servers.dai]`-Abschnitt wird nicht überschrieben.
 
 Der erzeugte `SKILL.md` enthält gültige YAML-Metadaten (`name`, `description`), aktuelle Werkzeugnamen, Parameter, Hashkonfliktbehandlung und Zugriffsgrenzen.
+Der Skill nennt DAI ausdrücklich als Werkzeug für Delphi und die Delphi-IDE. Vor Dateiänderungen soll der KI-Client die DAI-Erreichbarkeit
+und offene IDE-Puffer prüfen und diese bevorzugt über DAI bearbeiten. Ungespeicherte Benutzeränderungen dürfen dabei nicht ungefragt gespeichert,
+verworfen oder überschrieben werden. Diese Kernhinweise liefert DAI auch über `instructions` bei `initialize` und `server/discover` an andere Clients.
+Neue Registrierungen erhalten den aktuellen Skill; einen bereits von DAI verwalteten Skill aktualisiert erneutes `Registrieren`.
+
 Ein vorhandener fremder `dai-delphi-ide`-Skill wird nicht überschrieben. Die automatische Skill-Erkennung ist hier für Codex eingerichtet; andere Clients benötigen ihre eigene Skill-Installation.
 
 ## Formdesigner und Debugger
@@ -735,6 +740,11 @@ Ein vorhandener fremder `dai-delphi-ide`-Skill wird nicht überschrieben. Die au
 `form_designer_inspect(file)` liest Komponenten, Auswahl und skalare veröffentlichte Eigenschaften aus einem geladenen Formularmodul.
 `form_show_designer(file)` öffnet das Formular bei Bedarf und zeigt dessen Designer.
 Die Komponentenwerkzeuge arbeiten mit diesem geladenen Designer; `file` bezeichnet dessen PAS-, DFM- oder FMX-Datei.
+
+DFM-/FMX-Änderungen erfolgen bevorzugt über die Designerwerkzeuge oder als Text im IDE-Puffer. `form_show_as_text` schaltet normalerweise den
+vorhandenen Editor-Tab der PAS-Unit auf Formulartext um; PAS und DFM erscheinen standardmäßig nicht in getrennten Tabs. Nach dem Wechsel die
+gewünschte DFM-/FMX-Datei über ihren vollständigen Pfad erneut lesen und den tatsächlichen Inhalt prüfen. Ungespeicherte PAS-Änderungen
+nicht ungefragt speichern oder verwerfen, um den Ansichtswechsel zu ermöglichen.
 
 | Werkzeug | Funktion / Parameter |
 | --- | --- |

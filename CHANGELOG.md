@@ -2,6 +2,8 @@
 
 ## Unveröffentlicht
 
+- Der bei Registrierung erzeugte Codex-Skill verknüpft Delphi-Anfragen ausdrücklich mit DAI und verlangt vor Dateiänderungen die Prüfung auf aktive DAI-Verbindungen und offene IDE-Puffer.
+- Skill und MCP-Verbindungsanweisungen schützen ungespeicherte Benutzeränderungen und erklären den gemeinsamen PAS-/DFM-Editor-Tab sowie das erneute Lesen nach dem Ansichtswechsel. Klassische Initialisierung und moderne Erkennung liefern dieselben Kernhinweise.
 - Statussymbole im 16×16-Toolbaricon sind einen Pixel größer. Play und Pause unterscheiden sich durch kräftigeres grünes Dreieck beziehungsweise ein deutliches graues Pausesymbol; Fehler erscheinen als rotes X.
 - Ein gelber Kreis zeigt MCP-Zugriff in den letzten 15 Sekunden, ein ockerfarbener Kreis Zugriff innerhalb der letzten 15 Minuten. Danach erscheint wieder Play; inaktive Server und Fehler behalten ihre eigenen Symbole.
 - Der HTTP-Server erfasst MCP-Zugriffe mit einem atomaren monotonen Zeitstempel. Der bestehende Statustimer liest diesen ohne Worker-/UI-Aufrufe; Health- und abgewiesene Transportanfragen zählen nicht.

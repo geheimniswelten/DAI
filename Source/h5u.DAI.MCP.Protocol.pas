@@ -151,6 +151,26 @@ begin
     Result.ClientName := 'KI-Client';
 end;
 
+function BuildServerInstructions: string;
+begin
+  Result :=
+    'DAI (Delphi AI) steuert die aktuell geöffnete Delphi-IDE. Bei Anfragen zu Delphi oder zur Delphi-IDE die DAI-Werkzeuge berücksichtigen. ' +
+    'Vor Dateiänderungen, besonders an PAS, DFM, FMX, DPR, DPK und DPROJ, mit ide_status und open_files_list den IDE-/Editorzustand prüfen; ' +
+    'bei Bedarf projects_list verwenden und bei mehreren erreichbaren IDEs diejenige mit den betroffenen Dateien wählen. ' +
+    'Geöffnete Dateien möglichst über DAI bearbeiten; ungespeicherte IDE-Puffer sind maßgeblich. ' +
+    'Vor Textänderungen den vollständigen aktuellen Inhalt mit file_read (interfaces_only: false, maximum_characters: 0) lesen. ' +
+    'Nur vollständigen Inhalt mit file_write und expected_sha256 zurückschreiben; danach Inhalt und Speicherstatus prüfen. ' +
+    'Hashkonflikte durch erneutes Lesen und Abgleichen lösen. ' +
+    'Vorhandene Benutzeränderungen nicht ungefragt speichern, verwerfen oder mit einer älteren Datenträgerdatei überschreiben. ' +
+    'DFM/FMX bevorzugt über die Designerwerkzeuge ändern; Textänderungen nur im IDE-Textpuffer. DPROJ-Optionen über die Projektwerkzeuge ändern. ' +
+    'form_show_as_text schaltet normalerweise den vorhandenen PAS-Editor-Tab auf DFM-/FMX-Text um; standardmäßig sind das keine getrennten Tabs. ' +
+    'Danach die gewünschte Formulartextdatei über den vollständigen Pfad erneut mit file_read lesen und den tatsächlichen Puffer prüfen. ' +
+    'Nicht annehmen, dass der bisher aktive Tab weiterhin PAS-Text enthält. Bei ungespeicherten PAS-Änderungen die Umschaltgrenzen beachten. ' +
+    'Direkte Dateibearbeitung ist ein Ausweichweg bei unerreichbarem DAI, geschlossener Datei oder fehlender passender Operation; ' +
+    'die Einschränkung kurz nennen und bekannte offene/ungespeicherte Inhalte schützen. Unbekannten Editorzustand nicht als geschlossen ausgeben. ' +
+    'Die IDE allein für diese Prüfung nicht ungefragt starten. Berechtigungen werden in der IDE nach Projekt und KI-Chat bzw. MCP-Sitzung abgefragt.';
+end;
+
 function BuildInitializationResult(const ARequestedVersion: string): TJSONObject;
 var
   LCapabilities: TJSONObject;
@@ -175,10 +195,7 @@ begin
   Result.AddPair('protocolVersion', LProtocolVersion);
   Result.AddPair('capabilities', LCapabilities);
   Result.AddPair('serverInfo', LServerInfo);
-  Result.AddPair(
-    'instructions',
-    'DAI steuert die aktuell geöffnete Delphi-IDE. Berechtigungen werden in der IDE nach Projekt und KI-Chat bzw. MCP-Sitzung abgefragt.'
-  );
+  Result.AddPair('instructions', BuildServerInstructions);
 end;
 
 function BuildDiscoveryResult: TJSONObject;
@@ -202,7 +219,7 @@ begin
   Result.AddPair('_meta', BuildServerMeta);
   Result.AddPair('supportedVersions', LVersions);
   Result.AddPair('capabilities', LCapabilities);
-  Result.AddPair('instructions', 'DAI unterstützt die moderne MCP-Erkennung sowie den klassischen initialize-Ablauf.');
+  Result.AddPair('instructions', BuildServerInstructions);
 end;
 
 class function TDAIMCPProtocol.HandleMessage(const AMessage: TJSONObject; const ATransportSessionId: string; out AHTTPStatus: Integer; const AClientName: string): TJSONObject;
