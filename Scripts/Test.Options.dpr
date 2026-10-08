@@ -98,6 +98,15 @@ begin
   Check(Assigned(Result), 'Permission scope combo exists');
 end;
 
+function LifecycleControl(const AFrame: TDAIOptionsFrame): TCheckBox;
+var
+  LComponent: TComponent;
+begin
+  LComponent := AFrame.FindComponent('DAIAllowIDEStartStopCheckBox');
+  Check(LComponent is TCheckBox, 'Lifecycle permission has a named checkbox');
+  Result := TCheckBox(LComponent);
+end;
+
 procedure CheckNoPersistence;
 begin
   Check(TDAISettings.Instance.SaveCount = 0, 'Manual start/stop does not save settings');
@@ -396,11 +405,136 @@ begin
   end;
 end;
 
+procedure CheckLifecycleOptions;
+var
+  LHost: TForm;
+  LFrame: TDAIOptionsFrame;
+  LCheckBox: TCheckBox;
+  LApplicationHandle: HWND;
+  LFailed: Boolean;
+  LSaveCount: Integer;
+begin
+  TestStage := 'LifecycleOptions';
+  TDAIRuntime.Reset;
+  TDAISettings.Reset;
+  TDAIPermissionManager.Reset;
+  LHost := TForm.CreateNew(nil);
+  LFrame := nil;
+  LApplicationHandle := Application.Handle;
+  try
+    LHost.Visible := False;
+    Application.Handle := LHost.Handle;
+    LFrame := TDAIOptionsFrame.Create(nil);
+    LFrame.Visible := False;
+    LFrame.Parent := LHost;
+    LFrame.LoadFromSettings;
+    LCheckBox := LifecycleControl(LFrame);
+    Check(LCheckBox.Caption = 'KI darf die Delphi-IDE starten und beenden', 'Lifecycle checkbox states the permission positively');
+    Check(LCheckBox.Checked, 'Lifecycle permission defaults to enabled');
+    Check(LCheckBox.ShowHint, 'Lifecycle scope is explained in its hint');
+    Check(Pos('alle Delphi-Versionen und Profile', LCheckBox.Hint) > 0, 'Hint explains the shared IDE/profile scope');
+    Check(Pos('Windows-Benutzers', LCheckBox.Hint) > 0, 'Hint explains the Windows-user scope');
+    Check(Pos('Speichern oder Registrieren', LCheckBox.Hint) > 0, 'Hint explains when permission changes are persisted');
+    Check(Pos('Statusabfragen', LCheckBox.Hint) > 0, 'Hint explains that launcher status stays available');
+    LCheckBox.Checked := False;
+    Check(TDAISettings.Instance.AllowIDEStartStop, 'Draft checkbox does not change the effective stored permission');
+    Check(TDAISettings.Instance.PersistedAllowIDEStartStop, 'Draft checkbox does not write the synthetic policy');
+    CheckNoPersistence;
+
+    // DialogClosed(False) never calls StoreToSettings. Destroy its draft frame like a cancelled options dialog.
+    FreeAndNil(LFrame);
+    Check(TDAISettings.Instance.AllowIDEStartStop, 'Cancelling a draft leaves lifecycle permission enabled');
+    Check(TDAISettings.Instance.PolicyWriteCount = 0, 'Cancelling does not write the lifecycle policy');
+    LFrame := TDAIOptionsFrame.Create(nil);
+    LFrame.Visible := False;
+    LFrame.Parent := LHost;
+    LFrame.LoadFromSettings;
+    LCheckBox := LifecycleControl(LFrame);
+    Check(LCheckBox.Checked, 'Reopening after cancellation reloads the saved enabled value');
+    LCheckBox.Checked := False;
+    LFrame.StoreToSettings;
+    Check(not TDAISettings.Instance.PersistedAllowIDEStartStop, 'Accepting options persists disabled permission');
+    Check(TDAISettings.Instance.PolicyWriteCount = 1, 'Explicit checkbox change writes policy once');
+    Check(TDAISettings.Instance.SaveCount = 1, 'Accepted options use the normal settings-save path');
+    Check(not LCheckBox.Checked, 'Accepted checkbox remains disabled');
+    Check(TDAIClientRegistration.RegisterCount = 0, 'Saving lifecycle permission does not register clients');
+    Check(TDAIClientRegistration.UnregisterCount = 0, 'Saving lifecycle permission does not unregister clients');
+    LFrame.StoreToSettings;
+    Check(TDAISettings.Instance.PolicyWriteCount = 1, 'Unchanged options do not rewrite the shared policy');
+
+    // Another IDE can change the shared flag while this options frame stays open.
+    TDAISettings.Instance.PersistedAllowIDEStartStop := True;
+    Check(TDAISettings.Instance.AllowIDEStartStop, 'Settings getter reads an externally changed shared permission');
+    LFrame.StoreToSettings;
+    Check(TDAISettings.Instance.PersistedAllowIDEStartStop, 'Stale unchanged unchecked frame preserves another IDE enable');
+    Check(TDAISettings.Instance.PolicyWriteCount = 1, 'Unchanged stale frame performs no policy write');
+    Check(LCheckBox.Checked, 'Saved frame refreshes checkbox from the current shared policy');
+    TDAISettings.Instance.PersistedAllowIDEStartStop := False;
+    Check(not TDAISettings.Instance.AllowIDEStartStop, 'Settings getter also observes external disable');
+    EditControl(LFrame, True).Text := '7111';
+    LFrame.StoreToSettings;
+    Check(not TDAISettings.Instance.PersistedAllowIDEStartStop, 'Port-only save preserves another IDE disable');
+    Check(TDAISettings.Instance.PolicyWriteCount = 1, 'Port-only save does not write shared policy');
+    Check(not LCheckBox.Checked, 'Port-only save refreshes checkbox to externally disabled state');
+    LCheckBox.Checked := True;
+    LFrame.StoreToSettings;
+    Check(TDAISettings.Instance.PersistedAllowIDEStartStop, 'Explicit checkbox change can enable shared permission');
+    Check(TDAISettings.Instance.PolicyWriteCount = 2, 'Explicit enable writes policy exactly once');
+
+    TDAISettings.Instance.FailSave := True;
+    LCheckBox.Checked := False;
+    LFailed := False;
+    try
+      LFrame.StoreToSettings;
+    except
+      on E: Exception do
+        LFailed := E.Message = 'Synthetic settings-save failure';
+    end;
+    Check(LFailed, 'Actual StoreToSettings propagates the synthetic save failure');
+    Check(TDAISettings.Instance.PersistedAllowIDEStartStop, 'Failed save preserves the effective stored permission');
+    Check(TDAISettings.Instance.AllowIDEStartStop, 'Failed save rolls back the pending in-memory lifecycle change');
+    Check(TDAISettings.Instance.DiscardCount = 1, 'Failed save discards the pending lifecycle change once');
+    Check(TDAISettings.Instance.PolicyWriteCount = 2, 'Failed save never writes policy');
+    TDAISettings.Instance.FailSave := False;
+    TDAISettings.Instance.Save;
+    Check(TDAISettings.Instance.PolicyWriteCount = 2, 'Later unrelated settings save cannot replay the failed draft');
+    LFrame.StoreToSettings;
+    Check(not TDAISettings.Instance.PersistedAllowIDEStartStop, 'User can retry the same unchecked draft after a save failure');
+    Check(TDAISettings.Instance.PolicyWriteCount = 3, 'Successful retry writes policy once');
+
+    LCheckBox.Checked := True;
+    EditControl(LFrame, True).Text := '0';
+    LSaveCount := TDAISettings.Instance.SaveCount;
+    LFailed := False;
+    try
+      LFrame.StoreToSettings;
+    except
+      on E: EArgumentException do
+        LFailed := True;
+    end;
+    Check(LFailed, 'Invalid options fail before lifecycle permission is changed');
+    Check(TDAISettings.Instance.SaveCount = LSaveCount, 'Invalid configuration does not enter settings save');
+    Check(not TDAISettings.Instance.AllowIDEStartStop, 'Invalid configuration leaves effective lifecycle permission disabled');
+    Check(TDAISettings.Instance.PolicyWriteCount = 3, 'Invalid configuration does not write policy');
+    EditControl(LFrame, True).Text := '7112';
+    ButtonControl(LFrame, 'Registrieren').Click;
+    Check(TDAISettings.Instance.PersistedAllowIDEStartStop, 'Explicit Register button also persists the draft lifecycle permission');
+    Check(TDAISettings.Instance.PolicyWriteCount = 4, 'Explicit Register writes a changed lifecycle policy once');
+    Check(TDAIClientRegistration.RegisterCount = 1, 'Only explicit Register invokes client registration');
+    Check(TDAIClientRegistration.UnregisterCount = 0, 'Lifecycle permission never removes launcher registration');
+  finally
+    LFrame.Free;
+    Application.Handle := LApplicationHandle;
+    LHost.Free;
+  end;
+end;
+
 begin
   try
     Application.Initialize;
     Application.ShowMainForm := False;
     RunChecks;
+    CheckLifecycleOptions;
     Writeln('PASS: ', CheckCount, ' native options-frame UI checks');
   except
     on E: Exception do

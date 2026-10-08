@@ -8,6 +8,7 @@ uses
 type
   TDAIIDEControl = class sealed
   public
+    class procedure RequireClosePermission; static;
     class function Control(const AAction: string): TJSONObject; static;
     class procedure ResetDeferredClose; static;
     class function HasDeferredClose: Boolean; static;
@@ -22,6 +23,7 @@ uses
   Vcl.Forms,
   Winapi.Messages,
   Winapi.Windows,
+  h5u.DAI.Lifecycle.Policy,
   h5u.DAI.OTA.Helpers;
 
 type
@@ -58,6 +60,15 @@ begin
   Result := (AThreadId <> 0) and (AProcessId = GetCurrentProcessId);
 end;
 
+class procedure TDAIIDEControl.RequireClosePermission;
+var
+  LReason: string;
+begin
+  if not TDAILifecyclePolicy.ReadAllowed(LReason) then
+    raise EInvalidOperation.Create('Das Starten und Beenden der Delphi-IDE durch KI ist gesperrt (' + LReason +
+      '). Freigabe in den DAI-Optionen prüfen.');
+end;
+
 class function TDAIIDEControl.Control(const AAction: string): TJSONObject;
 var
   LAccepted, LClosePending, LForeground, LMinimized, LVisible: Boolean;
@@ -70,7 +81,10 @@ begin
     (LAction <> 'background') and (LAction <> 'close') then
     raise EArgumentException.Create('action muss minimize, restore, foreground, background oder close sein.');
   if LAction = 'close' then
+  begin
     ResetDeferredClose;
+    RequireClosePermission;
+  end;
   LAccepted := False;
   LClosePending := False;
   LForeground := False;
@@ -106,6 +120,7 @@ begin
         LAccepted := SetWindowPos(LWindow, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE)
       else
       begin
+        RequireClosePermission;
         // No message is posted here: the HTTP server must first write its response.
         LAccepted := True;
         LClosePending := True;
@@ -156,6 +171,7 @@ begin
     TDAIOTA.RunOnMainThread(
       procedure
       var
+        LReason: string;
         LProcessId, LThreadId: Cardinal;
         LWindow: HWND;
       begin
@@ -163,6 +179,8 @@ begin
           Exit;
         if (LWindow <> LDeferred.Window) or (LProcessId <> LDeferred.ProcessId) or
           (LThreadId <> LDeferred.WindowThreadId) then
+          Exit;
+        if not TDAILifecyclePolicy.ReadAllowed(LReason) then
           Exit;
         // Normal close preserves CloseQuery, save prompts and user cancellation.
         LPosted := PostMessage(LWindow, WM_CLOSE, 0, 0);

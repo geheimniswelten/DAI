@@ -6,8 +6,9 @@ vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
 Zum Betrieb benötigt DAI sein zur IDE-Version und -Architektur passendes Package (bei Delphi 13: `DAI370.bpl`) und die mit Delphi installierten Runtime-/Design-Time-Packages.
 Eigene PAS/DCU/DCP-Dateien oder GetIt-Packages werden nicht benötigt. Port, Token, Berechtigungsdateien und die Clientregistrierung bleiben Konfiguration.
 Für Clients mit stdio-Anbindung wird zusätzlich die eigenständige `DAI.McpBridge.exe` neben der BPL bereitgestellt: Sie liest zeilenweise JSON-RPC von
-stdin, sendet authentifizierte HTTP-Anfragen an den MCP-Server der laufenden IDE und gibt Antworten über stdout zurück. Die Brücke startet keine IDE
-und keinen Server; Clients mit direkter HTTP-Anbindung verwenden sie nicht.
+stdin, sendet authentifizierte HTTP-Anfragen an den MCP-Server der laufenden IDE und gibt Antworten über stdout zurück.
+Zusätzlich stellt dieselbe EXE mit `--launcher` den unabhängigen STDIO-Server `dai_start` bereit. Dieser kann Delphi starten, laufende IDEs prüfen
+und eine IDE auch ohne aktives DAI schließen. Die regulären Werkzeuge bleiben unter `dai` über HTTP beziehungsweise die bestehende STDIO-Brücke erreichbar.
 
 Die bestehende Fehlersuche-Toolbar (`sDebugToolBar`) erhält einen DAI-Schalter mit Serverzustand und Port im Tooltip. Ein Klick startet/stoppt den Server;
 das Dropdown öffnet die DAI-Optionen/Berechtigungen oder setzt Sitzungsfreigaben zurück. DAI erstellt dafür keine eigene Toolbar.
@@ -41,6 +42,58 @@ Delphi behält seine Speicherrückfragen und kann das Schließen abbrechen. Das 
 Die Debugger-ToolsAPI liefert die Windows-Prozess-ID, Threads, Debuggerzustand und Speicherzugriff. Fenster und Dialoge des Debuggees werden mit
 `debugger_windows_list` über diese PID und die WinAPI gelesen; direkte fremde VCL-Formobjekte werden nicht angeboten. `Screen.ActiveCustomForm` gehört
 zum VCL-Prozess der IDE. Beim angehaltenen Debuggee können dessen Controltexte wegen blockierter Nachrichtenverarbeitung fehlen.
+
+## Unabhängiger Delphi-Starthelfer
+
+Die lokale Clientregistrierung ergänzt `dai_start` neben `dai`. Der Helfer startet beim Verbinden des MCP-Clients, seine Werkzeuge funktionieren
+auch ohne laufendes Delphi. Registriert wird der vollständige EXE-Pfad der gerade registrierenden IDE; die letzte Registrierung je Client legt
+Version und Win32-/Win64-IDE fest. Ein ausdrücklich verwendetes `-r`-Profil wird gezielt übernommen; andere IDE-Startargumente werden nicht wiederholt.
+
+In den DAI-Optionen ist **„KI darf die Delphi-IDE starten und beenden“** standardmäßig aktiviert. Diese Freigabe gilt gemeinsam für alle
+Delphi-Versionen und Profile desselben Windows-Benutzers. Nach dem Speichern sperrt eine deaktivierte Option `delphi_start`, beide Modi von
+`delphi_stop` und `ide_window_control` mit `action: close`. Andere Fensteraktionen bleiben verfügbar. Die bestehenden DAI-Berechtigungen gelten zusätzlich.
+`dai_start` bleibt registriert; `delphi_status` und `ide_status` liefern unter `lifecycle_control` die aktuelle Freigabe und den Grund.
+Bereits laufende Helfer lesen die gespeicherte Freigabe erneut; dafür ist weder eine erneute Registrierung noch ein Clientneustart erforderlich.
+Der gemeinsame Wert `AllowIDEStartStop` liegt unter `HKEY_CURRENT_USER\Software\DelphiAI\DAI` in der 64-Bit-Registryansicht.
+Fehlender Schlüssel/Wert bedeutet erlaubt; ein ungültiger oder unlesbarer Wert sperrt Start und Beenden. Ein unveränderter Optionsdialog oder
+das Speichern anderer DAI-Einstellungen überschreibt die Freigabe nicht. Abbrechen verwirft ungespeicherte Checkboxänderungen.
+Codex, Claude Code/Desktop, Gemini CLI/Code Assist, Hermes, LM Studio und OpenClaw erhalten den zusätzlichen lokalen STDIO-Eintrag.
+Für Eigent wird eine manuelle Konfiguration beschrieben; für Gemini Desktop gibt es weiterhin keinen verifizierten lokalen MCP-Registrierungsweg.
+OpenClaw benötigt einen lokalen Windows-Gateway, Hermes ein natives Windows-Profil. Der Helfer stellt keinen zusätzlichen HTTP-Listener bereit.
+
+| Werkzeug | Funktion |
+|---|---|
+| `delphi_status` | Helferversion, registrierter DAI-Stand, registrierte IDE und laufende IDEs mit PID, EXE, Architektur, Version und Prozessstartzeit; DAI-Erreichbarkeit und tatsächlich antwortende Version. |
+| `delphi_start` | Registrierte IDE starten oder eine eindeutig passende laufende Instanz wiederverwenden; begrenzt auf DAI-Bereitschaft warten. |
+| `delphi_stop` | Externes normales Schließen mit `mode: close`; ausdrücklich erzwungenes Beenden mit `mode: terminate`; auf das Prozessende warten. |
+
+Zuerst `dai/ide_window_control` mit `action: close` verwenden. Danach mit `dai_start` das Prozessende prüfen. Bei nicht erreichbarem DAI oder einer
+blockierten IDE hilft `delphi_stop`. `close` sendet `WM_CLOSE` an das verifizierte IDE-Hauptfenster und bewahrt Speicherrückfragen sowie Abbruch.
+`terminate` beendet ausschließlich den ausgewählten Prozess hart; ungespeicherte Änderungen gehen verloren. Es gibt keine automatische Eskalation
+bei Timeout, Speicherrückfrage oder Abbruch. Erst `outcome: exited` beziehungsweise `not_running` bestätigt, dass die Zielinstanz beendet ist.
+Ein verschwundener HTTP-Port genügt dafür nicht.
+
+Die Standardauswahl verwendet die eindeutig laufende registrierte EXE. Bei mehreren passenden Instanzen oder besonderen IDE-Profilen zum Beenden
+`process_id` und die unveränderte `creation_time` aus `delphi_status` angeben. Die Prozessstartzeit ist eine dezimale FILETIME-Zeichenfolge.
+Der Helfer hält während Aktion und Wartephase einen geprüften Prozesshandle, damit eine erneut vergebene PID keine andere Instanz trifft.
+Bei einem besonderen Profil wird eine schon laufende Instanz nur wiederverwendet, wenn sie von diesem Helfer mit diesem Profil gestartet wurde.
+Der Helfer beendet keine IDE beim Schließen seiner STDIO-Eingabe und verwirft oder speichert beim normalen Schließen keine Änderungen selbst.
+
+`ide_running` bedeutet, dass mindestens eine IDE-Instanz gefunden wurde; `registered_ide_running` bezeichnet die registrierte EXE.
+`running_ides` enthält die Instanzen der aktuellen Windows-Sitzung. Nicht zugängliche Prozesse werden als unverifiziert gemeldet;
+`enumeration_complete: false` kennzeichnet einen unvollständig feststellbaren Zustand. Eine weitere IDE wird dann nicht blind gestartet.
+Der DAI-Status gilt für den registrierten Endpunkt: `active`, `unreachable`, `unauthorized` oder `unverified`. Der Token wird ausschließlich an einen
+verifizierten Delphi-Listener gesendet. Andere laufende IDEs und ein nicht erreichbarer Endpunkt beweisen nicht, dass DAI insgesamt inaktiv ist.
+Die tatsächliche DAI-Version stammt aus der MCP-Antwort, die registrierte Version bleibt separat. Nach dem Start kann ein zuvor fehlgeschlagener
+HTTP-Eintrag ein erneutes Verbinden des KI-Clients benötigen. Bereits laufendes Delphi mit deaktiviertem DAI wird nicht automatisch neu gestartet.
+
+`timeout_ms` ist optional: Start standardmäßig 20000, Stop 5000, jeweils maximal 30000 Millisekunden. Nach einer Wartezeit kann die IDE weiterhin
+laufen; Status erneut prüfen. Auch ohne Token funktionieren die lokalen Prozesswerkzeuge, die DAI-Bereitschaft kann dann nicht bestätigt werden.
+Manueller Aufruf (der Client kommuniziert anschließend über STDIN/STDOUT):
+
+```text
+DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.25
+```
 
 ## Benennung
 

@@ -11,6 +11,7 @@ uses
   Winapi.Messages,
   Winapi.Windows,
   h5u.DAI.IDE.Control,
+  h5u.DAI.Lifecycle.Policy in 'IDEControlTests\h5u.DAI.Lifecycle.Policy.pas',
   h5u.DAI.OTA.Helpers in 'IDEControlTests\h5u.DAI.OTA.Helpers.pas';
 
 type
@@ -350,10 +351,52 @@ begin
   end;
 end;
 
+procedure CheckLifecycleGate(const AForm: TControlFixture);
+var
+  LDenied, LPosted, LStillPending: Boolean;
+  LResult: TJSONObject;
+begin
+  TDAILifecyclePolicy.Allowed := False;
+  LDenied := False;
+  try
+    LResult := ControlOnWorker('close');
+    LResult.Free;
+  except
+    on E: Exception do
+      LDenied := Pos('disabled_in_dai_options', E.Message) > 0;
+  end;
+  Check(LDenied, 'Lifecycle gate rejects close with an actionable reason');
+  Check(not CloseQueued(AForm.Handle) and (AForm.CloseMessageCount = 0), 'Denied close never posts native WM_CLOSE');
+  LResult := ControlOnWorker('minimize');
+  try
+    Check(LResult.GetValue<Boolean>('accepted') and IsIconic(AForm.Handle), 'Lifecycle gate preserves other window controls');
+  finally
+    LResult.Free;
+  end;
+  LResult := ControlOnWorker('restore');
+  LResult.Free;
+  TDAILifecyclePolicy.Allowed := True;
+  LPosted := True;
+  LStillPending := True;
+  RunWorker(procedure
+    var LPrepared: TJSONObject;
+    begin
+      LPrepared := TDAIIDEControl.Control('close');
+      LPrepared.Free;
+      TDAILifecyclePolicy.Allowed := False;
+      LPosted := TDAIIDEControl.CompleteDeferredClose;
+      LStillPending := TDAIIDEControl.HasDeferredClose;
+    end);
+  Check(not LPosted and not LStillPending, 'Disabling after preparation cancels and consumes deferred close');
+  Check(not CloseQueued(AForm.Handle) and (AForm.CloseMessageCount = 0), 'Fresh policy is checked before native message posting');
+  TDAILifecyclePolicy.Allowed := True;
+end;
+
 var
   Fixture: TControlFixture;
 begin
   try
+    TDAILifecyclePolicy.Allowed := True;
     Application.Initialize;
     Application.ShowMainForm := False;
     CheckUnavailable;
@@ -363,6 +406,7 @@ begin
       CheckActions(Fixture);
       CheckThreadIsolation(Fixture);
       CheckStaleHandle(Fixture);
+      CheckLifecycleGate(Fixture);
       CheckDeferredClose(Fixture, False);
       CheckDeferredClose(Fixture, True);
       Writeln('PASS: ', CheckCount, ' native IDE control/deferred close checks');

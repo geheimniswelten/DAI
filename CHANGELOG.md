@@ -7,6 +7,23 @@
 - Der HTTP-Server erfasst MCP-Zugriffe mit einem atomaren monotonen Zeitstempel. Der bestehende Statustimer liest diesen ohne Worker-/UI-Aufrufe; Health- und abgewiesene Transportanfragen zählen nicht.
 - Isolierte Tests prüfen Zeitgrenzen, Vorrang der Grundzustände, Aktualisierung nach Popupende sowie alle fünf Symbole in fünf Auflösungen.
 
+## 1.2.25
+
+- Die DAI-Option „KI darf die Delphi-IDE starten und beenden“ ist standardmäßig aktiviert und gilt gemeinsam für alle Delphi-Versionen und Profile des Windows-Benutzers.
+- Eine deaktivierte Freigabe sperrt IDE-Start, normales Schließen und erzwungenes Beenden über den Helfer sowie das normale Schließen über DAI. Die Freigabe wird bei jedem Aufruf und unmittelbar vor der Prozessaktion neu gelesen.
+- dai_start bleibt registriert; delphi_status und ide_status melden die Freigabe und den Sperrgrund. Änderungen brauchen keine erneute Clientregistrierung.
+- Unveränderte Optionsdialoge und andere Settings-Speicherungen überschreiben keine Freigabe aus einer parallel laufenden IDE. Ungültige oder unlesbare Freigabewerte sperren Prozessaktionen.
+- Isolierte Tests prüfen nachträgliches Sperren und Freigeben eines laufenden Helfers sowie die Sperre vor verzögertem WM_CLOSE, ohne die echte Benutzerfreigabe zu ändern.
+
+## 1.2.24
+
+- Die Bridge bietet mit --launcher den eigenständigen STDIO-MCP-Server dai_start; Initialisierung und Werkzeugliste funktionieren ohne laufende IDE.
+- delphi_start startet die bei der letzten Clientregistrierung hinterlegte bds.exe und wartet begrenzt auf DAI-Bereitschaft.
+- delphi_status trennt Helferversion, registrierten DAI-Stand, IDE-Prozesse mit Version und Architektur sowie den tatsächlich antwortenden DAI-Server.
+- delphi_stop bietet normales WM_CLOSE und ausdrücklich gewähltes TerminateProcess; Prozessidentität und tatsächliches Ende werden geprüft, ohne automatische Eskalation.
+- Die Clientregistrierung ergänzt dai_start und schützt fremde oder veränderte Einträge. Exakter Host-EXE-Pfad und besondere IDE-Profile werden übernommen.
+- Isolierte Tests prüfen beide Architekturen, Offline-MCP, Prozessstart und normales/abgebrochenes/erzwungenes Schließen ohne Eingriffe in eine echte Delphi-IDE.
+
 ## 1.2.23
 
 - Das Arbeitsverzeichnis heißt Work; Testskript und Git-Ignore verwenden dieselbe Schreibweise.

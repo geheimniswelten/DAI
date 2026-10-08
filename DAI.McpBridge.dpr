@@ -7,7 +7,54 @@ uses
   System.JSON,
   System.Net.HttpClient,
   System.Net.URLClient,
-  System.SysUtils;
+  System.SysUtils,
+  h5u.DAI.Consts in 'Source\h5u.DAI.Consts.pas',
+  h5u.DAI.Lifecycle.Policy in 'Source\h5u.DAI.Lifecycle.Policy.pas',
+  h5u.DAI.WinAPI.TCP in 'Source\h5u.DAI.WinAPI.TCP.pas',
+  h5u.DAI.Launcher.Processes in 'Source\h5u.DAI.Launcher.Processes.pas',
+  h5u.DAI.Launcher in 'Source\h5u.DAI.Launcher.pas',
+  h5u.DAI.Launcher.Protocol in 'Source\h5u.DAI.Launcher.Protocol.pas';
+
+procedure RunLauncher;
+var
+  LInput: string;
+  LProtocol: TDAILauncherProtocol;
+  LRequest: TJSONValue;
+  LResponse: TJSONObject;
+begin
+  LProtocol := TDAILauncherProtocol.Create;
+  try
+    while not Eof(Input) do
+    begin
+      Readln(Input, LInput);
+      if LInput.Trim = '' then
+        Continue;
+      LRequest := nil;
+      try
+        try
+          LRequest := TJSONObject.ParseJSONValue(LInput);
+        except
+          on E: EJSONException do
+            LRequest := nil;
+        end;
+        LResponse := LProtocol.Handle(LRequest);
+        try
+          if Assigned(LResponse) then
+          begin
+            Writeln(Output, LResponse.ToJSON);
+            Flush(Output);
+          end;
+        finally
+          LResponse.Free;
+        end;
+      finally
+        LRequest.Free;
+      end;
+    end;
+  finally
+    LProtocol.Free;
+  end;
+end;
 
 function FailureResponse(const ARequest: TJSONObject; const AMessage: string): string;
 var
@@ -188,7 +235,10 @@ begin
   SetTextCodePage(Output, 65001);
   SetTextCodePage(ErrOutput, 65001);
   try
-    Run;
+    if ParamStr(1) = '--launcher' then
+      RunLauncher
+    else
+      Run;
   except
     on E: Exception do
     begin

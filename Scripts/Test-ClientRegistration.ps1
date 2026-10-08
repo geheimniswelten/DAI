@@ -15,12 +15,13 @@ if ([string]::IsNullOrWhiteSpace($Compiler)) {
 }
 $testProjectRoot = Split-Path -Parent $PSScriptRoot
 $testRunRoot = Join-Path $testProjectRoot ('Work\client-registration-tests-' + [Guid]::NewGuid().ToString('N'))
-$testBin = Join-Path $testRunRoot 'bin'
+$testBin = Join-Path $testProjectRoot ('Build\Tests-ClientRegistration-' + $Platform)
+$testDcu = Join-Path $testProjectRoot ('Build\Tests-ClientRegistration-' + $Platform + '-Dcu')
 $testFixtures = Join-Path $testRunRoot 'fixtures'
-New-Item -ItemType Directory -Path $testBin, $testFixtures -Force | Out-Null
+New-Item -ItemType Directory -Path $testBin, $testDcu, $testFixtures -Force | Out-Null
 $testUnitPath = (Join-Path $PSScriptRoot 'RegistrationTests') + ';' + (Join-Path $testProjectRoot 'Source') +
     ';' + (Join-Path $BdsRoot "lib\$Platform\release")
-$testCompilerArgs = @('-B', '-Q', ('-E' + $testBin), ('-N0' + $testBin), ('-U' + $testUnitPath),
+$testCompilerArgs = @('-B', '-Q', ('-E' + $testBin), ('-N0' + $testDcu), ('-U' + $testUnitPath),
   (Join-Path $PSScriptRoot 'Test-ClientRegistration.dpr'))
 & $Compiler @testCompilerArgs
 if ($LASTEXITCODE -ne 0) { throw 'Isolated Delphi registration test compilation failed.' }

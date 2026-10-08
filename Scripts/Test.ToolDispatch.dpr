@@ -4,6 +4,7 @@
 {$R 'dai-test-as-invoker.res'}
 
 uses
+  System.Classes,
   System.JSON,
   System.SysUtils,
   DAI.ToolDispatch.ProductionBranch,
@@ -186,9 +187,39 @@ begin
   end;
 end;
 
+procedure TestLifecycleDenial;
+var
+  LArguments, LResult: TJSONObject;
+  LDenied: Boolean;
+begin
+  TDAIPermissionManager.Instance.Reset(True, True);
+  TDAIIDEControl.Reset;
+  TDAIIDEControl.LifecycleAllowed := False;
+  LArguments := TJSONObject.Create;
+  LResult := nil;
+  LDenied := False;
+  try
+    LArguments.AddPair('action', ' CLOSE ');
+    try
+      LResult := DispatchWindowControl('ide_window_control', LArguments, GContext);
+    except
+      on E: EInvalidOperation do
+        LDenied := True;
+    end;
+    Check(LDenied and not Assigned(LResult), 'Global lifecycle denial takes precedence over permission grants');
+    Check(Length(TDAIPermissionManager.Instance.Requests) = 0, 'Disabled lifecycle does not display permission prompts');
+    Check((TDAIIDEControl.ControlCalls = 0) and (TDAIIDEControl.DeferredCloseCalls = 0), 'Disabled lifecycle never dispatches close');
+  finally
+    LResult.Free;
+    LArguments.Free;
+    TDAIIDEControl.Reset;
+  end;
+end;
+
 begin
   try
     RunTests;
+    TestLifecycleDenial;
     Writeln('PASS ToolDispatch: ', GChecks, ' assertions');
   except
     on E: Exception do

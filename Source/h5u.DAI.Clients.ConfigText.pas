@@ -420,7 +420,7 @@ begin
   end;
 end;
 
-function YamlRanges(const AText: string; out AHeaderStart, AHeaderEnd, AEntryStart, AEntryEnd, ASectionEnd, AIndent: Integer): Boolean;
+function YamlRanges(const AText, AServerName: string; out AHeaderStart, AHeaderEnd, AEntryStart, AEntryEnd, ASectionEnd, AIndent: Integer): Boolean;
 var
   LLines: TStringList;
   LRoots: TDictionary<string, Boolean>;
@@ -531,7 +531,7 @@ begin
             LServers.Add(LRootKey, True);
             if LInEntry then
               AEntryEnd := LOffset;
-            LInEntry := LRootKey = 'dai';
+            LInEntry := LRootKey = AServerName;
             if LInEntry then
               AEntryStart := LOffset;
           end;
@@ -553,7 +553,7 @@ begin
   end;
 end;
 
-function YamlMerge(const AText, AEntry: string; ARemove: Boolean): string;
+function YamlMerge(const AText, AEntry, AServerName: string; ARemove: Boolean): string;
 var
   LHeaderStart, LHeaderEnd, LEntryStart, LEntryEnd, LSectionEnd, LIndent: Integer;
   LExists: Boolean;
@@ -566,7 +566,7 @@ var
   LInsertionPosition: Integer;
 begin
   Result := AText;
-  LExists := YamlRanges(AText, LHeaderStart, LHeaderEnd, LEntryStart, LEntryEnd, LSectionEnd, LIndent);
+  LExists := YamlRanges(AText, AServerName, LHeaderStart, LHeaderEnd, LEntryStart, LEntryEnd, LSectionEnd, LIndent);
   if ARemove and not LExists then
     Exit;
   if LExists then
@@ -615,7 +615,7 @@ begin
       Result := Result + LEndOfLine;
     Result := Result + 'mcp_servers:' + LEndOfLine + LAddition;
   end;
-  YamlRanges(Result, LHeaderStart, LHeaderEnd, LEntryStart, LEntryEnd, LSectionEnd, LIndent);
+  YamlRanges(Result, AServerName, LHeaderStart, LHeaderEnd, LEntryStart, LEntryEnd, LSectionEnd, LIndent);
 end;
 
 class function TDAIClientConfigText.ExtractEntry(const AText, AFormat: string; const AKeys: TArray<string>; out AEntry: string): Boolean;
@@ -627,7 +627,10 @@ begin
   AEntry := '';
   if SameText(AFormat, 'yaml') then
   begin
-    Result := YamlRanges(AText, LHeaderStart, LHeaderEnd, LEntryStart, LEntryEnd, LSectionEnd, LIndent);
+    if (Length(AKeys) <> 2) or (AKeys[0] <> 'mcp_servers') or
+      not TRegEx.IsMatch(AKeys[1], '^[a-zA-Z_][a-zA-Z0-9_-]*$') then
+      Conflict('Der YAML-MCP-Konfigurationspfad wird nicht unterstützt.');
+    Result := YamlRanges(AText, AKeys[1], LHeaderStart, LHeaderEnd, LEntryStart, LEntryEnd, LSectionEnd, LIndent);
     if Result then
       AEntry := Trim(Copy(AText, LEntryStart, LEntryEnd - LEntryStart));
     Exit;
@@ -648,7 +651,12 @@ begin
   if Length(AKeys) = 0 then
     Conflict('Der MCP-Konfigurationspfad fehlt.');
   if SameText(AFormat, 'yaml') then
-    Result := YamlMerge(AText, AEntry, ARemove)
+  begin
+    if (Length(AKeys) <> 2) or (AKeys[0] <> 'mcp_servers') or
+      not TRegEx.IsMatch(AKeys[1], '^[a-zA-Z_][a-zA-Z0-9_-]*$') then
+      Conflict('Der YAML-MCP-Konfigurationspfad wird nicht unterstützt.');
+    Result := YamlMerge(AText, AEntry, AKeys[1], ARemove);
+  end
   else if SameText(AFormat, 'json') or SameText(AFormat, 'jsonc') or SameText(AFormat, 'json5') then
     Result := JsonMerge(AText, AFormat, AKeys, AEntry, ARemove)
   else

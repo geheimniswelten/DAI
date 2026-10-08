@@ -143,6 +143,10 @@
         <DCCReference Include="Source\h5u.DAI.Permissions.Dialog.pas"/>
         <DCCReference Include="Source\h5u.DAI.Permissions.Manager.pas"/>
         <DCCReference Include="Source\h5u.DAI.Permissions.Store.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Launcher.Processes.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Launcher.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Launcher.Protocol.pas"/>
+        <DCCReference Include="Source\h5u.DAI.Lifecycle.Policy.pas"/>
         <DCCReference Include="Source\h5u.DAI.Process.pas"/>
         <DCCReference Include="Source\h5u.DAI.Register.pas"/>
         <DCCReference Include="Source\h5u.DAI.Runtime.pas"/>

@@ -14,6 +14,8 @@ type
   TDAIOptionsFrame = class(TFrame)
   private
     FServerEnabledCheckBox: TCheckBox;
+    FAllowIDEStartStopCheckBox: TCheckBox;
+    FLoadedAllowIDEStartStop: Boolean;
     FServerStatusLabel: TLabel;
     FStartServerButton: TButton;
     FStopServerButton: TButton;
@@ -110,6 +112,7 @@ constructor TDAIOptionsFrame.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   AutoScroll := False;
+  FLoadedAllowIDEStartStop := True;
   BuildControls;
 end;
 
@@ -146,6 +149,17 @@ begin
   FServerEnabledCheckBox.Top := LTop;
   FServerEnabledCheckBox.Caption := 'MCP-Server beim IDE-Start automatisch starten';
   FServerEnabledCheckBox.Width := 540;
+  Inc(LTop, 32);
+
+  FAllowIDEStartStopCheckBox := TCheckBox.Create(Self);
+  FAllowIDEStartStopCheckBox.Parent := Self;
+  FAllowIDEStartStopCheckBox.Name := 'DAIAllowIDEStartStopCheckBox';
+  FAllowIDEStartStopCheckBox.SetBounds(24, LTop, 650, 24);
+  FAllowIDEStartStopCheckBox.Caption := 'KI darf die Delphi-IDE starten und beenden';
+  FAllowIDEStartStopCheckBox.Checked := True;
+  FAllowIDEStartStopCheckBox.Hint := 'Gilt für alle Delphi-Versionen und Profile dieses Windows-Benutzers. ' +
+    'Wird beim Speichern oder Registrieren wirksam. dai_start bleibt für Statusabfragen registriert.';
+  FAllowIDEStartStopCheckBox.ShowHint := True;
   Inc(LTop, 32);
 
   NewLabel(Self, 'Port', 24, LTop + 4);
@@ -457,6 +471,8 @@ end;
 procedure TDAIOptionsFrame.LoadFromSettings;
 begin
   FServerEnabledCheckBox.Checked := TDAISettings.Instance.Enabled;
+  FLoadedAllowIDEStartStop := TDAISettings.Instance.AllowIDEStartStop;
+  FAllowIDEStartStopCheckBox.Checked := FLoadedAllowIDEStartStop;
   FLoggingCheckBox.Checked := TDAISettings.Instance.LogAccessPoints;
   FPortEdit.Text := IntToStr(TDAISettings.Instance.Port);
   FTokenEdit.Text := TDAISettings.Instance.Token;
@@ -718,7 +734,16 @@ begin
   TDAISettings.Instance.Port := LPort;
   TDAISettings.Instance.Token := LToken;
   TDAISettings.Instance.CustomReadDirectories.Assign(FDirectoriesMemo.Lines);
-  TDAISettings.Instance.Save;
+  if FAllowIDEStartStopCheckBox.Checked <> FLoadedAllowIDEStartStop then
+    TDAISettings.Instance.AllowIDEStartStop := FAllowIDEStartStopCheckBox.Checked;
+  try
+    TDAISettings.Instance.Save;
+  except
+    TDAISettings.Instance.DiscardLifecycleChange;
+    raise;
+  end;
+  FLoadedAllowIDEStartStop := TDAISettings.Instance.AllowIDEStartStop;
+  FAllowIDEStartStopCheckBox.Checked := FLoadedAllowIDEStartStop;
 
   LContext := PermissionContext;
   for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do

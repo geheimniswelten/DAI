@@ -28,6 +28,7 @@ uses
   Winapi.Windows,
   h5u.DAI.Consts,
   h5u.DAI.IDE.Control,
+  h5u.DAI.Lifecycle.Policy,
   h5u.DAI.Runtime,
   h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
@@ -398,8 +399,10 @@ end;
 
 function ToolStatus(const AContext: TDAIRequestContext): TJSONObject;
 var
-  LPermissions: TJSONObject;
+  LPermissions, LLifecycle: TJSONObject;
   LCategory: TDAIPermissionCategory;
+  LAllowed: Boolean;
+  LReason: string;
 begin
   LPermissions := TJSONObject.Create;
   for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
@@ -428,6 +431,12 @@ begin
   Result.AddPair('thread_id', AContext.ThreadId);
   Result.AddPair('transport_session_id', AContext.TransportSessionId);
   Result.AddPair('permissions', LPermissions);
+  LAllowed := TDAILifecyclePolicy.ReadAllowed(LReason);
+  LLifecycle := TJSONObject.Create;
+  Result.AddPair('lifecycle_control', LLifecycle);
+  LLifecycle.AddPair('allowed', TJSONBool.Create(LAllowed));
+  LLifecycle.AddPair('reason', LReason);
+  LLifecycle.AddPair('scope', 'windows_user');
 end;
 
 function ContextForArguments(const AArguments: TJSONObject; const AContext: TDAIRequestContext): TDAIRequestContext;
@@ -569,6 +578,8 @@ begin
   if SameText(AName, 'ide_window_control') then
   begin
     LAction := LowerCase(Trim(ArgumentString(AArguments, 'action')));
+    if LAction = 'close' then
+      TDAIIDEControl.RequireClosePermission;
     RequirePermission(pcEditInsideIDE, 'Delphi-IDE-Fenster steuern: ' + LAction, '', LContext);
     if LAction = 'close' then
       RequirePermission(pcExecute, 'Delphi-IDE normal schließen', '', LContext);

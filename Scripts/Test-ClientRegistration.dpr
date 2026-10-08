@@ -88,6 +88,14 @@ begin
   Check(Pos('    url: "http://else"', LNext) > 0, 'YAML foreign entry retained');
   Check(Pos('features:' + #13#10 + '  tools: true', LNext) > 0, 'YAML following root retained');
   Check(TDAIClientConfigText.ExtractEntry(LNext, 'yaml', ['mcp_servers','dai'], LEntry), 'YAML insertion');
+  LNext := TDAIClientConfigText.Merge(LNext, 'yaml', ['mcp_servers','dai_start'],
+    'dai_start:' + #10 + '  command: "launcher.exe"' + #10 + '  args: ["--launcher"]', False);
+  Check(TDAIClientConfigText.ExtractEntry(LNext, 'yaml', ['mcp_servers','dai_start'], LEntry) and
+    (Pos('launcher.exe', LEntry) > 0), 'YAML launcher independent insertion');
+  Check(TDAIClientConfigText.ExtractEntry(LNext, 'yaml', ['mcp_servers','dai'], LEntry) and
+    (Pos('http://local', LEntry) > 0), 'YAML HTTP retained beside launcher');
+  LNext := TDAIClientConfigText.Merge(LNext, 'yaml', ['mcp_servers','dai_start'], '', True);
+  Check(not TDAIClientConfigText.ExtractEntry(LNext, 'yaml', ['mcp_servers','dai_start'], LEntry), 'YAML launcher independent removal');
   LNext := TDAIClientConfigText.Merge(LNext, 'yaml', ['mcp_servers','dai'], '', True);
   Check(not TDAIClientConfigText.ExtractEntry(LNext, 'yaml', ['mcp_servers','dai'], LEntry), 'YAML removal');
   LNext := TDAIClientConfigText.Merge('mcp_servers: {}' + #10, 'yaml', ['mcp_servers','dai'], 'dai:' + #10 + '  url: "x"', False);
@@ -192,6 +200,13 @@ var
   LText: string;
   LBridge: string;
 begin
+  LBridge := TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'DAI.McpBridge.exe');
+  if TFile.Exists(LBridge) then
+  begin
+    if TFile.ReadAllText(LBridge, TEncoding.UTF8) <> 'test fixture, never executed' then
+      raise Exception.Create('The isolated test bridge fixture path is occupied by a foreign file.');
+    TFile.Delete(LBridge);
+  end;
   SetEnvironmentVariable('USERPROFILE', PChar(GRoot));
   SetEnvironmentVariable('APPDATA', PChar(TPath.Combine(GRoot, 'AppData\Roaming')));
   SetEnvironmentVariable('LOCALAPPDATA', PChar(TPath.Combine(GRoot, 'AppData\Local')));
@@ -305,6 +320,348 @@ begin
     Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = '{}', 'foreign sidecar blocks config write');
   finally
     LJson.Free;
+  end;
+end;
+
+procedure LauncherRegistrationTests;
+var
+  LJson: TJSONObject;
+  LLauncher: TJSONObject;
+  LValue: TJSONValue;
+  LArguments: TJSONArray;
+  LExpectedArguments: TArray<string>;
+  LText: string;
+  LEntry: string;
+  LPath: string;
+  LClient: string;
+  LFormat: string;
+  LKeys: TArray<string>;
+  LIndex: Integer;
+  LBuffer: array[0..32767] of Char;
+  LHostLength: DWORD;
+  LProfileConflict: Boolean;
+  LOwnership: TJSONObject;
+  LOwnershipText: string;
+  LInvalidOwnership: string;
+  LOldLmStudioPath: string;
+  LOldCodexHome: string;
+  LOldPort: Integer;
+  LOldToken: string;
+  LBridge: string;
+begin
+  LHostLength := GetModuleFileName(0, LBuffer, Length(LBuffer));
+  Check((LHostLength > 0) and (TDAICodexRegistration.HostIDEExecutable = string(LBuffer)), 'launcher host is process EXE, not package');
+  Check(TDAICodexRegistration.IDEProfileFromCommandLine('"C:\Studio\bin\bds.exe" -pDelphi project.dproj') = '',
+    'default IDE has no inferred profile');
+  Check(TDAICodexRegistration.IDEProfileFromCommandLine('"C:\Studio\bin\bds.exe" -rDAITest -pDelphi') = 'DAITest',
+    'attached explicit IDE profile');
+  Check(TDAICodexRegistration.IDEProfileFromCommandLine('"C:\Studio\bin\bds.exe" -r "Test Profile" project.dproj') = 'Test Profile',
+    'quoted separate IDE profile');
+  Check(TDAICodexRegistration.IDEProfileFromCommandLine('bds.exe -RCaseProfile') = 'CaseProfile',
+    'profile value casing retained');
+  LProfileConflict := False;
+  try
+    TDAICodexRegistration.IDEProfileFromCommandLine('bds.exe -rOne -rTwo');
+  except
+    on E: EInvalidOperation do LProfileConflict := True;
+  end;
+  Check(LProfileConflict, 'ambiguous explicit profiles refused');
+  LProfileConflict := False;
+  try
+    TDAICodexRegistration.IDEProfileFromCommandLine('bds.exe -r -pDelphi');
+  except
+    on E: EInvalidOperation do LProfileConflict := True;
+  end;
+  Check(LProfileConflict, 'missing explicit profile refused');
+  LExpectedArguments := TDAICodexRegistration.LauncherArguments;
+  Check((Length(LExpectedArguments) = 7) and (LExpectedArguments[0] = '--launcher') and
+    (LExpectedArguments[3] = '--ide') and (LExpectedArguments[4] = string(LBuffer)) and
+    (LExpectedArguments[5] = '--dai-version') and (LExpectedArguments[6] = CDAIVersion),
+    'launcher exact host/version arguments');
+  for LClient in ['claude-code','claude-desktop','gemini','hermes','lm-studio','openclaw'] do
+  begin
+    if LClient = 'claude-code' then LPath := TPath.Combine(GRoot, '.claude\.claude.json')
+    else if LClient = 'claude-desktop' then LPath := TPath.Combine(GRoot, 'Claude\claude_desktop_config.json')
+    else if LClient = 'gemini' then LPath := TPath.Combine(GRoot, '.gemini\settings.json')
+    else if LClient = 'hermes' then LPath := TPath.Combine(GRoot, '.hermes\config.yaml')
+    else if LClient = 'lm-studio' then LPath := TPath.Combine(GRoot, '.lmstudio\mcp.json')
+    else LPath := TPath.Combine(GRoot, '.openclaw\openclaw.json');
+    // Reset only isolated test fixtures left by preceding conflict tests.
+    TFile.Delete(LPath);
+    TFile.Delete(LPath + '.dai-registration.json');
+    LFormat := 'json';
+    LKeys := ['mcpServers','dai_start'];
+    if LClient = 'hermes' then
+    begin
+      LFormat := 'yaml';
+      LKeys := ['mcp_servers','dai_start'];
+    end
+    else if LClient = 'openclaw' then
+    begin
+      LFormat := 'json5';
+      LKeys := ['mcp','servers','dai_start'];
+    end;
+    LJson := TDAIClientRegistration.RegisterFiles(LClient);
+    try
+      Check(ClientStatus(LJson) = 'configured', LClient + ' launcher configured');
+      Check(Pos(TDAISettings.Instance.Token, LJson.ToJSON) = 0, LClient + ' launcher status token redacted');
+    finally
+      LJson.Free;
+    end;
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    Check(TDAIClientConfigText.ExtractEntry(LText, LFormat, LKeys, LEntry), LClient + ' dai_start exists');
+    Check((Pos('--launcher', LEntry) > 0) and (Pos('DAI_MCP_TOKEN', LEntry) > 0) and
+      (Pos('Authorization', LEntry) = 0), LClient + ' launcher token environment only');
+    if LFormat <> 'yaml' then
+    begin
+      LValue := TJSONObject.ParseJSONValue(LEntry);
+      try
+        Check(LValue is TJSONObject, LClient + ' launcher JSON object');
+        LLauncher := TJSONObject(LValue);
+        Check(LLauncher.GetValue<string>('command') = TDAICodexRegistration.BridgeFileName, LClient + ' adjacent bridge path');
+        LArguments := LLauncher.GetValue<TJSONArray>('args');
+        Check(LArguments.Count = Length(LExpectedArguments), LClient + ' launcher argument count');
+        for LIndex := 0 to LArguments.Count - 1 do
+          Check(LArguments.Items[LIndex].Value = LExpectedArguments[LIndex], LClient + ' launcher argument ' + IntToStr(LIndex));
+        Check(LLauncher.GetValue<TJSONObject>('env').GetValue<string>('DAI_MCP_TOKEN') = TDAISettings.Instance.Token,
+          LClient + ' launcher token environment');
+        if LClient = 'claude-code' then
+          Check(LLauncher.GetValue<string>('type') = 'stdio', 'Claude Code launcher transport');
+        if LClient = 'openclaw' then
+          Check(LLauncher.GetValue<string>('transport') = 'stdio', 'OpenClaw launcher transport');
+      finally
+        LValue.Free;
+      end;
+    end;
+    LKeys[High(LKeys)] := 'dai';
+    Check(TDAIClientConfigText.ExtractEntry(LText, LFormat, LKeys, LEntry), LClient + ' original dai retained');
+    if LClient = 'claude-desktop' then
+      Check((Pos('--launcher', LEntry) = 0) and (Pos('--url', LEntry) > 0), 'Desktop dai remains plain STDIO bridge')
+    else
+      Check((Pos('7331', LEntry) > 0) and (Pos('Authorization', LEntry) > 0), LClient + ' dai remains HTTP');
+    LJson := TDAIClientRegistration.UnregisterFiles(LClient);
+    try
+      Check(ClientStatus(LJson) = 'removed', LClient + ' both entries removed');
+    finally
+      LJson.Free;
+    end;
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    Check(not TDAIClientConfigText.ExtractEntry(LText, LFormat, LKeys, LEntry), LClient + ' dai removal');
+    LKeys[High(LKeys)] := 'dai_start';
+    Check(not TDAIClientConfigText.ExtractEntry(LText, LFormat, LKeys, LEntry), LClient + ' launcher removal');
+  end;
+  LOldLmStudioPath := GetEnvironmentVariable('DAI_LM_STUDIO_CONFIG');
+  LOldCodexHome := GetEnvironmentVariable('CODEX_HOME');
+  LOldPort := TDAISettings.Instance.Port;
+  LOldToken := TDAISettings.Instance.Token;
+  try
+    LPath := TPath.Combine(GRoot, 'launcher-migration\mcp.json');
+    SetEnvironmentVariable('DAI_LM_STUDIO_CONFIG', PChar(LPath));
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    LJson.Free;
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    LText := TDAIClientConfigText.Merge(LText, 'json', ['mcpServers','dai_start'], '', True);
+    TFile.WriteAllText(LPath, LText, TEncoding.UTF8);
+    LOwnership := TJSONObject.ParseJSONValue(TFile.ReadAllText(LPath + '.dai-registration.json', TEncoding.UTF8)) as TJSONObject;
+    try
+      LOwnership.RemovePair('launcher_entry_sha256').Free;
+      LOwnership.RemovePair('launcher_pending_sha256').Free;
+      LOwnershipText := LOwnership.ToJSON + sLineBreak;
+      TFile.WriteAllText(LPath + '.dai-registration.json', LOwnershipText, TEncoding.UTF8);
+    finally
+      LOwnership.Free;
+    end;
+    LJson := TDAIClientRegistration.Status('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'needs_update', 'v1 sidecar with dai only needs launcher migration');
+    finally
+      LJson.Free;
+    end;
+    LText := TDAIClientConfigText.Merge(LText, 'json', ['mcpServers','dai_start'], '{"command":"foreign-launcher"}', False);
+    TFile.WriteAllText(LPath, LText, TEncoding.UTF8);
+    for LClient in ['register','unregister'] do
+    begin
+      if LClient = 'register' then LJson := TDAIClientRegistration.RegisterFiles('lm-studio')
+      else LJson := TDAIClientRegistration.UnregisterFiles('lm-studio');
+      try
+        Check(ClientStatus(LJson) = 'conflict', 'v1 sidecar never owns foreign launcher ' + LClient);
+        Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'foreign launcher blocks partial ' + LClient);
+        Check(TFile.ReadAllText(LPath + '.dai-registration.json', TEncoding.UTF8) = LOwnershipText,
+          'foreign launcher preserves ownership ' + LClient);
+      finally
+        LJson.Free;
+      end;
+    end;
+    LText := TDAIClientConfigText.Merge(LText, 'json', ['mcpServers','dai_start'], '', True);
+    TFile.WriteAllText(LPath, LText, TEncoding.UTF8);
+    TDAIClientConfigText.ExtractEntry(LText, 'json', ['mcpServers','dai'], LEntry);
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'configured', 'v1 sidecar migrates without taking foreign entry');
+    finally
+      LJson.Free;
+    end;
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    Check(Pos(LEntry, LText) > 0, 'v1 migration preserves original HTTP entry');
+    TDAISettings.Instance.Port := 7456;
+    TDAISettings.Instance.Token := 'second-test-token';
+    LJson := TDAIClientRegistration.Status('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'needs_update', 'changed target needs update');
+    finally
+      LJson.Free;
+    end;
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'configured', 'last explicit registration wins');
+    finally
+      LJson.Free;
+    end;
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    TDAIClientConfigText.ExtractEntry(LText, 'json', ['mcpServers','dai_start'], LEntry);
+    Check((Pos('7456', LEntry) > 0) and (Pos('second-test-token', LEntry) > 0), 'launcher receives new port/token');
+    TDAIClientConfigText.ExtractEntry(LText, 'json', ['mcpServers','dai'], LEntry);
+    Check((Pos('7456', LEntry) > 0) and (Pos('second-test-token', LEntry) > 0), 'HTTP receives new port/token');
+    LOwnership := TJSONObject.ParseJSONValue(TFile.ReadAllText(LPath + '.dai-registration.json', TEncoding.UTF8)) as TJSONObject;
+    try
+      LEntry := LOwnership.GetValue<string>('entry_sha256');
+      LOwnership.RemovePair('pending_sha256').Free;
+      LOwnership.AddPair('pending_sha256', LEntry);
+      LOwnership.RemovePair('entry_sha256').Free;
+      LOwnership.AddPair('entry_sha256', StringOfChar('a', 64));
+      LEntry := LOwnership.GetValue<string>('launcher_entry_sha256');
+      LOwnership.RemovePair('launcher_pending_sha256').Free;
+      LOwnership.AddPair('launcher_pending_sha256', LEntry);
+      LOwnership.RemovePair('launcher_entry_sha256').Free;
+      LOwnership.AddPair('launcher_entry_sha256', StringOfChar('b', 64));
+      LOwnership.RemovePair('state').Free;
+      LOwnership.AddPair('state', 'pending');
+      TFile.WriteAllText(LPath + '.dai-registration.json', LOwnership.ToJSON, TEncoding.UTF8);
+    finally
+      LOwnership.Free;
+    end;
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'unchanged', 'both pending hashes recover committed config');
+      Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'pending recovery preserves config bytes');
+    finally
+      LJson.Free;
+    end;
+    LOwnership := TJSONObject.ParseJSONValue(TFile.ReadAllText(LPath + '.dai-registration.json', TEncoding.UTF8)) as TJSONObject;
+    try
+      Check((LOwnership.GetValue<string>('state') = 'registered') and
+        (LOwnership.GetValue<string>('pending_sha256') = '') and
+        (LOwnership.GetValue<string>('launcher_pending_sha256') = ''), 'pending recovery closes both ownership records');
+    finally
+      LOwnership.Free;
+    end;
+    LOwnershipText := TFile.ReadAllText(LPath + '.dai-registration.json', TEncoding.UTF8);
+    LOwnership := TJSONObject.ParseJSONValue(LOwnershipText) as TJSONObject;
+    try
+      LOwnership.RemovePair('launcher_entry_sha256').Free;
+      LOwnership.AddPair('launcher_entry_sha256', TJSONNumber.Create(7));
+      LInvalidOwnership := LOwnership.ToJSON;
+      TFile.WriteAllText(LPath + '.dai-registration.json', LInvalidOwnership, TEncoding.UTF8);
+    finally
+      LOwnership.Free;
+    end;
+    TFile.WriteAllText(LPath, TDAIClientConfigText.Merge(LText, 'json', ['mcpServers','dai_start'], '', True), TEncoding.UTF8);
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'conflict', 'invalid typed launcher ownership refused');
+      Check(TFile.ReadAllText(LPath + '.dai-registration.json', TEncoding.UTF8) = LInvalidOwnership,
+        'invalid launcher ownership exact bytes retained');
+      Check(not TDAIClientConfigText.ExtractEntry(TFile.ReadAllText(LPath, TEncoding.UTF8), 'json',
+        ['mcpServers','dai_start'], LEntry), 'invalid ownership creates no launcher');
+    finally
+      LJson.Free;
+    end;
+    TFile.WriteAllText(LPath, LText, TEncoding.UTF8);
+    TFile.WriteAllText(LPath + '.dai-registration.json', LOwnershipText, TEncoding.UTF8);
+    LText := TDAIClientConfigText.Merge(LText, 'json', ['mcpServers','dai_start'], '{"command":"edited-owned-launcher"}', False);
+    TFile.WriteAllText(LPath, LText, TEncoding.UTF8);
+    LJson := TDAIClientRegistration.UnregisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'conflict', 'edited owned launcher retained');
+      Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'edited launcher retains both entries');
+      Check(TFile.ReadAllText(LPath + '.dai-registration.json', TEncoding.UTF8) = LOwnershipText, 'edited launcher retains sidecar');
+    finally
+      LJson.Free;
+    end;
+    LPath := TPath.Combine(GRoot, 'launcher-foreign\mcp.json');
+    ForceDirectories(TPath.GetDirectoryName(LPath));
+    SetEnvironmentVariable('DAI_LM_STUDIO_CONFIG', PChar(LPath));
+    LText := '{"keep":true,"mcpServers":{"dai_start":{"command":"user"}}}';
+    TFile.WriteAllText(LPath, LText, TEncoding.UTF8);
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'conflict', 'foreign launcher without sidecar refused');
+      Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'foreign launcher exact bytes retained');
+      Check(not TFile.Exists(LPath + '.dai-registration.json'), 'foreign launcher creates no sidecar');
+    finally
+      LJson.Free;
+    end;
+    SetEnvironmentVariable('CODEX_HOME', PChar(TPath.Combine(GRoot, 'launcher-codex')));
+    TDAICodexRegistration.RegisterFiles;
+    LPath := TDAICodexRegistration.CodexConfigFileName;
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    Check((Pos('[mcp_servers.dai]', LText) > 0) and (Pos('[mcp_servers.dai_start]', LText) > 0),
+      'Codex managed block has HTTP and launcher');
+    Check((Pos('--launcher', LText) > 0) and (Pos('DAI_MCP_TOKEN', LText) > 0), 'Codex launcher command/environment');
+    LJson := TDAICodexRegistration.Status;
+    try
+      Check(LJson.GetValue<Boolean>('launcher_entry_registered') and not LJson.GetValue<Boolean>('needs_update'),
+        'Codex launcher registration current');
+      Check(Pos(TDAISettings.Instance.Token, LJson.ToJSON) = 0, 'Codex launcher status redacted');
+    finally
+      LJson.Free;
+    end;
+    TDAISettings.Instance.Port := 7457;
+    LJson := TDAICodexRegistration.Status;
+    try
+      Check(LJson.GetValue<Boolean>('needs_update'), 'Codex changed target detected');
+    finally
+      LJson.Free;
+    end;
+    TDAICodexRegistration.RegisterFiles;
+    Check(Pos('7457', TFile.ReadAllText(LPath, TEncoding.UTF8)) > 0, 'Codex last registration target wins');
+    TDAICodexRegistration.UnregisterFiles;
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    Check((Pos('[mcp_servers.dai]', LText) = 0) and (Pos('[mcp_servers.dai_start]', LText) = 0), 'Codex removes both managed tables');
+    LText := CDAIManagedBlockBegin + sLineBreak + '[mcp_servers.dai]' + sLineBreak +
+      'url = "old-target"' + sLineBreak + CDAIManagedBlockEnd + sLineBreak +
+      '[mcp_servers.dai_start]' + sLineBreak + 'command = "foreign.exe"' + sLineBreak;
+    TFile.WriteAllText(LPath, LText, TEncoding.UTF8);
+    LJson := TDAICodexRegistration.Status;
+    try
+      Check(LJson.GetValue<Boolean>('codex_entry_registered') and
+        not LJson.GetValue<Boolean>('launcher_entry_registered'), 'foreign launcher never reported as marker-owned');
+    finally
+      LJson.Free;
+    end;
+    TDAICodexRegistration.UnregisterFiles;
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    Check(Pos('foreign.exe', LText) > 0, 'Codex unregister keeps unmarked foreign launcher');
+    TFile.WriteAllText(LPath, '', TEncoding.UTF8);
+    LText := '';
+    Check((Pos('`dai_start.delphi_status`', TDAICodexRegistration.BuildSkillContent) > 0) and
+      (Pos('`dai.ide_window_control`', TDAICodexRegistration.BuildSkillContent) > 0) and
+      (Pos('keine erzwungene Terminierung', TDAICodexRegistration.BuildSkillContent) > 0), 'skill lifecycle and no automatic termination');
+    LBridge := TDAICodexRegistration.BridgeFileName;
+    TFile.Delete(LBridge);
+    LJson := TDAIClientRegistration.RegisterFiles('codex');
+    try
+      Check(ClientStatus(LJson) = 'missing_bridge', 'Codex launcher requires bridge');
+      Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'missing Codex bridge writes no config');
+    finally
+      LJson.Free;
+    end;
+    TFile.WriteAllText(LBridge, 'test fixture, never executed', TEncoding.UTF8);
+  finally
+    SetEnvironmentVariable('DAI_LM_STUDIO_CONFIG', PChar(LOldLmStudioPath));
+    SetEnvironmentVariable('CODEX_HOME', PChar(LOldCodexHome));
+    TDAISettings.Instance.Port := LOldPort;
+    TDAISettings.Instance.Token := LOldToken;
   end;
 end;
 
@@ -482,6 +839,11 @@ var
   LJson: TJSONObject;
   LConflict: Boolean;
 begin
+  CodexConflict('["mcp_servers"."dai_start"]' + #10 + 'command="user.exe"', 'Codex quoted foreign launcher');
+  CodexConflict('[mcp_servers]' + #10 + 'dai_start = { command="user.exe" }', 'Codex nested inline launcher');
+  CodexConflict('mcp_servers.dai_start.command = "user.exe"', 'Codex dotted launcher');
+  CodexConflict(CDAIManagedBlockBegin + #10 + '[mcp_servers.dai]' + #10 + 'url="old"' + #10 +
+    CDAIManagedBlockEnd + #10 + '[mcp_servers.dai_start]' + #10 + 'command="user.exe"', 'foreign launcher blocks old managed migration');
   CodexConflict('["mcp_servers"."dai"]' + #10 + 'url="http://user"', 'Codex quoted foreign section');
   CodexConflict('mcp_servers = { dai = { url="http://user" } }', 'Codex inline mapping');
   CodexConflict('[mcp_servers]' + #10 + 'dai = { url="http://user" }', 'Codex nested inline mapping');
@@ -521,6 +883,7 @@ begin
     ParserTests;
     SafeFileTests;
     RegistrationTests;
+    LauncherRegistrationTests;
     CodexMigrationTests;
     CodexPreservationTests;
     Writeln('OK: ', GCount, ' isolated registration/parser/file checks');

@@ -44,7 +44,16 @@ type
     BlockReason: string;
     Keys: TArray<string>;
     Supported: Boolean;
+    LauncherSupported: Boolean;
     Detected: Boolean;
+  end;
+
+  TManagedClientEntry = record
+    Name: string;
+    Keys: TArray<string>;
+    Text: string;
+    Exists: Boolean;
+    Owned: Boolean;
   end;
 
 const
@@ -117,7 +126,7 @@ end;
 function BridgeFileName: string;
 begin
   // HInstance belongs to the package; the helper is deployed beside the BPL.
-  Result := TPath.Combine(TPath.GetDirectoryName(GetModuleName(FindHInstance(@BridgeFileName))), 'DAI.McpBridge.exe');
+  Result := TDAICodexRegistration.BridgeFileName;
 end;
 
 function BuildDefinition(AIndex: Integer): TClientDefinition;
@@ -133,6 +142,8 @@ begin
   Result.Format := 'json';
   Result.Transport := 'streamable-http';
   Result.Keys := ['mcpServers', CDAICodexServerName];
+  // These local Windows client schemas explicitly support command/args/env STDIO entries.
+  Result.LauncherSupported := AIndex in [0, 1, 2, 4, 6, 7, 8];
   case AIndex of
     0: begin Result.Id := 'codex'; Result.LabelText := 'Codex'; end;
     1: begin Result.Id := 'claude-code'; Result.LabelText := 'Claude Code (CLI / VS Code)'; end;
@@ -181,7 +192,8 @@ begin
           Result.MarkerDirectory := TPath.Combine(LHome, '.eigent');
           Result.Supported := False;
           Result.Documentation := 'https://github.com/eigent-ai/eigent/blob/main/server/README_EN.md';
-          Result.Note := 'Eigent verwaltet MCPs über UI/API. Kein verifiziertes globales mcp.json-Dateischema; in der MCP-Verwaltung URL und Bearer-Header setzen.';
+          Result.Note := 'Eigent verwaltet MCPs über UI/API. Kein verifiziertes globales mcp.json-Dateischema; ' +
+            'dai per URL/Bearer-Header und dai_start bei lokaler STDIO-Unterstützung manuell mit DAI.McpBridge.exe --launcher einrichten.';
         end;
       4:
         begin
@@ -316,7 +328,47 @@ begin
   end;
 end;
 
-function OwnershipText(const AClient: TClientDefinition; const AHash, APendingHash, AState: string): string;
+function BuildLauncherEntry(const AClient: TClientDefinition): string;
+var
+  LEntry: TJSONObject;
+  LArguments: TJSONArray;
+  LEnvironment: TJSONObject;
+  LArgument: string;
+begin
+  LEntry := TJSONObject.Create;
+  try
+    LArguments := TJSONArray.Create;
+    LEntry.AddPair('args', LArguments);
+    for LArgument in TDAICodexRegistration.LauncherArguments do
+      LArguments.Add(LArgument);
+    LEnvironment := TJSONObject.Create;
+    LEnvironment.AddPair('DAI_MCP_TOKEN', TDAISettings.Instance.Token);
+    LEntry.AddPair('env', LEnvironment);
+    if AClient.Format = 'yaml' then
+      Exit('dai_start:' + sLineBreak +
+        '  command: ' + JsonString(BridgeFileName) + sLineBreak +
+        '  args: ' + LArguments.ToJSON + sLineBreak +
+        '  env:' + sLineBreak +
+        '    DAI_MCP_TOKEN: ' + JsonString(TDAISettings.Instance.Token) + sLineBreak +
+        '  timeout: 180');
+    LEntry.AddPair('command', BridgeFileName);
+    if AClient.Id = 'claude-code' then
+      LEntry.AddPair('type', 'stdio');
+    if AClient.Id = 'openclaw' then
+    begin
+      LEntry.AddPair('transport', 'stdio');
+      LEntry.AddPair('enabled', TJSONBool.Create(True));
+      LEntry.AddPair('requestTimeoutMs', TJSONNumber.Create(180000));
+    end;
+    if AClient.Id = 'gemini' then
+      LEntry.AddPair('timeout', TJSONNumber.Create(180000));
+    Result := LEntry.ToJSON;
+  finally
+    LEntry.Free;
+  end;
+end;
+
+function OwnershipText(const AClient: TClientDefinition; const AHash, APendingHash: TArray<string>; const AState: string): string;
 var
   LJson: TJSONObject;
 begin
@@ -325,8 +377,10 @@ begin
     LJson.AddPair('owner', COwner);
     LJson.AddPair('client', AClient.Id);
     LJson.AddPair('config_path', AClient.FileName);
-    LJson.AddPair('entry_sha256', AHash);
-    LJson.AddPair('pending_sha256', APendingHash);
+    LJson.AddPair('entry_sha256', AHash[0]);
+    LJson.AddPair('pending_sha256', APendingHash[0]);
+    LJson.AddPair('launcher_entry_sha256', AHash[1]);
+    LJson.AddPair('launcher_pending_sha256', APendingHash[1]);
     LJson.AddPair('state', AState);
     Result := LJson.ToJSON + sLineBreak;
   finally
@@ -334,18 +388,18 @@ begin
   end;
 end;
 
-function ValidOwnership(const AClient: TClientDefinition; const AOwnership: string; out AHash, APendingHash: string): Boolean;
+function ValidOwnership(const AClient: TClientDefinition; const AOwnership: string; out AHash, APendingHash: TArray<string>): Boolean;
 var
   LJsonValue: TJSONValue;
   LJson: TJSONObject;
   LIgnored: string;
+  LIndex: Integer;
 begin
   Result := False;
-  AHash := '';
-  APendingHash := '';
+  AHash := ['', ''];
+  APendingHash := ['', ''];
   if AOwnership = '' then
     Exit;
-  // The same conservative parser rejects duplicate or executable keys in the ownership record.
   TDAIClientConfigText.ExtractEntry(AOwnership, 'json', ['owner'], LIgnored);
   LJsonValue := TJSONObject.ParseJSONValue(AOwnership);
   try
@@ -355,11 +409,22 @@ begin
     if (ReadJsonString(LJson, 'owner') <> COwner) or (ReadJsonString(LJson, 'client') <> AClient.Id) or
       not SameText(ReadJsonString(LJson, 'config_path'), AClient.FileName) then
       Exit;
-    AHash := ReadJsonString(LJson, 'entry_sha256');
-    APendingHash := ReadJsonString(LJson, 'pending_sha256');
-    Result := ((AHash = '') or TRegEx.IsMatch(AHash, '^[a-fA-F0-9]{64}$')) and
-      ((APendingHash = '') or TRegEx.IsMatch(APendingHash, '^[a-fA-F0-9]{64}$')) and
-      ((ReadJsonString(LJson, 'state') = 'registered') or (ReadJsonString(LJson, 'state') = 'pending') or (ReadJsonString(LJson, 'state') = 'removed'));
+    if not (LJson.GetValue('entry_sha256') is TJSONString) or
+      not (LJson.GetValue('pending_sha256') is TJSONString) or
+      ((LJson.GetValue('launcher_entry_sha256') <> nil) and not (LJson.GetValue('launcher_entry_sha256') is TJSONString)) or
+      ((LJson.GetValue('launcher_pending_sha256') <> nil) and not (LJson.GetValue('launcher_pending_sha256') is TJSONString)) then
+      Exit;
+    AHash[0] := ReadJsonString(LJson, 'entry_sha256');
+    APendingHash[0] := ReadJsonString(LJson, 'pending_sha256');
+    // Older v1 sidecars own dai only. Missing launcher hashes never grant ownership of dai_start.
+    AHash[1] := ReadJsonString(LJson, 'launcher_entry_sha256');
+    APendingHash[1] := ReadJsonString(LJson, 'launcher_pending_sha256');
+    for LIndex := 0 to 1 do
+      if ((AHash[LIndex] <> '') and not TRegEx.IsMatch(AHash[LIndex], '^[a-fA-F0-9]{64}$')) or
+        ((APendingHash[LIndex] <> '') and not TRegEx.IsMatch(APendingHash[LIndex], '^[a-fA-F0-9]{64}$')) then
+        Exit;
+    Result := (ReadJsonString(LJson, 'state') = 'registered') or
+      (ReadJsonString(LJson, 'state') = 'pending') or (ReadJsonString(LJson, 'state') = 'removed');
   finally
     LJsonValue.Free;
   end;
@@ -376,22 +441,28 @@ function ProcessClient(const AClient: TClientDefinition; const AAction: string; 
 var
   LText: string;
   LOwnership: string;
-  LEntry: string;
   LNext: string;
-  LNextEntry: string;
   LPending: string;
   LCommitted: string;
   LBackup: string;
-  LHash: string;
-  LExists: Boolean;
+  LEntries: array[0..1] of TManagedClientEntry;
+  LIndex: Integer;
+  LEntryCount: Integer;
   LOwned: Boolean;
+  LAnyExists: Boolean;
+  LAllOwned: Boolean;
   LRemove: Boolean;
   LCodex: TJSONObject;
   LCodexRegistered: Boolean;
+  LCodexNeedsUpdate: Boolean;
   LSidecarExists: Boolean;
   LConfigExists: Boolean;
-  LStoredHash: string;
-  LPendingHash: string;
+  LStoredHashes: TArray<string>;
+  LPendingHashes: TArray<string>;
+  LCurrentHashes: TArray<string>;
+  LNextHashes: TArray<string>;
+  LNextEntry: string;
+  LDesiredEntry: string;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('id', AClient.Id);
@@ -401,13 +472,16 @@ begin
   Result.AddPair('supported', TJSONBool.Create(AClient.Supported));
   Result.AddPair('transport', AClient.Transport);
   Result.AddPair('documentation', AClient.Documentation);
-  if (AClient.FileName <> '') and (AClient.Id <> 'codex') then
-    Result.AddPair('ownership_file', OwnershipFile(AClient.FileName));
-  if AClient.Id = 'claude-desktop' then
+  Result.AddPair('launcher_supported', TJSONBool.Create(AClient.LauncherSupported));
+  if AClient.LauncherSupported then
   begin
+    Result.AddPair('launcher_server', 'dai_start');
+    Result.AddPair('launcher_transport', 'stdio');
     Result.AddPair('bridge_path', BridgeFileName);
     Result.AddPair('bridge_exists', TJSONBool.Create(TFile.Exists(BridgeFileName)));
   end;
+  if (AClient.FileName <> '') and (AClient.Id <> 'codex') then
+    Result.AddPair('ownership_file', OwnershipFile(AClient.FileName));
   LOwned := False;
   try
     if AClient.BlockReason <> '' then
@@ -427,15 +501,24 @@ begin
     end;
     if AClient.Id = 'codex' then
     begin
+      if (AAction = 'register') and not TFile.Exists(BridgeFileName) then
+      begin
+        SetStatus(Result, 'missing_bridge', 'DAI.McpBridge.exe fehlt neben dem DAI-Package; den Launcher zuerst bauen bzw. installieren.', False);
+        Exit;
+      end;
       if AAction = 'register' then
         TDAICodexRegistration.RegisterFiles
       else if AAction = 'unregister' then
         TDAICodexRegistration.UnregisterFiles;
       LCodex := TDAICodexRegistration.Status;
       LCodexRegistered := False;
+      LCodexNeedsUpdate := False;
       LCodex.TryGetValue<Boolean>('codex_entry_registered', LCodexRegistered);
+      LCodex.TryGetValue<Boolean>('needs_update', LCodexNeedsUpdate);
       Result.AddPair('codex', LCodex);
-      if LCodexRegistered then
+      if LCodexRegistered and LCodexNeedsUpdate then
+        SetStatus(Result, 'needs_update', 'Die verwaltete Codex-Registrierung passt nicht zu dai/dai_start, Port, Token oder IDE; erneut registrieren.', True)
+      else if LCodexRegistered then
         SetStatus(Result, 'registered', AClient.Note, True)
       else if AAction = 'unregister' then
         SetStatus(Result, 'removed', 'Die verwaltete Codex-Registrierung wurde entfernt.', False)
@@ -451,29 +534,79 @@ begin
     LSidecarExists := TFile.Exists(OwnershipFile(AClient.FileName));
     LText := TDAIClientSafeFiles.ReadTextIfExists(AClient.FileName);
     LOwnership := TDAIClientSafeFiles.ReadTextIfExists(OwnershipFile(AClient.FileName));
-    if LSidecarExists and not ValidOwnership(AClient, LOwnership, LStoredHash, LPendingHash) then
+    LStoredHashes := ['', ''];
+    LPendingHashes := ['', ''];
+    LCurrentHashes := ['', ''];
+    LNextHashes := ['', ''];
+    if LSidecarExists and not ValidOwnership(AClient, LOwnership, LStoredHashes, LPendingHashes) then
       raise EDAIClientConfigConflict.Create('Die vorhandene Ownership-Datei ist fremd oder ungültig; sie bleibt erhalten.');
-    LExists := TDAIClientConfigText.ExtractEntry(LText, AClient.Format, AClient.Keys, LEntry);
-    LOwned := LExists and LSidecarExists and ((HashEntry(LEntry) = LStoredHash) or (HashEntry(LEntry) = LPendingHash));
-    if LExists and not LOwned then
+    LEntryCount := 1;
+    LEntries[0].Name := CDAICodexServerName;
+    LEntries[0].Keys := AClient.Keys;
+    if AClient.LauncherSupported then
     begin
-      SetStatus(Result, 'conflict', 'Ein fremder oder nachträglich veränderter dai-Eintrag existiert; er bleibt erhalten.', False);
-      Exit;
+      LEntryCount := 2;
+      LEntries[1].Name := 'dai_start';
+      LEntries[1].Keys := Copy(AClient.Keys);
+      LEntries[1].Keys[High(LEntries[1].Keys)] := LEntries[1].Name;
     end;
-    if (AClient.Id = 'claude-desktop') and not TFile.Exists(BridgeFileName) and (AAction <> 'unregister') then
+    LAllOwned := True;
+    LAnyExists := False;
+    // Preflight both entries before changing the file or sidecar; a foreign launcher blocks partial registration.
+    for LIndex := 0 to LEntryCount - 1 do
+    begin
+      LEntries[LIndex].Exists := TDAIClientConfigText.ExtractEntry(LText, AClient.Format,
+        LEntries[LIndex].Keys, LEntries[LIndex].Text);
+      if LEntries[LIndex].Exists then
+        LCurrentHashes[LIndex] := HashEntry(LEntries[LIndex].Text);
+      LEntries[LIndex].Owned := LEntries[LIndex].Exists and LSidecarExists and
+        ((LCurrentHashes[LIndex] = LStoredHashes[LIndex]) or (LCurrentHashes[LIndex] = LPendingHashes[LIndex]));
+      LAnyExists := LAnyExists or LEntries[LIndex].Exists;
+      LOwned := LOwned or LEntries[LIndex].Owned;
+      LAllOwned := LAllOwned and LEntries[LIndex].Owned;
+      if LEntries[LIndex].Exists and not LEntries[LIndex].Owned then
+      begin
+        SetStatus(Result, 'conflict', 'Ein fremder oder nachträglich veränderter ' +
+          LEntries[LIndex].Name + '-Eintrag existiert; beide Einträge bleiben erhalten.', False);
+        Exit;
+      end;
+    end;
+    Result.AddPair('launcher_registered', TJSONBool.Create((LEntryCount = 2) and LEntries[1].Owned));
+    if AClient.LauncherSupported and not TFile.Exists(BridgeFileName) and (AAction <> 'unregister') then
     begin
       SetStatus(Result, 'missing_bridge', 'DAI.McpBridge.exe fehlt neben dem DAI-Package; native Delphi-Bridge zuerst bauen bzw. installieren.', LOwned);
       Exit;
+    end;
+    LRemove := AAction = 'unregister';
+    if LRemove and not LAnyExists then
+    begin
+      if LSidecarExists then
+        TDAIClientSafeFiles.WriteTextWithBackup(OwnershipFile(AClient.FileName),
+          OwnershipText(AClient, ['', ''], ['', ''], 'removed'), LOwnership, True);
+      SetStatus(Result, 'unchanged', 'Kein unveränderter eigener dai/dai_start-Eintrag zu entfernen.', False);
+      Exit;
+    end;
+    LNext := LText;
+    for LIndex := 0 to LEntryCount - 1 do
+    begin
+      LDesiredEntry := '';
+      if not LRemove then
+      begin
+        if LIndex = 0 then
+          LDesiredEntry := BuildEntry(AClient)
+        else
+          LDesiredEntry := BuildLauncherEntry(AClient);
+      end;
+      LNext := TDAIClientConfigText.Merge(LNext, AClient.Format, LEntries[LIndex].Keys, LDesiredEntry, LRemove);
     end;
     if AAction = 'status' then
     begin
       if LOwned then
       begin
-        LNext := TDAIClientConfigText.Merge(LText, AClient.Format, AClient.Keys, BuildEntry(AClient), False);
-        if LNext = LText then
+        if LAllOwned and (LNext = LText) then
           SetStatus(Result, 'registered', AClient.Note, True)
         else
-          SetStatus(Result, 'needs_update', 'Der verwaltete Eintrag passt nicht zum aktuellen Port, Token oder Bridge-Pfad; erneut registrieren.', True);
+          SetStatus(Result, 'needs_update', 'Der verwaltete Eintrag passt nicht zu dai/dai_start, Port, Token, Bridge oder IDE; erneut registrieren.', True);
       end
       else if not AClient.Detected then
         SetStatus(Result, 'not_detected', AClient.Note, False)
@@ -481,44 +614,31 @@ begin
         SetStatus(Result, 'not_registered', AClient.Note, False);
       Exit;
     end;
-    LRemove := AAction = 'unregister';
-    if LRemove and not LExists then
-    begin
-      if LSidecarExists then
-        TDAIClientSafeFiles.WriteTextWithBackup(OwnershipFile(AClient.FileName), OwnershipText(AClient, '', '', 'removed'), LOwnership, True);
-      SetStatus(Result, 'unchanged', 'Kein unveränderter eigener dai-Eintrag zu entfernen.', False);
-      Exit;
-    end;
-    LNext := TDAIClientConfigText.Merge(LText, AClient.Format, AClient.Keys, BuildEntry(AClient), LRemove);
+    for LIndex := 0 to LEntryCount - 1 do
+      if not LRemove then
+      begin
+        TDAIClientConfigText.ExtractEntry(LNext, AClient.Format, LEntries[LIndex].Keys, LNextEntry);
+        LNextHashes[LIndex] := HashEntry(LNextEntry);
+      end;
+    LCommitted := OwnershipText(AClient, LNextHashes, ['', ''], 'registered');
     if LNext = LText then
     begin
-      LCommitted := OwnershipText(AClient, HashEntry(LEntry), '', 'registered');
       if LOwnership <> LCommitted then
         TDAIClientSafeFiles.WriteTextWithBackup(OwnershipFile(AClient.FileName), LCommitted, LOwnership, LSidecarExists);
-      SetStatus(Result, 'unchanged', 'Bereits passend registriert.', LOwned);
+      SetStatus(Result, 'unchanged', 'Bereits passend registriert.', LAllOwned);
       Exit;
     end;
-    LNextEntry := '';
-    LHash := '';
-    if not LRemove then
-    begin
-      TDAIClientConfigText.ExtractEntry(LNext, AClient.Format, AClient.Keys, LNextEntry);
-      LHash := HashEntry(LNextEntry);
-    end;
-    if LOwned then
-      LPending := OwnershipText(AClient, HashEntry(LEntry), LHash, 'pending')
-    else
-      LPending := OwnershipText(AClient, '', LHash, 'pending');
+    LPending := OwnershipText(AClient, LCurrentHashes, LNextHashes, 'pending');
     TDAIClientSafeFiles.WriteTextWithBackup(OwnershipFile(AClient.FileName), LPending, LOwnership, LSidecarExists);
-    // The pending record makes a crash between both atomic writes recoverable without storing the bearer token twice.
+    // One config write commits both entries. Pending hashes recover either side of that atomic write.
     LBackup := TDAIClientSafeFiles.WriteTextWithBackup(AClient.FileName, LNext, LText, LConfigExists);
     if LBackup <> '' then
       Result.AddPair('backup', LBackup);
     LOwned := not LRemove;
+    Result.RemovePair('launcher_registered').Free;
+    Result.AddPair('launcher_registered', TJSONBool.Create((LEntryCount = 2) and LOwned));
     if LRemove then
-      LCommitted := OwnershipText(AClient, '', '', 'removed')
-    else
-      LCommitted := OwnershipText(AClient, LHash, '', 'registered');
+      LCommitted := OwnershipText(AClient, ['', ''], ['', ''], 'removed');
     try
       TDAIClientSafeFiles.WriteTextWithBackup(OwnershipFile(AClient.FileName), LCommitted, LPending, True);
     except
@@ -529,7 +649,7 @@ begin
       end;
     end;
     if LRemove then
-      SetStatus(Result, 'removed', 'Der unveränderte eigene dai-Eintrag wurde entfernt; andere Inhalte bleiben erhalten.', False)
+      SetStatus(Result, 'removed', 'Die unveränderten eigenen dai/dai_start-Einträge wurden entfernt; andere Inhalte bleiben erhalten.', False)
     else
       SetStatus(Result, 'configured', AClient.Note, True);
   except

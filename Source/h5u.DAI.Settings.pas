@@ -11,11 +11,15 @@ type
     class var FInstance: TDAISettings;
   private
     FEnabled: Boolean;
+    FAllowIDEStartStop: Boolean;
+    FLifecycleChangePending: Boolean;
     FLogAccessPoints: Boolean;
     FPort: Integer;
     FToken: string;
     FCustomReadDirectories: TStringList;
     FRegistryRoot: string;
+    function GetAllowIDEStartStop: Boolean;
+    procedure SetAllowIDEStartStop(const AAllowed: Boolean);
     function ReadRootDirectory: string;
     function StudioVersion: string;
   public
@@ -26,6 +30,7 @@ type
     function GenerateToken: string;
     procedure Load;
     procedure Save;
+    procedure DiscardLifecycleChange;
     function ExpandPath(const APath: string): string;
     function LocalizedProjectsDirectoryHint: string;
     function DelphiSourceDirectory: string;
@@ -35,6 +40,7 @@ type
     function SamplesDirectory: string;
     function ReadOnlyRootDirectories: TArray<string>;
     property Enabled: Boolean read FEnabled write FEnabled;
+    property AllowIDEStartStop: Boolean read GetAllowIDEStartStop write SetAllowIDEStartStop;
     property LogAccessPoints: Boolean read FLogAccessPoints write FLogAccessPoints;
     property Port: Integer read FPort write FPort;
     property Token: string read FToken write FToken;
@@ -52,7 +58,8 @@ uses
   System.Win.Registry,
   Winapi.Windows,
   ToolsAPI,
-  h5u.DAI.Consts;
+  h5u.DAI.Consts,
+  h5u.DAI.Lifecycle.Policy;
 
 function ExpandEnvironmentStringsToString(const AValue: string): string;
 var
@@ -72,6 +79,8 @@ begin
   FCustomReadDirectories := TStringList.Create;
   FCustomReadDirectories.LineBreak := sLineBreak;
   FEnabled := True;
+  FAllowIDEStartStop := True;
+  FLifecycleChangePending := False;
   FLogAccessPoints := False;
   FPort := CDAIDefaultPort;
   FToken := GenerateToken;
@@ -158,10 +167,31 @@ begin
   Result := FInstance;
 end;
 
+procedure TDAISettings.DiscardLifecycleChange;
+begin
+  FLifecycleChangePending := False;
+end;
+
+function TDAISettings.GetAllowIDEStartStop: Boolean;
+var
+  LReason: string;
+begin
+  if FLifecycleChangePending then
+    Exit(FAllowIDEStartStop);
+  Result := TDAILifecyclePolicy.ReadAllowed(LReason);
+end;
+
+procedure TDAISettings.SetAllowIDEStartStop(const AAllowed: Boolean);
+begin
+  FAllowIDEStartStop := AAllowed;
+  FLifecycleChangePending := True;
+end;
+
 procedure TDAISettings.Load;
 var
   LRegistry: TRegistry;
 begin
+  DiscardLifecycleChange;
   LRegistry := TRegistry.Create(KEY_READ);
   try
     LRegistry.RootKey := HKEY_CURRENT_USER;
@@ -304,6 +334,11 @@ begin
     LRegistry.WriteString('CustomReadDirectories', FCustomReadDirectories.Text);
   finally
     LRegistry.Free;
+  end;
+  if FLifecycleChangePending then
+  begin
+    TDAILifecyclePolicy.WriteAllowed(FAllowIDEStartStop);
+    FLifecycleChangePending := False;
   end;
 end;
 
