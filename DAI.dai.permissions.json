@@ -1,10 +1,5 @@
 ﻿{
   "permissions": {
-    "read": "always",
-    "edit_inside_ide": "always",
-    "edit_outside_ide": "always",
-    "compile": "always",
-    "execute": "always"
   },
   "version": 1
 }

@@ -32,6 +32,8 @@ type
     class function Instance: TDAIPermissionManager; static;
     function Authorize(const ACategory: TDAIPermissionCategory; const AOperation: string; const AResource: string; const AContext: TDAIRequestContext): Boolean;
     function GetEffectiveLevel(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): TDAIPermissionLevel;
+    function GetLevelForOptions(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext; out AInheritsGlobal: Boolean): TDAIPermissionLevel;
+    procedure UseGlobalLevelFromOptions(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext);
     procedure SetLevelFromOptions(const ACategory: TDAIPermissionCategory; const ALevel: TDAIPermissionLevel; const AContext: TDAIRequestContext);
     procedure ClearProjectSession(const AProjectFileName: string);
     procedure ClearAllSessions;
@@ -361,6 +363,55 @@ begin
   System.TMonitor.Enter(FLock);
   try
     Result := EffectiveLevelUnlocked(ACategory, AContext);
+  finally
+    System.TMonitor.Exit(FLock);
+  end;
+end;
+
+function TDAIPermissionManager.GetLevelForOptions(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext; out AInheritsGlobal: Boolean): TDAIPermissionLevel;
+var
+  LHasProjectLevel: Boolean;
+  LHasRuntimeLevel: Boolean;
+  LKey: string;
+  LWildcardKey: string;
+begin
+  System.TMonitor.Enter(FLock);
+  try
+    AInheritsGlobal := False;
+    if Trim(AContext.ProjectKey) = '' then
+      Exit(EffectiveLevelUnlocked(ACategory, AContext));
+
+    LKey := AccessKey(ACategory, AContext);
+    LWildcardKey := WildcardAccessKey(ACategory, AContext);
+    LHasProjectLevel := TDAIPermissionStore.TryGetProjectLevel(ACategory, AContext.ProjectKey, Result);
+    LHasRuntimeLevel := FSessionAllows.ContainsKey(LKey) or FSessionAllows.ContainsKey(LWildcardKey) or
+      FOneShotAllows.ContainsKey(LKey) or FOneShotAllows.ContainsKey(LWildcardKey) or
+      FOneShotDenials.ContainsKey(LKey) or FOneShotDenials.ContainsKey(LWildcardKey);
+    AInheritsGlobal := not LHasProjectLevel and not LHasRuntimeLevel;
+    if AInheritsGlobal then
+      Exit(EffectiveLevelUnlocked(ACategory, AContext));
+    if not LHasProjectLevel then
+      Result := TDAIPermissionStore.GetLevel(ACategory, '');
+    if Result = plNever then
+      Exit;
+
+    if FSessionAllows.ContainsKey(LKey) or FSessionAllows.ContainsKey(LWildcardKey) then
+      Exit(plSession);
+    if FOneShotAllows.ContainsKey(LKey) or FOneShotAllows.ContainsKey(LWildcardKey) then
+      Exit(plOnce);
+    if FOneShotDenials.ContainsKey(LKey) or FOneShotDenials.ContainsKey(LWildcardKey) then
+      Exit(plDeny);
+  finally
+    System.TMonitor.Exit(FLock);
+  end;
+end;
+
+procedure TDAIPermissionManager.UseGlobalLevelFromOptions(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext);
+begin
+  System.TMonitor.Enter(FLock);
+  try
+    TDAIPermissionStore.RemoveProjectLevel(ACategory, AContext.ProjectKey);
+    ClearRuntimeCategoryUnlocked(ACategory, AContext.ProjectKey);
   finally
     System.TMonitor.Exit(FLock);
   end;

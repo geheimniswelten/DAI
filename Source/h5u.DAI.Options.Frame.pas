@@ -5,6 +5,7 @@ interface
 uses
   System.Classes,
   System.JSON,
+  Vcl.Buttons,
   Vcl.Controls,
   Vcl.Forms,
   Vcl.StdCtrls,
@@ -25,9 +26,12 @@ type
     FGenerateTokenButton: TButton;
     FDirectoriesMemo: TMemo;
     FDirectoryHintLabel: TLabel;
-    FScopeComboBox: TComboBox;
     FProjectLabel: TLabel;
-    FPermissionComboBoxes: array[TDAIPermissionCategory] of TComboBox;
+    FPermissionProjectKey: string;
+    FLoadingPermissions: Boolean;
+    FPermissionComboBoxes: array[TDAIPermissionScope, TDAIPermissionCategory] of TComboBox;
+    FPermissionButtons: array[TDAIPermissionCategory] of TBitBtn;
+    FPermissionModified: array[TDAIPermissionScope, TDAIPermissionCategory] of Boolean;
     FClientComboBox: TComboBox;
     FClientStatusMemo: TMemo;
     FCodexStatusLabel: TLabel;
@@ -40,7 +44,10 @@ type
     procedure DisplayClientStatus(const AStatus: TJSONObject);
     procedure AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
     procedure PopulatePermissionCombo(const AComboBox: TComboBox);
-    procedure ScopeChanged(Sender: TObject);
+    procedure PermissionChanged(Sender: TObject);
+    procedure PermissionDialogClicked(Sender: TObject);
+    procedure RefreshInheritedPermissionHints;
+    procedure UpdateProjectPermissionState;
     procedure LoadPermissionSettings;
     procedure StartServerClicked(Sender: TObject);
     procedure StopServerClicked(Sender: TObject);
@@ -50,10 +57,9 @@ type
     procedure RegisterClicked(Sender: TObject);
     procedure UnregisterClicked(Sender: TObject);
     procedure ShowToolsClicked(Sender: TObject);
-    function SelectedPermissionScope: TDAIPermissionScope;
     function PermissionLevelFromCombo(const AComboBox: TComboBox): TDAIPermissionLevel;
     procedure SetPermissionComboLevel(const AComboBox: TComboBox; const ALevel: TDAIPermissionLevel);
-    function PermissionContext: TDAIRequestContext;
+    function PermissionContext(const AScope: TDAIPermissionScope): TDAIRequestContext;
   public
     constructor Create(AOwner: TComponent); override;
     procedure LoadFromSettings;
@@ -70,6 +76,7 @@ uses
   System.IOUtils,
   System.StrUtils,
   System.SysUtils,
+  System.Types,
   System.UITypes,
   Vcl.Dialogs,
   Vcl.Graphics,
@@ -78,6 +85,7 @@ uses
   h5u.DAI.Consts,
   h5u.DAI.MCP.Tools,
   h5u.DAI.OTA.Helpers,
+  h5u.DAI.Permissions.Dialog,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
   h5u.DAI.Settings;
@@ -116,19 +124,68 @@ begin
   BuildControls;
 end;
 
+procedure DrawPermissionGlyph(const ABitmap: TBitmap);
+begin
+  ABitmap.PixelFormat := pf24bit;
+  ABitmap.SetSize(16, 16);
+  with ABitmap.Canvas do
+  begin
+    Brush.Color := clBtnFace;
+    FillRect(Rect(0, 0, 16, 16));
+    Pen.Style := psClear;
+    Brush.Color := $0048C8F0;
+    Polygon([Point(2, 2), Point(13, 2), Point(13, 9), Point(8, 14), Point(2, 9)]);
+    Brush.Color := $00D09040;
+    Polygon([Point(2, 2), Point(8, 2), Point(8, 14), Point(2, 9)]);
+    Pen.Style := psSolid;
+    Pen.Color := clGrayText;
+    Brush.Style := bsClear;
+    Polygon([Point(2, 2), Point(13, 2), Point(13, 9), Point(8, 14), Point(2, 9)]);
+    Brush.Style := bsSolid;
+  end;
+end;
+
 procedure TDAIOptionsFrame.AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
 var
+  LButton: TBitBtn;
   LComboBox: TComboBox;
+  LLeft: Integer;
+  LName: string;
+  LScope: TDAIPermissionScope;
 begin
   NewLabel(AParent, DAIPermissionCategoryName(ACategory), 24, ATop + 4);
-  LComboBox := TComboBox.Create(AParent);
-  LComboBox.Parent := AParent;
-  LComboBox.Left := 320;
-  LComboBox.Top := ATop;
-  LComboBox.Width := 220;
-  LComboBox.Style := csDropDownList;
-  PopulatePermissionCombo(LComboBox);
-  FPermissionComboBoxes[ACategory] := LComboBox;
+  for LScope := Low(TDAIPermissionScope) to High(TDAIPermissionScope) do
+  begin
+    if LScope = psGlobal then
+      LLeft := 320
+    else
+      LLeft := 548;
+    LName := 'DAIPermission' + IfThen(LScope = psGlobal, 'Global', 'Project') + IntToStr(Ord(ACategory));
+    LComboBox := TComboBox.Create(AParent);
+    LComboBox.Parent := AParent;
+    LComboBox.Name := LName + 'ComboBox';
+    LComboBox.SetBounds(LLeft, ATop, 190, 24);
+    LComboBox.Style := csDropDownList;
+    PopulatePermissionCombo(LComboBox);
+    if LScope = psProject then
+      LComboBox.Items.Add('Default')
+    else
+      LComboBox.Items[4] := 'Für diese IDE-Sitzung';
+    LComboBox.Tag := Ord(LScope) * (Ord(High(TDAIPermissionCategory)) + 1) + Ord(ACategory);
+    LComboBox.ShowHint := True;
+    LComboBox.OnChange := PermissionChanged;
+    FPermissionComboBoxes[LScope, ACategory] := LComboBox;
+  end;
+  LButton := TBitBtn.Create(AParent);
+  LButton.Parent := AParent;
+  LButton.Name := 'DAIPermission' + IntToStr(Ord(ACategory)) + 'DialogButton';
+  LButton.SetBounds(744, ATop - 1, 24, 24);
+  LButton.Tag := Ord(ACategory);
+  LButton.Hint := DAIPermissionCategoryName(ACategory) + ' – Berechtigung auswählen';
+  LButton.ShowHint := True;
+  DrawPermissionGlyph(LButton.Glyph);
+  LButton.OnClick := PermissionDialogClicked;
+  FPermissionButtons[ACategory] := LButton;
   Inc(ATop, 34);
 end;
 
@@ -247,21 +304,12 @@ begin
     Font.Style := [fsBold];
   Inc(LTop, 30);
 
-  NewLabel(Self, 'Geltungsbereich', 24, LTop + 4);
-  FScopeComboBox := TComboBox.Create(Self);
-  FScopeComboBox.Parent := Self;
-  FScopeComboBox.Left := 160;
-  FScopeComboBox.Top := LTop;
-  FScopeComboBox.Width := 240;
-  FScopeComboBox.Style := csDropDownList;
-  FScopeComboBox.Items.Add('Globaler Standard');
-  FScopeComboBox.Items.Add('Aktuelles Projekt');
-  FScopeComboBox.ItemIndex := 1;
-  FScopeComboBox.OnChange := ScopeChanged;
+  NewLabel(Self, 'Global', 320, LTop + 4);
+  NewLabel(Self, 'Aktuelles Projekt', 548, LTop + 4);
   Inc(LTop, 34);
 
   FProjectLabel := NewLabel(Self, '', 24, LTop);
-  FProjectLabel.Width := 636;
+  FProjectLabel.Width := 744;
   FProjectLabel.AutoSize := False;
   FProjectLabel.WordWrap := True;
   FProjectLabel.Height := 44;
@@ -272,7 +320,7 @@ begin
 
   LInfoLabel := NewLabel(
     Self,
-    '„Verweigern“, „Nur diesmal“ und „Für diese Session“ sind Laufzeitentscheidungen. „Nie“ und „Immer“ werden projektbezogen gespeichert.',
+    '„Verweigern“, „Nur diesmal“ und „Für diese Session“ sind Laufzeitentscheidungen. „Nie“ und „Immer“ gelten im jeweiligen Bereich.',
     24,
     LTop
   );
@@ -488,34 +536,86 @@ procedure TDAIOptionsFrame.LoadPermissionSettings;
 var
   LCategory: TDAIPermissionCategory;
   LContext: TDAIRequestContext;
+  LInheritsGlobal: Boolean;
+  LLevel: TDAIPermissionLevel;
+  LScope: TDAIPermissionScope;
 begin
-  if (FScopeComboBox.ItemIndex = 1) and (TDAIOTA.ActiveProjectFileName = '') then
-    FScopeComboBox.ItemIndex := 0;
-
-  LContext := PermissionContext;
-  for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
-    SetPermissionComboLevel(
-      FPermissionComboBoxes[LCategory],
-      TDAIPermissionManager.Instance.GetEffectiveLevel(LCategory, LContext)
-    );
-
-  if SelectedPermissionScope = psProject then
-    FProjectLabel.Caption := 'Aktuelles Projekt: ' + LContext.ProjectKey + sLineBreak +
-      'Projektdatei: ' + ChangeFileExt(LContext.ProjectKey, '.dai.permissions.json')
-  else
-    FProjectLabel.Caption := 'Globaler Standard für Projekte ohne eigene DAI-Berechtigungsdatei.';
+  FPermissionProjectKey := TDAIOTA.ActiveProjectFileName;
+  FLoadingPermissions := True;
+  try
+    for LScope := Low(TDAIPermissionScope) to High(TDAIPermissionScope) do
+    begin
+      LContext := PermissionContext(LScope);
+      for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
+      begin
+        if (LScope = psProject) and (FPermissionProjectKey = '') then
+          FPermissionComboBoxes[LScope, LCategory].ItemIndex := 6
+        else
+        begin
+          LLevel := TDAIPermissionManager.Instance.GetLevelForOptions(LCategory, LContext, LInheritsGlobal);
+          if (LScope = psProject) and LInheritsGlobal then
+            FPermissionComboBoxes[LScope, LCategory].ItemIndex := 6
+          else
+            SetPermissionComboLevel(FPermissionComboBoxes[LScope, LCategory], LLevel);
+        end;
+        FPermissionModified[LScope, LCategory] := False;
+      end;
+    end;
+  finally
+    FLoadingPermissions := False;
+  end;
+  UpdateProjectPermissionState;
+  RefreshInheritedPermissionHints;
 end;
 
-function TDAIOptionsFrame.PermissionContext: TDAIRequestContext;
+procedure TDAIOptionsFrame.UpdateProjectPermissionState;
+var
+  LAvailable: Boolean;
+  LCategory: TDAIPermissionCategory;
+begin
+  LAvailable := (FPermissionProjectKey <> '') and SameText(FPermissionProjectKey, TDAIOTA.ActiveProjectFileName);
+  for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
+  begin
+    FPermissionComboBoxes[psProject, LCategory].Enabled := LAvailable;
+    FPermissionButtons[LCategory].Enabled := True;
+    FPermissionButtons[LCategory].Hint := DAIPermissionCategoryName(LCategory) + ' – ' +
+      IfThen(LAvailable, 'Berechtigung für das angezeigte Projekt auswählen', 'globale Berechtigung auswählen');
+  end;
+  if LAvailable then
+    FProjectLabel.Caption := 'Aktuelles Projekt: ' + FPermissionProjectKey + sLineBreak +
+      'Projektdatei: ' + ChangeFileExt(FPermissionProjectKey, '.dai.permissions.json')
+  else if TDAIOTA.ActiveProjectFileName = '' then
+    FProjectLabel.Caption := 'Kein aktives Projekt. Projektberechtigungen sind deaktiviert.'
+  else
+    FProjectLabel.Caption := 'Das aktive Projekt hat gewechselt. Die Optionen für das neue Projekt erneut öffnen.';
+end;
+
+procedure TDAIOptionsFrame.RefreshInheritedPermissionHints;
+var
+  LCategory: TDAIPermissionCategory;
+  LComboBox: TComboBox;
+begin
+  for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
+  begin
+    LComboBox := FPermissionComboBoxes[psProject, LCategory];
+    if not LComboBox.Enabled then
+      LComboBox.Hint := 'Kein passendes aktives Projekt.'
+    else if LComboBox.ItemIndex = 6 then
+      LComboBox.Hint := 'Default: globalen Standard verwenden (' + FPermissionComboBoxes[psGlobal, LCategory].Text + '). ' +
+        'Beim Speichern wird eine eigene Projektvorgabe entfernt.'
+    else
+      LComboBox.Hint := 'Eigene Projektberechtigung. Mit „Default“ wieder den globalen Standard verwenden.';
+  end;
+end;
+
+function TDAIOptionsFrame.PermissionContext(const AScope: TDAIPermissionScope): TDAIRequestContext;
 begin
   Result := Default(TDAIRequestContext);
   Result.ThreadId := '*';
   Result.TransportSessionId := 'options';
   Result.ClientName := 'IDE-Optionen';
-  if SelectedPermissionScope = psProject then
-    Result.ProjectKey := TDAIOTA.ActiveProjectFileName
-  else
-    Result.ProjectKey := '';
+  if AScope = psProject then
+    Result.ProjectKey := FPermissionProjectKey;
 end;
 
 function TDAIOptionsFrame.PermissionLevelFromCombo(const AComboBox: TComboBox): TDAIPermissionLevel;
@@ -686,14 +786,6 @@ begin
   end;
 end;
 
-function TDAIOptionsFrame.SelectedPermissionScope: TDAIPermissionScope;
-begin
-  if FScopeComboBox.ItemIndex = 1 then
-    Result := psProject
-  else
-    Result := psGlobal;
-end;
-
 procedure TDAIOptionsFrame.SetPermissionComboLevel(const AComboBox: TComboBox; const ALevel: TDAIPermissionLevel);
 begin
   case ALevel of
@@ -712,19 +804,84 @@ begin
   end;
 end;
 
-procedure TDAIOptionsFrame.ScopeChanged(Sender: TObject);
+procedure TDAIOptionsFrame.PermissionChanged(Sender: TObject);
+var
+  LCategory: TDAIPermissionCategory;
+  LComboBox: TComboBox;
+  LScope: TDAIPermissionScope;
 begin
-  LoadPermissionSettings;
+  if FLoadingPermissions or not (Sender is TComboBox) then
+    Exit;
+  LComboBox := TComboBox(Sender);
+  LScope := TDAIPermissionScope(LComboBox.Tag div (Ord(High(TDAIPermissionCategory)) + 1));
+  LCategory := TDAIPermissionCategory(LComboBox.Tag mod (Ord(High(TDAIPermissionCategory)) + 1));
+  if not LComboBox.Enabled then
+    Exit;
+  FPermissionModified[LScope, LCategory] := True;
+  RefreshInheritedPermissionHints;
+end;
+
+procedure TDAIOptionsFrame.PermissionDialogClicked(Sender: TObject);
+var
+  LButton: TBitBtn;
+  LCategory: TDAIPermissionCategory;
+  LContext: TDAIRequestContext;
+  LCurrentLevel: TDAIPermissionLevel;
+  LDecision: TDAIPermissionPromptResult;
+  LOtherCategory: TDAIPermissionCategory;
+  LOtherLevel: TDAIPermissionLevel;
+  LScope: TDAIPermissionScope;
+begin
+  if not (Sender is TBitBtn) then
+    Exit;
+  UpdateProjectPermissionState;
+  LButton := TBitBtn(Sender);
+  if not LButton.Enabled then
+    Exit;
+  LCategory := TDAIPermissionCategory(LButton.Tag);
+  if FPermissionComboBoxes[psProject, LCategory].Enabled then
+    LScope := psProject
+  else
+    LScope := psGlobal;
+  LContext := PermissionContext(LScope);
+  LCurrentLevel := PermissionLevelFromCombo(FPermissionComboBoxes[LScope, LCategory]);
+  if (LScope = psProject) and (FPermissionComboBoxes[LScope, LCategory].ItemIndex = 6) then
+    LCurrentLevel := PermissionLevelFromCombo(FPermissionComboBoxes[psGlobal, LCategory]);
+  if not TDAIPermissionDialog.SelectForOptions(LCategory, LContext, LCurrentLevel, LDecision) then
+    Exit;
+  SetPermissionComboLevel(FPermissionComboBoxes[LScope, LCategory], LDecision.Level);
+  FPermissionModified[LScope, LCategory] := True;
+  if LDecision.ApplyToLowerLevels then
+    for LOtherCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
+    begin
+      if LOtherCategory = LCategory then
+        Continue;
+      LOtherLevel := PermissionLevelFromCombo(FPermissionComboBoxes[LScope, LOtherCategory]);
+      if (LScope = psProject) and (FPermissionComboBoxes[LScope, LOtherCategory].ItemIndex = 6) then
+        LOtherLevel := PermissionLevelFromCombo(FPermissionComboBoxes[psGlobal, LOtherCategory]);
+      if DAIPermissionLevelRank(LOtherLevel) < DAIPermissionLevelRank(LDecision.Level) then
+      begin
+        SetPermissionComboLevel(FPermissionComboBoxes[LScope, LOtherCategory], LDecision.Level);
+        FPermissionModified[LScope, LOtherCategory] := True;
+      end;
+    end;
+  RefreshInheritedPermissionHints;
 end;
 
 procedure TDAIOptionsFrame.StoreToSettings;
 var
   LCategory: TDAIPermissionCategory;
   LContext: TDAIRequestContext;
+  LScope: TDAIPermissionScope;
   LPort: Integer;
   LToken: string;
   LError: string;
 begin
+  UpdateProjectPermissionState;
+  if (FPermissionProjectKey <> '') and not FPermissionComboBoxes[psProject, Low(TDAIPermissionCategory)].Enabled then
+    for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
+      if FPermissionModified[psProject, LCategory] then
+        raise EInvalidOperation.Create('Das aktive Projekt hat gewechselt. Projektberechtigungen wurden nicht gespeichert; die Optionen erneut öffnen.');
   LPort := StrToIntDef(Trim(FPortEdit.Text), 0);
   LToken := Trim(FTokenEdit.Text);
   if not TDAIRuntime.ValidateServerConfiguration(LPort, LToken, LError) then
@@ -745,13 +902,25 @@ begin
   FLoadedAllowIDEStartStop := TDAISettings.Instance.AllowIDEStartStop;
   FAllowIDEStartStopCheckBox.Checked := FLoadedAllowIDEStartStop;
 
-  LContext := PermissionContext;
-  for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
-    TDAIPermissionManager.Instance.SetLevelFromOptions(
-      LCategory,
-      PermissionLevelFromCombo(FPermissionComboBoxes[LCategory]),
-      LContext
-    );
+  for LScope := Low(TDAIPermissionScope) to High(TDAIPermissionScope) do
+  begin
+    if (LScope = psProject) and (FPermissionProjectKey = '') then
+      Continue;
+    LContext := PermissionContext(LScope);
+    for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
+      if FPermissionModified[LScope, LCategory] then
+      begin
+        if (LScope = psProject) and (FPermissionComboBoxes[LScope, LCategory].ItemIndex = 6) then
+          TDAIPermissionManager.Instance.UseGlobalLevelFromOptions(LCategory, LContext)
+        else
+          TDAIPermissionManager.Instance.SetLevelFromOptions(
+            LCategory,
+            PermissionLevelFromCombo(FPermissionComboBoxes[LScope, LCategory]),
+            LContext
+          );
+        FPermissionModified[LScope, LCategory] := False;
+      end;
+  end;
 
   if not TDAIRuntime.ApplySettings then
     TaskMessageDlg('DAI', TDAIRuntime.LastServerError, mtWarning, [mbOK], 0);

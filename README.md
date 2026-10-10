@@ -182,6 +182,11 @@ Vor geschützten Operationen erscheint in der Delphi-IDE ein `TTaskDialog` mit f
 
 Die Verification-Checkbox übernimmt die Entscheidung für alle anderen Funktionsgruppen, deren aktuelle Erlaubnisstufe niedriger ist.
 
+Der automatisch ausgelöste Fragedialog verwendet den Berechtigungsbereich der konkreten Anfrage: bei zugeordnetem Projekt dieses Projekt, sonst global.
+„Immer“ und „Nie“ erzeugen auch bei geerbtem globalem „Nachfragen“ eine eigene Projektvorgabe. Explizite Projekt-/Dateiangaben können ein anderes
+geladenes Projekt zuordnen; Debuggerauswertungen verwenden ausdrücklich den globalen Bereich. Der Dialog zeigt das Projekt beziehungsweise „global“ an.
+„Nur diesmal“ und „Verweigern“ gelten nur für die Anfrage; „Für diese Session“ bleibt als Freigabe für den erkannten KI-Chat im jeweiligen Bereich im Speicher.
+
 Die Funktionsgruppen werden getrennt behandelt:
 
 - Lesezugriffe
@@ -190,9 +195,15 @@ Die Funktionsgruppen werden getrennt behandelt:
 - Kompilieren
 - Ausführen
 
-Dauerhafte Projektentscheidungen werden neben der Projektdatei in `<Projektname>.dai.permissions.json` gespeichert. Auf der Optionsseite kann zwischen dem
-globalen Standard und den Berechtigungen des aktuell geöffneten Projekts gewechselt werden. „Verweigern“, „Nur einmal“ und „Session“ sind
-Laufzeitentscheidungen; „Nie“, „Nachfragen“ und „Immer“ werden persistent gespeichert.
+Dauerhafte Projektentscheidungen werden neben der Projektdatei in `<Projektname>.dai.permissions.json` gespeichert. Die Optionsseite zeigt den globalen
+Standard und das aktuelle Projekt nebeneinander mit jeweils 190 Pixel breiten ComboBoxen. Ohne aktives Projekt sind die Projektfelder deaktiviert.
+Rechts jeder Zeile öffnet ein einzelner Schild-Iconbutton den Berechtigungsdialog für das angezeigte aktive Projekt, sonst für den globalen Standard.
+Der Dialog nennt den Bereich ausdrücklich; seine Auswahl bleibt bis zum Speichern ein Entwurf. Globale Werte lassen sich jederzeit direkt in ihrer ComboBox ändern.
+
+„Default“ in der Projektspalte bedeutet, dass die Berechtigung vom globalen Standard geerbt wird. Der Hinweistext nennt den geerbten Wert.
+Die Auswahl „Default“ entfernt beim Speichern die eigene Projektvorgabe und ihre Laufzeitrechte; andere Projektberechtigungen bleiben erhalten.
+Es werden nur bearbeitete Berechtigungen übernommen, sodass unveränderte geerbte Werte keine eigenen Projektvorgaben erzeugen.
+„Verweigern“, „Nur einmal“ und „Session“ sind Laufzeitentscheidungen; „Nie“, „Nachfragen“ und „Immer“ werden persistent gespeichert.
 
 ## Projekt- und Chat-Sessions
 

@@ -10,6 +10,8 @@ type
   public
     class function GetLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string): TDAIPermissionLevel; static;
     class procedure SetLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; const ALevel: TDAIPermissionLevel); static;
+    class function TryGetProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; out ALevel: TDAIPermissionLevel): Boolean; static;
+    class procedure RemoveProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string); static;
     class function ProjectSettingsFileName(const AProjectFileName: string): string; static;
   end;
 
@@ -176,6 +178,42 @@ begin
   if Trim(AProjectFileName) = '' then
     Exit('');
   Result := ChangeFileExt(TPath.GetFullPath(AProjectFileName), '.dai.permissions.json');
+end;
+
+class function TDAIPermissionStore.TryGetProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; out ALevel: TDAIPermissionLevel): Boolean;
+begin
+  ALevel := ReadProjectLevel(ACategory, AProjectFileName, Result);
+end;
+
+class procedure TDAIPermissionStore.RemoveProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string);
+var
+  LFileName: string;
+  LJsonValue: TJSONValue;
+  LPermissions: TJSONObject;
+  LRoot: TJSONObject;
+begin
+  if Trim(AProjectFileName) = '' then
+    raise EInvalidOperation.Create('Ohne aktives Projekt kann keine Projekt-Berechtigung zurückgesetzt werden.');
+  LFileName := ProjectSettingsFileName(AProjectFileName);
+  if not TFile.Exists(LFileName) then
+    Exit;
+
+  LRoot := ReadJsonObject(LFileName);
+  try
+    if not Assigned(LRoot) then
+      raise EInvalidOperation.Create('Die vorhandene Projekt-Berechtigungsdatei ist ungültig und wird nicht überschrieben.');
+    LJsonValue := LRoot.GetValue('permissions');
+    if not (LJsonValue is TJSONObject) then
+      raise EInvalidOperation.Create('Die vorhandenen Projekt-Berechtigungen sind ungültig und werden nicht überschrieben.');
+    LPermissions := TJSONObject(LJsonValue);
+    if not Assigned(LPermissions.GetValue(DAIPermissionCategoryKey(ACategory))) then
+      Exit;
+
+    LPermissions.RemovePair(DAIPermissionCategoryKey(ACategory)).Free;
+    TFile.WriteAllText(LFileName, LRoot.Format(2), TEncoding.UTF8);
+  finally
+    LRoot.Free;
+  end;
 end;
 
 class procedure TDAIPermissionStore.SetLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; const ALevel: TDAIPermissionLevel);

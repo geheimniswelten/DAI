@@ -2,6 +2,9 @@
 
 ## Unveröffentlicht
 
+- Laufzeit-Fragedialoge zeigen den tatsächlichen Projekt- oder globalen Bereich der Anfrage an; Hinweise zu dauerhaften und Session-Entscheidungen verwenden diesen Bereich.
+- Die Berechtigungsoptionen zeigen globale und projektbezogene ComboBoxen mit jeweils 190 Pixeln nebeneinander. Ein Schild-Iconbutton je Zeile öffnet den Dialog für das angezeigte aktive Projekt, sonst global; ohne aktives Projekt ist die Projektspalte deaktiviert.
+- „Default“ kennzeichnet geerbte Projektberechtigungen und entfernt beim Speichern eine eigene Vorgabe. Nur bearbeitete Werte werden übernommen; unveränderte Vererbung und bestehende Entwürfe bleiben erhalten.
 - Der bei Registrierung erzeugte Codex-Skill verknüpft Delphi-Anfragen ausdrücklich mit DAI und verlangt vor Dateiänderungen die Prüfung auf aktive DAI-Verbindungen und offene IDE-Puffer.
 - Skill und MCP-Verbindungsanweisungen schützen ungespeicherte Benutzeränderungen und erklären den gemeinsamen PAS-/DFM-Editor-Tab sowie das erneute Lesen nach dem Ansichtswechsel. Klassische Initialisierung und moderne Erkennung liefern dieselben Kernhinweise.
 - Statussymbole im 16×16-Toolbaricon sind einen Pixel größer. Play und Pause unterscheiden sich durch kräftigeres grünes Dreieck beziehungsweise ein deutliches graues Pausesymbol; Fehler erscheinen als rotes X.
