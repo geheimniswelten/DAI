@@ -92,7 +92,7 @@ laufen; Status erneut prüfen. Auch ohne Token funktionieren die lokalen Prozess
 Manueller Aufruf (der Client kommuniziert anschließend über STDIN/STDOUT):
 
 ```text
-DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.25
+DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.26
 ```
 
 ## Benennung
@@ -925,6 +925,12 @@ Die Ausgabeverzeichnisse bleiben gleich; BPLs verschiedener Delphi-Versionen erh
 DCP, Importbibliotheken und Bridge derselben Plattform werden jeweils durch den letzten Build ersetzt, auch bei einem Wechsel der Delphi-Version.
 `Build.ps1` prüft die beim aktuellen Build neu geschriebene versionierte BPL sowie die Bridge auf PE-Signatur, Zielarchitektur und DLL-/EXE-Typ.
 Eine vorhandene alte `DAI.bpl` oder eine unveränderte BPL eines früheren Builds zählt dabei nicht als erfolgreiches Build-Ergebnis.
+
+Das gemeinsame PreBuild-Ereignis der `DAI.dproj` führt vor dem Package-Build `taskkill /F /IM DAI.McpBridge.exe` aus.
+Damit werden laufende STDIO-Bridges und `dai_start`-Helfer beendet und die Bridge-EXE für den anschließenden DCC-Build freigegeben.
+Das gilt beim Build in der IDE sowie über `Build.ps1` und `Build+Register.cmd`, für Debug/Release und Win32/Win64.
+Eine nicht laufende Bridge verhindert den Build nicht. Ohne `/T` werden keine Kindprozesse beendet; eine vom Helfer gestartete IDE läuft weiter.
+Betroffene STDIO-Clients müssen ihre MCP-Verbindung anschließend neu herstellen.
 
 Kann der Compiler die aktuelle BPL wegen einer Dateisperre nicht erstellen (`F2039`), versucht `Build.ps1`, sie nach
 `DAI<Version>.bpl.deleted` umzubenennen, und wiederholt den Package-Build einmal. Eine vorhandene Sicherung wird gelöscht;

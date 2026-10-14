@@ -12,6 +12,11 @@
 - Der HTTP-Server erfasst MCP-Zugriffe mit einem atomaren monotonen Zeitstempel. Der bestehende Statustimer liest diesen ohne Worker-/UI-Aufrufe; Health- und abgewiesene Transportanfragen zählen nicht.
 - Isolierte Tests prüfen Zeitgrenzen, Vorrang der Grundzustände, Aktualisierung nach Popupende sowie alle fünf Symbole in fünf Auflösungen.
 
+## 1.2.26
+
+- Das PreBuild-Ereignis der DAI.dproj beendet laufende DAI.McpBridge.exe-Prozesse mit taskkill vor dem Package-Build, damit die anschließend gebaute Bridge-EXE überschrieben werden kann.
+- Eine nicht laufende Bridge verhindert den Build nicht. Es werden keine Kindprozesse beendet; eine vom Helfer gestartete Delphi-IDE läuft weiter. STDIO-Clients müssen ihre Bridge-Verbindung danach neu herstellen.
+
 ## 1.2.25
 
 - Die DAI-Option „KI darf die Delphi-IDE starten und beenden“ ist standardmäßig aktiviert und gilt gemeinsam für alle Delphi-Versionen und Profile des Windows-Benutzers.

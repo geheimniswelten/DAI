@@ -57,12 +57,14 @@
         <VerInfo_Locale>1031</VerInfo_Locale>
         <DllSuffix>$(Auto)</DllSuffix>
         <DCC_OutputNeverBuildDcps>true</DCC_OutputNeverBuildDcps>
+        <PreBuildEvent>taskkill /F /IM DAI.McpBridge.exe &gt;nul 2&gt;&amp;1</PreBuildEvent>
+        <PreBuildEventIgnoreExitCode>true</PreBuildEventIgnoreExitCode>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win32)'!=''">
-        <DCC_UsePackage>vcl;rtl;vclimg;vclie;IndySystem;IndyProtocols;IndyCore;$(DCC_UsePackage)</DCC_UsePackage>
+        <DCC_UsePackage>vcl;rtl;vclimg;vclie;IndySystem;IndyProtocols;IndyCore;xmlrtl;$(DCC_UsePackage)</DCC_UsePackage>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win64)'!=''">
-        <DCC_UsePackage>vcl;rtl;vclimg;vclie;IndySystem;IndyProtocols;IndyCore;$(DCC_UsePackage)</DCC_UsePackage>
+        <DCC_UsePackage>vcl;rtl;vclimg;vclie;IndySystem;IndyProtocols;IndyCore;xmlrtl;$(DCC_UsePackage)</DCC_UsePackage>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1)'!=''">
         <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
