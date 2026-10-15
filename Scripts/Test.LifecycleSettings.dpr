@@ -48,6 +48,27 @@ begin
   Result := False;
 end;
 
+function PolicyValueExists: Boolean;
+var
+  LKey: HKEY;
+  LError: Longint;
+begin
+  LError := RegOpenKeyEx(HKEY_CURRENT_USER, PChar(TDAILifecyclePolicy.CRegistryKey), 0,
+    KEY_QUERY_VALUE or KEY_WOW64_64KEY, LKey);
+  if (LError = ERROR_FILE_NOT_FOUND) or (LError = ERROR_PATH_NOT_FOUND) then
+    Exit(False);
+  if LError <> ERROR_SUCCESS then
+    RaiseLastOSError(LError);
+  try
+    LError := RegQueryValueEx(LKey, PChar(TDAILifecyclePolicy.CValueName), nil, nil, nil, nil);
+    Result := LError = ERROR_SUCCESS;
+    if not Result and (LError <> ERROR_FILE_NOT_FOUND) then
+      RaiseLastOSError(LError);
+  finally
+    RegCloseKey(LKey);
+  end;
+end;
+
 procedure CheckPolicy(const AExpected: Boolean; const AExpectedReason: string; const ADescription: string);
 var
   LReason: string;
@@ -118,12 +139,12 @@ begin
     try
       Check(LFirst.RegistryRoot = 'Software\Embarcadero\BDS\37.0\DAI', 'Real Settings fallback registry root stays inside isolated HKCU');
       Check(LFirst.AllowIDEStartStop and LSecond.AllowIDEStartStop, 'Both actual Settings objects default to enabled');
-      Check(not PolicyKeyExists, 'Constructing settings never creates the policy key');
+      Check(not PolicyValueExists, 'Constructing settings never persists a lifecycle policy value');
       LFirst.AllowIDEStartStop := False;
       Check(not LFirst.AllowIDEStartStop, 'Explicit setter exposes the pending draft on its own object');
       Check(LSecond.AllowIDEStartStop, 'Pending draft does not affect another Settings object');
       CheckPolicy(True, 'allowed_by_default', 'Setter has not persisted the pending draft');
-      Check(not PolicyKeyExists, 'Setter never creates the policy key');
+      Check(not PolicyValueExists, 'Setter never persists a lifecycle policy value');
       LFirst.Save;
       CheckPolicy(False, 'disabled_in_dai_options', 'Save persists explicit disable');
       CheckStoredDword(0);

@@ -140,6 +140,15 @@ begin
   Result := TCheckBox(LComponent);
 end;
 
+function SharedConnectionControl(const AFrame: TDAIOptionsFrame): TCheckBox;
+var
+  LComponent: TComponent;
+begin
+  LComponent := AFrame.FindComponent('DAIUseSharedConnectionSettingsCheckBox');
+  Check(LComponent is TCheckBox, 'Connection scope has a named checkbox');
+  Result := TCheckBox(LComponent);
+end;
+
 procedure CheckNoPersistence;
 begin
   Check(TDAISettings.Instance.SaveCount = 0, 'Manual start/stop does not save settings');
@@ -548,6 +557,131 @@ begin
   end;
 end;
 
+procedure CheckConnectionScopeOptions;
+var
+  LFrame: TDAIOptionsFrame;
+  LHost: TForm;
+  LApplicationHandle: HWND;
+  LCheckBox: TCheckBox;
+  LPortEdit, LTokenEdit: TEdit;
+  LStoredPort, LReadCount: Integer;
+  LStoredToken: string;
+  LFailed: Boolean;
+begin
+  TestStage := 'ConnectionScopeOptions';
+  TDAIRuntime.Reset;
+  TDAISettings.Reset;
+  TDAIPermissionManager.Reset;
+  TDAIClientRegistration.RegisterCount := 0;
+  TDAIClientRegistration.UnregisterCount := 0;
+  LStoredPort := TDAISettings.Instance.Port;
+  LStoredToken := TDAISettings.Instance.Token;
+  TDAISettings.Instance.SavedConnectionAvailable[True] := True;
+  TDAISettings.Instance.SavedConnectionPort[True] := LStoredPort;
+  TDAISettings.Instance.SavedConnectionToken[True] := LStoredToken;
+  TDAISettings.Instance.SavedConnectionAvailable[False] := True;
+  TDAISettings.Instance.SavedConnectionPort[False] := 7222;
+  TDAISettings.Instance.SavedConnectionToken[False] := 'synthetic-local-connection-token';
+  LHost := TForm.CreateNew(nil);
+  LFrame := nil;
+  LApplicationHandle := Application.Handle;
+  try
+    LHost.Visible := False;
+    Application.Handle := LHost.Handle;
+    LFrame := TDAIOptionsFrame.Create(nil);
+    LFrame.Visible := False;
+    LFrame.Parent := LHost;
+    LCheckBox := SharedConnectionControl(LFrame);
+    Check(LCheckBox.Checked, 'New connection scope checkbox defaults to shared');
+    LFrame.LoadFromSettings;
+    LPortEdit := EditControl(LFrame, True);
+    LTokenEdit := EditControl(LFrame, False);
+    Check(LCheckBox.Checked, 'Saved shared mode is shown after loading');
+    Check(TDAISettings.Instance.ConnectionReadCount = 0, 'Programmatic load does not execute a destination preview');
+    Check(TDAISettings.Instance.ConnectionRefreshCount = 1, 'Opening options refreshes external connection changes before displaying credentials');
+    Check(LCheckBox.Top < LPortEdit.Top, 'Connection scope sits immediately before port and token controls');
+    Check(LCheckBox.ShowHint and (Pos('IDE-Profil', LCheckBox.Hint) > 0), 'Connection scope hint explains the local IDE profile');
+    Check(Pos('Andere DAI-Einstellungen bleiben IDE-spezifisch', LCheckBox.Hint) > 0, 'Connection scope does not imply sharing other options');
+    Check(Pos('Speichern oder Registrieren', LCheckBox.Hint) > 0, 'Connection scope explains deferred persistence');
+    LPortEdit.Text := ' 7223 ';
+    LTokenEdit.Text := ' synthetic-shared-draft-token ';
+    TDAISettings.Instance.FailConnectionRead := True;
+    LFailed := False;
+    try
+      LCheckBox.Checked := False;
+    except
+      on E: Exception do
+        LFailed := E.Message = 'Synthetic connection-preview failure';
+    end;
+    Check(LFailed, 'Destination preview failure remains visible to the options caller');
+    Check(LCheckBox.Checked, 'Failed destination preview restores the previous checkbox scope');
+    Check((LPortEdit.Text = ' 7223 ') and (LTokenEdit.Text = ' synthetic-shared-draft-token '), 'Failed preview preserves the previous scope draft pair');
+    Check(TDAISettings.Instance.UseSharedConnectionSettings, 'Failed preview does not alter the singleton scope');
+    Check(TDAISettings.Instance.SaveCount = 0, 'Failed preview performs no settings save');
+    TDAISettings.Instance.FailConnectionRead := False;
+    LCheckBox.Checked := False;
+    Check(LPortEdit.Text = '7222', 'Switching to local previews its saved port');
+    Check(LTokenEdit.Text = 'synthetic-local-connection-token', 'Switching to local previews its matching saved token');
+    Check(TDAISettings.Instance.UseSharedConnectionSettings, 'Scope preview does not change the singleton mode');
+    Check((TDAISettings.Instance.Port = LStoredPort) and (TDAISettings.Instance.Token = LStoredToken), 'Scope preview does not change the active singleton credentials');
+    CheckNoPersistence;
+    LPortEdit.Text := '7224';
+    LTokenEdit.Text := ' synthetic-local-draft-token ';
+    LCheckBox.Checked := True;
+    Check((LPortEdit.Text = ' 7223 ') and (LTokenEdit.Text = ' synthetic-shared-draft-token '), 'Returning to shared restores its untouched draft');
+    LReadCount := TDAISettings.Instance.ConnectionReadCount;
+    LCheckBox.Checked := False;
+    Check((LPortEdit.Text = '7224') and (LTokenEdit.Text = ' synthetic-local-draft-token '), 'Returning to local restores its own draft');
+    Check(TDAISettings.Instance.ConnectionReadCount = LReadCount, 'Revisiting a scope preserves its draft without replacing it from storage');
+    ButtonControl(LFrame, 'Server starten').Click;
+    Check((TDAIRuntime.CapturedPort = 7224) and (TDAIRuntime.CapturedToken = 'synthetic-local-draft-token'), 'Manual start uses the displayed destination draft pair');
+    Check(TDAISettings.Instance.UseSharedConnectionSettings, 'Transient server start does not persist the scope selection');
+    CheckNoPersistence;
+    ButtonControl(LFrame, 'Server stoppen').Click;
+    LFrame.StoreToSettings;
+    Check(not TDAISettings.Instance.UseSharedConnectionSettings, 'Accepting options stores the selected local scope');
+    Check((TDAISettings.Instance.Port = 7224) and (TDAISettings.Instance.Token = 'synthetic-local-draft-token'), 'Accepting options stores the displayed pair with its scope');
+    Check((TDAISettings.Instance.SavedConnectionPort[True] = LStoredPort) and
+      (TDAISettings.Instance.SavedConnectionToken[True] = LStoredToken), 'Saving local credentials preserves the common destination');
+    Check((TDAISettings.Instance.SavedConnectionPort[False] = 7224) and
+      (TDAISettings.Instance.SavedConnectionToken[False] = 'synthetic-local-draft-token'), 'Saving targets only the selected destination');
+
+    // A previously unconfigured scope adopts the current draft; it must not silently revert user edits.
+    TDAISettings.Instance.SavedConnectionAvailable[True] := False;
+    LPortEdit.Text := '7225';
+    LTokenEdit.Text := 'synthetic-first-common-token';
+    LCheckBox.Checked := True;
+    Check((LPortEdit.Text = '7225') and (LTokenEdit.Text = 'synthetic-first-common-token'), 'Missing destination retains the current user-entered draft pair');
+    Check(not TDAISettings.Instance.UseSharedConnectionSettings, 'Missing-destination preview also remains a draft');
+    LFrame.StoreToSettings;
+    Check(TDAISettings.Instance.UseSharedConnectionSettings, 'Accepting the new common destination stores shared mode');
+    Check((TDAISettings.Instance.SavedConnectionPort[True] = 7225) and
+      (TDAISettings.Instance.SavedConnectionToken[True] = 'synthetic-first-common-token'), 'New common destination receives the displayed draft pair');
+    Check(TDAISettings.Instance.SavedConnectionPort[False] = 7224, 'Creating common credentials preserves the local destination');
+
+    LCheckBox.Checked := False;
+    Check(LPortEdit.Text = '7224', 'After saving, switching scopes refreshes the destination preview');
+    FreeAndNil(LFrame);
+    Check(TDAISettings.Instance.UseSharedConnectionSettings, 'Cancelling a local preview preserves the last saved common mode');
+    Check(TDAISettings.Instance.Port = 7225, 'Cancelling a scope preview preserves the saved common credentials');
+    LFrame := TDAIOptionsFrame.Create(nil);
+    LFrame.Visible := False;
+    LFrame.Parent := LHost;
+    LFrame.LoadFromSettings;
+    LCheckBox := SharedConnectionControl(LFrame);
+    Check(LCheckBox.Checked, 'Reopening after cancellation reloads the common mode');
+    LCheckBox.Checked := False;
+    ButtonControl(LFrame, 'Registrieren').Click;
+    Check(not TDAISettings.Instance.UseSharedConnectionSettings, 'Explicit registration stores the selected destination scope');
+    Check(TDAISettings.Instance.Port = 7224, 'Explicit registration stores the selected saved destination pair');
+    Check(TDAIClientRegistration.RegisterCount = 1, 'Explicit registration uses the ordinary client-registration path');
+  finally
+    LFrame.Free;
+    Application.Handle := LApplicationHandle;
+    LHost.Free;
+  end;
+end;
+
 procedure CheckPermissionColumns;
 var
   LFrame: TDAIOptionsFrame;
@@ -758,6 +892,7 @@ begin
     Application.ShowMainForm := False;
     RunChecks;
     CheckLifecycleOptions;
+    CheckConnectionScopeOptions;
     CheckPermissionColumns;
     Writeln('PASS: ', CheckCount, ' native options-frame UI checks');
   except

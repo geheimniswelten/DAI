@@ -95,6 +95,24 @@ Manueller Aufruf (der Client kommuniziert anschließend über STDIN/STDOUT):
 DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.26
 ```
 
+## Gemeinsame Verbindungsdaten
+
+Port und Bearer-Token werden standardmäßig für alle Delphi-Versionen und IDE-Profile desselben Windows-Benutzers gemeinsam verwendet.
+Die Option **„Port und Bearer-Token für alle Delphi-Versionen und Profile gemeinsam verwenden“** steht direkt über den Verbindungsfeldern.
+Wird sie deaktiviert, verwendet dieses IDE-Profil wieder eigene Verbindungsdaten. Andere Einstellungen wie Autostart, Logging und Referenzpfade
+bleiben IDE-spezifisch. Der Starthelfer startet weiterhin die bei der letzten Clientregistrierung hinterlegte `bds.exe`.
+
+Der gemeinsame Bereich liegt unter `HKEY_CURRENT_USER\Software\DelphiAI\DAI\Connection` in der 64-Bit-Registryansicht.
+Beim ersten Laden wird dort ein vorhandenes gültiges lokales Port-/Token-Paar übernommen; ohne Altwerte werden Standardport und ein neuer Token verwendet.
+Bereits vorhandene gemeinsame Daten haben Vorrang. Die Auswahl des Bereichs und die bisherigen lokalen Daten bleiben im jeweiligen BDS-/Profilzweig.
+Beim Umschalten zeigt der Dialog gespeicherte Werte des Zielbereichs und behält bearbeitete Entwürfe je Bereich bis zum Schließen des Dialogs.
+Die Auswahl wird erst mit Speichern oder Registrieren dauerhaft übernommen; Abbrechen speichert sie nicht. Manuelles Serverstarten bleibt vorläufig.
+
+Andere bereits geöffnete IDEs lesen die aktuellen gemeinsamen Daten beim Öffnen ihrer DAI-Optionen und vor dem Start eines inaktiven Servers erneut.
+Ein aktiver Server behält seine laufende Konfiguration bis zum bewussten Übernehmen bzw. Neustarten. Unverändertes Speichern in einer zweiten IDE
+überschreibt keine inzwischen geänderten gemeinsamen Verbindungsdaten. Ändern sich Port oder Token, müssen die betroffenen Clients erneut registriert
+werden; beim Wechsel der laufenden IDE muss der Client gegebenenfalls seine MCP-Verbindung neu herstellen.
+
 ## Benennung
 
 - Package und Projekt: `DAI`
@@ -569,9 +587,20 @@ Japanisch:  %USERPROFILE%\Documents\Embarcadero\Studio\37.0\プロジェクト
 DAI kann Projekte erstellen, öffnen, speichern und aus einer Projektgruppe entfernen. Units und Form-Units können erstellt, geöffnet, aktiviert,
 geschlossen und aus einem Projekt entfernt werden.
 
-Vor einer Operation, die eine bestehende Projektbelegung beeinflussen könnte, zeigt DAI unabhängig von der allgemeinen Berechtigung eine zusätzliche
-Sicherheitsabfrage. Bereits geöffnete Projekte oder Projektgruppen werden niemals stillschweigend geschlossen. Wird ein Wechsel von der IDE selbst
-verlangt, bleibt auch deren eigener Bestätigungsdialog aktiv.
+`project_open` ergänzt DPR-, DPK- und DPROJ-Projekte standardmäßig in der aktuellen Projektgruppe; vorhandene Projekte bleiben geöffnet.
+`project_create` erstellt ebenfalls in dieser Gruppe. Ein bisher einzeln geöffnetes Projekt bleibt beim Hinzufügen erhalten.
+Mit `close_others:true` schließen beide Werkzeuge vorab die aktuelle Projektgruppe. Delphis native Speicherrückfragen bleiben wirksam;
+wird das Schließen abgebrochen, wird auch kein Projekt geöffnet oder erstellt. GROUPPROJ/BDSGROUP/BPG ersetzt beim Öffnen grundsätzlich die Gruppe,
+da Delphi nur eine Projektgruppe gleichzeitig laden kann.
+
+Beispielargumente für `project_open`: `{"file":"S:\\Projekte\\Demo\\Demo.dproj"}` ergänzt die Gruppe;
+`{"file":"S:\\Projekte\\Demo\\Demo.dproj","close_others":true}` schließt sie vorher.
+Für `project_create` entsprechend: `{"name":"Demo","directory":"S:\\Projekte\\Demo","close_others":true}`.
+
+Ein einzeln angezeigtes Projekt besitzt normalerweise eine implizite Projektgruppe und bleibt beim Anhängen geöffnet. Für ein tatsächlich ungebundenes
+Projekt ohne Gruppe bietet die öffentliche ToolsAPI keine sichere Übernahme; DAI bricht das Anhängen dann ab und lässt dieses Projekt geöffnet.
+Ein ausdrückliches `close_others:true` erlaubt stattdessen das vorherige Schließen. Ein abgebrochener Schließvorgang kann bereits einzelne Module geschlossen
+haben; das neue Ziel wird danach nicht mehr geöffnet oder erstellt. Das Entfernen über `project_remove` verlangt weiterhin eine zusätzliche DAI-Rückfrage.
 
 ## Kompilieren und Ausführen
 

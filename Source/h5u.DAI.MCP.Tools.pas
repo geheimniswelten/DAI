@@ -823,7 +823,8 @@ begin
         ArgumentString(AArguments, 'name'),
         ArgumentString(AArguments, 'directory'),
         ArgumentString(AArguments, 'project_kind', 'console'),
-        ArgumentBoolean(AArguments, 'save', True)
+        ArgumentBoolean(AArguments, 'save', True),
+        ArgumentBoolean(AArguments, 'close_others', False)
       )
     );
   end;
@@ -832,7 +833,7 @@ begin
   begin
     LFileName := ArgumentString(AArguments, 'file');
     RequirePermission(pcEditInsideIDE, 'Projekt öffnen', LFileName, LContext);
-    Exit(TDAIProjectService.OpenProject(LFileName));
+    Exit(TDAIProjectService.OpenProject(LFileName, ArgumentBoolean(AArguments, 'close_others', False)));
   end;
 
   if SameText(AName, 'project_save') then
@@ -2029,7 +2030,8 @@ begin
   AddTool(
     Result,
     'project_create',
-    'Erstellt Console- oder VCL-Projekt, bei VCL mit Hauptformular. save=false erzeugt ungespeicherte OTA-Module.',
+    'Erstellt Console- oder VCL-Projekt in der aktuellen Projektgruppe, bei VCL mit Hauptformular. ' +
+    'save=false erzeugt ungespeicherte OTA-Module. close_others=true schließt vorher die Projektgruppe; Delphi-Speichern/Abbrechen bleibt wirksam.',
     {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
     {
@@ -2051,6 +2053,10 @@ begin
         "save": {
           "type": "boolean",
           "default": true
+        },
+        "close_others": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [
@@ -2080,6 +2086,10 @@ begin
     '    "save": {' + sLineBreak +
     '      "type": "boolean",' + sLineBreak +
     '      "default": true' + sLineBreak +
+    '    },' + sLineBreak +
+    '    "close_others": {' + sLineBreak +
+    '      "type": "boolean",' + sLineBreak +
+    '      "default": false' + sLineBreak +
     '    }' + sLineBreak +
     '  },' + sLineBreak +
     '  "required": [' + sLineBreak +
@@ -2095,8 +2105,10 @@ begin
   AddTool(
     Result,
     'project_open',
-    'Öffnet ein Projekt. Vorhandene Projekte werden niemals ohne zusätzliche Rückfrage ersetzt oder geschlossen.',
-    '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}',
+    'Fügt DPR/DPK/DPROJ der aktuellen Projektgruppe hinzu. close_others=true schließt sie vorher; Delphi-Speichern/Abbrechen bleibt wirksam. ' +
+    'GROUPPROJ/BDSGROUP/BPG ersetzt grundsätzlich die aktuelle Gruppe.',
+    '{"type":"object","properties":{"file":{"type":"string"},"close_others":{"type":"boolean","default":false}},' +
+    '"required":["file"],"additionalProperties":false}',
     False
   );
   AddTool(

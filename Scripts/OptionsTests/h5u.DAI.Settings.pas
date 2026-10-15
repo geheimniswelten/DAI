@@ -15,6 +15,13 @@ type
     procedure SetAllowIDEStartStop(const AAllowed: Boolean);
   public
     Enabled: Boolean;
+    UseSharedConnectionSettings: Boolean;
+    SavedConnectionAvailable: array[Boolean] of Boolean;
+    SavedConnectionPort: array[Boolean] of Integer;
+    SavedConnectionToken: array[Boolean] of string;
+    ConnectionReadCount: Integer;
+    ConnectionRefreshCount: Integer;
+    FailConnectionRead: Boolean;
     LogAccessPoints: Boolean;
     Port: Integer;
     Token: string;
@@ -30,6 +37,8 @@ type
     class procedure Reset; static;
     function GenerateToken: string;
     function LocalizedProjectsDirectoryHint: string;
+    procedure RefreshConnectionSettings;
+    function ReadConnectionSettings(const AShared: Boolean; out APort: Integer; out AToken: string): Boolean;
     procedure Save;
     procedure DiscardLifecycleChange;
     property AllowIDEStartStop: Boolean read GetAllowIDEStartStop write SetAllowIDEStartStop;
@@ -89,6 +98,16 @@ end;
 class procedure TDAISettings.Reset;
 begin
   FInstance.Enabled := False;
+  FInstance.UseSharedConnectionSettings := True;
+  FInstance.SavedConnectionAvailable[False] := False;
+  FInstance.SavedConnectionAvailable[True] := False;
+  FInstance.SavedConnectionPort[False] := 0;
+  FInstance.SavedConnectionPort[True] := 0;
+  FInstance.SavedConnectionToken[False] := '';
+  FInstance.SavedConnectionToken[True] := '';
+  FInstance.ConnectionReadCount := 0;
+  FInstance.ConnectionRefreshCount := 0;
+  FInstance.FailConnectionRead := False;
   FInstance.LogAccessPoints := False;
   FInstance.Port := 7101;
   FInstance.Token := 'synthetic-stored-options-token';
@@ -102,11 +121,37 @@ begin
   FInstance.FailSave := False;
 end;
 
+procedure TDAISettings.RefreshConnectionSettings;
+begin
+  Inc(ConnectionRefreshCount);
+end;
+
+function TDAISettings.ReadConnectionSettings(const AShared: Boolean; out APort: Integer; out AToken: string): Boolean;
+begin
+  Inc(ConnectionReadCount);
+  if FailConnectionRead then
+    raise Exception.Create('Synthetic connection-preview failure');
+  Result := SavedConnectionAvailable[AShared];
+  if Result then
+  begin
+    APort := SavedConnectionPort[AShared];
+    AToken := SavedConnectionToken[AShared];
+  end
+  else
+  begin
+    APort := Port;
+    AToken := Token;
+  end;
+end;
+
 procedure TDAISettings.Save;
 begin
   Inc(SaveCount);
   if FailSave then
     raise Exception.Create('Synthetic settings-save failure');
+  SavedConnectionAvailable[UseSharedConnectionSettings] := True;
+  SavedConnectionPort[UseSharedConnectionSettings] := Port;
+  SavedConnectionToken[UseSharedConnectionSettings] := Token;
   if FLifecycleChangePending then
   begin
     PersistedAllowIDEStartStop := FAllowIDEStartStop;

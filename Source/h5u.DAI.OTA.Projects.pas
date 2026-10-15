@@ -12,8 +12,8 @@ uses
 type
   TDAIProjectService = class sealed
   public
-    class function CreateProject(const AName: string; const ADirectory: string; const AKind: string; const ASave: Boolean = True): TJSONObject; static;
-    class function OpenProject(const AFileName: string): TJSONObject; static;
+    class function CreateProject(const AName: string; const ADirectory: string; const AKind: string; const ASave: Boolean = True; const ACloseOthers: Boolean = False): TJSONObject; static;
+    class function OpenProject(const AFileName: string; const ACloseOthers: Boolean = False): TJSONObject; static;
     class function SaveProject(const AProjectNameOrPath: string): TJSONObject; static;
     class function RemoveProject(const AProjectNameOrPath: string): TJSONObject; static;
     class function CreateUnit(const AProjectNameOrPath: string; const AFileName: string; const ASource: string): TJSONObject; static;
@@ -130,37 +130,37 @@ begin
   Result := LConfirmed;
 end;
 
+function IsProjectGroupFile(const AFileName: string): Boolean;
+var
+  LExtension: string;
+begin
+  LExtension := TPath.GetExtension(AFileName);
+  Result := SameText(LExtension, '.groupproj') or SameText(LExtension, '.bdsgroup') or SameText(LExtension, '.bpg');
+end;
+
 function IsProjectFile(const AFileName: string): Boolean;
 var
   LExtension: string;
 begin
   LExtension := TPath.GetExtension(AFileName);
   Result := SameText(LExtension, '.dpr') or SameText(LExtension, '.dproj') or SameText(LExtension, '.dpk') or
-    SameText(LExtension, '.cbproj') or SameText(LExtension, '.bpr') or SameText(LExtension, '.bpk') or
-    SameText(LExtension, '.groupproj') or SameText(LExtension, '.bpg');
+    SameText(LExtension, '.cbproj') or SameText(LExtension, '.bpr') or SameText(LExtension, '.bpk') or IsProjectGroupFile(AFileName);
 end;
 
-function OpenProjectSummary: string;
+procedure CloseWorkspaceOnMainThread(const AModuleServices: IOTAModuleServices);
 var
-  LProject: IOTAProject;
+  LIndex: Integer;
+  LGroup: IOTAProjectGroup;
 begin
-  Result := '';
-  for LProject in TDAIOTA.Projects do
-  begin
-    if Result <> '' then
-      Result := Result + sLineBreak;
-    Result := Result + '• ' + TDAIOTA.ProjectFileName(LProject);
-  end;
-end;
-
-function ProjectOperationNeedsConfirmation(const ATargetFileName: string): Boolean;
-var
-  LProject: IOTAProject;
-begin
-  Result := False;
-  for LProject in TDAIOTA.Projects do
-    if not TDAIOTA.SameFile(TDAIOTA.ProjectFileName(LProject), ATargetFileName) then
-      Exit(True);
+  // Closing may offer to save modified editors. Preserve reference-path guards
+  // before invoking any close, and let the IDE handle save/discard/cancel.
+  for LIndex := 0 to AModuleServices.ModuleCount - 1 do
+    RequireWritableModuleOnMainThread(AModuleServices.Modules[LIndex], True);
+  if not AModuleServices.CloseAll then
+    raise EAbort.Create('Das Schließen der bisherigen Projekte wurde abgebrochen. Die angeforderte Projektoperation wird nicht ausgeführt.');
+  LGroup := AModuleServices.MainProjectGroup;
+  if Assigned(AModuleServices.GetActiveProject) or (Assigned(LGroup) and (LGroup.ProjectCount <> 0)) then
+    raise EInvalidOperation.Create('Die bisherige Projektgruppe konnte nicht vollständig geschlossen werden.');
 end;
 
 function ResolveUnitFileName(const AProject: IOTAProject; const AFileName: string): string;
@@ -288,7 +288,8 @@ begin
   Result.AddPair('ancestor', LAncestorName);
 end;
 
-class function TDAIProjectService.CreateProject(const AName: string; const ADirectory: string; const AKind: string; const ASave: Boolean): TJSONObject;
+class function TDAIProjectService.CreateProject(const AName: string; const ADirectory: string; const AKind: string;
+  const ASave: Boolean; const ACloseOthers: Boolean): TJSONObject;
 var
   LActiveProject: IOTAProject;
   LCreator: TDAIProjectCreator;
@@ -304,7 +305,7 @@ var
   LMainUnitFileName: string;
   LModuleServices: IOTAModuleServices;
   LName: string;
-  LOpenProjects: string;
+  LGroupFileName: string;
   LProjectFileName: string;
 begin
   LName := Trim(AName);
@@ -321,41 +322,18 @@ begin
   // The target is protected even for an unsaved creator, before any confirmation or IDE mutation.
   RequireWritablePath(LFileName);
   LGroup := TDAIOTA.MainProjectGroup;
-  RequireWritableModule(LGroup);
+  if not ACloseOthers then
+    RequireWritableModule(LGroup);
   LActiveProject := TDAIOTA.ActiveProject;
-  if Assigned(LActiveProject) and not Assigned(LGroup) then
+  if not ACloseOthers and Assigned(LActiveProject) and not Assigned(LGroup) then
     raise EInvalidOperation.Create(
-      'Es ist ein einzelnes Projekt ohne Projektgruppe geöffnet. DAI erstellt kein weiteres Projekt, weil die IDE dabei das vorhandene Projekt schließen könnte. ' +
-      'Erstellen oder öffnen Sie zuerst manuell eine Projektgruppe.'
+      'Ein ungebundenes Projekt ohne Projektgruppe ist geöffnet. Die IDE kann es nicht sicher in eine Gruppe übernehmen. ' +
+      'Das Projekt bleibt geöffnet; zum bewussten Wechsel close_others=true verwenden.'
     );
 
   if TFile.Exists(LFileName) or TFile.Exists(ChangeFileExt(LFileName, '.dproj')) or
     TDirectory.Exists(LFileName) or TDirectory.Exists(ChangeFileExt(LFileName, '.dproj')) then
     raise EDAIFileAlreadyExists.CreateFmt('Das Projekt existiert bereits: %s', [LFileName]);
-
-  LOpenProjects := OpenProjectSummary;
-  if LOpenProjects <> '' then
-    if not ConfirmWorkspaceChange(
-      'Neues Projekt erstellen',
-      Format(
-        {$IF CompilerVersion >= 36.0}  // Delphi 12+
-        '''
-        DAI erstellt das neue Projekt in der aktuellen Projektgruppe. Sollte die IDE die vorhandene Gruppe nicht erweitern können, könnte sie einen Wechsel anbieten.
-
-        Geöffnete Projekte:
-        %s
-        ''', [LOpenProjects]
-        {$ELSE}
-        'DAI erstellt das neue Projekt in der aktuellen Projektgruppe. Sollte die IDE die vorhandene Gruppe nicht erweitern können, ' +
-        'könnte sie einen Wechsel anbieten.' + sLineBreak +
-        '' + sLineBreak +
-        'Geöffnete Projekte:' + sLineBreak +
-        '%s'
-        , [LOpenProjects]
-        {$IFEND}
-      )
-    ) then
-      raise EAbort.Create('Die Projekterstellung wurde durch den Benutzer abgebrochen.');
 
   if SameText(AKind, 'vcl') then
     LKind := pkVCL
@@ -369,6 +347,7 @@ begin
   LMainUnitFileName := '';
   LMainFormFileName := '';
   LMainFormName := '';
+  LGroupFileName := '';
   TDAIOTA.RunOnMainThread(
     procedure
     begin
@@ -376,12 +355,20 @@ begin
         raise EInvalidOperation.Create('IOTAModuleServices ist nicht verfügbar.');
       if LModuleServices.MainProjectGroup <> LGroup then
         raise EInvalidOperation.Create('Die Projektgruppe wurde während der Erstellungsanfrage geändert. Wiederholen Sie die Anfrage.');
-      if not Assigned(LGroup) and Assigned(LModuleServices.GetActiveProject) then
-        raise EInvalidOperation.Create('Inzwischen wurde ein einzelnes Projekt geöffnet. Die Projekterstellung wird zum Schutz dieses Projekts abgebrochen.');
+      if not ACloseOthers and not Assigned(LGroup) and Assigned(LModuleServices.GetActiveProject) then
+        raise EInvalidOperation.Create('Inzwischen wurde ein ungebundenes Projekt geöffnet. Die Projekterstellung wird zu dessen Schutz abgebrochen.');
       if Assigned(TDAIOTA.FindModuleByFileName(LFileName)) or Assigned(TDAIOTA.FindModuleByFileName(ChangeFileExt(LFileName, '.dproj'))) then
         raise EDAIFileAlreadyExists.CreateFmt('Das Projekt ist bereits als IDE-Modul geöffnet: %s', [LFileName]);
       RequireWritablePath(LFileName);
-      RequireWritableModuleOnMainThread(LGroup);
+      if ACloseOthers then
+      begin
+        CloseWorkspaceOnMainThread(LModuleServices);
+        LGroup := nil;
+        LActiveProject := nil;
+        LGroup := LModuleServices.MainProjectGroup;
+      end
+      else
+        RequireWritableModuleOnMainThread(LGroup);
       if ASave and not ForceDirectories(LDirectory) then
         raise EInvalidOperation.Create('Das neue Projektverzeichnis konnte nicht erstellt werden.');
       LCreator := TDAIProjectCreator.Create(LGroup, LFileName, LKind, not ASave);
@@ -412,6 +399,8 @@ begin
           raise EInvalidOperation.Create('Das neue Projekt konnte nicht gespeichert werden.');
       end;
       LProjectFileName := LCreatedModule.FileName;
+      if Assigned(LModuleServices.MainProjectGroup) then
+        LGroupFileName := LModuleServices.MainProjectGroup.FileName;
     end);
 
   Result := TJSONObject.Create;
@@ -419,6 +408,8 @@ begin
   Result.AddPair('project_file', LProjectFileName);
   Result.AddPair('created', TJSONBool.Create(Assigned(LCreatedModule)));
   Result.AddPair('saved', TJSONBool.Create(ASave));
+  Result.AddPair('close_others', TJSONBool.Create(ACloseOthers));
+  Result.AddPair('project_group_file', LGroupFileName);
   Result.AddPair('unnamed', TJSONBool.Create(not ASave));
   if LMainUnitFileName <> '' then
   begin
@@ -495,78 +486,85 @@ begin
   Result.AddPair('opened', TJSONBool.Create(LOpened));
 end;
 
-class function TDAIProjectService.OpenProject(const AFileName: string): TJSONObject;
+class function TDAIProjectService.OpenProject(const AFileName: string; const ACloseOthers: Boolean): TJSONObject;
 var
   LActionServices: IOTAActionServices;
-  LActiveProject: IOTAProject;
   LFileName: string;
+  LGroup: IOTAProjectGroup;
+  LGroupFileName: string;
+  LIsGroup: Boolean;
+  LModuleServices: IOTAModuleServices;
   LOpened: Boolean;
-  LOpenProjects: string;
+  LAlreadyOpen: Boolean;
+  LReplaceWorkspace: Boolean;
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
+  if not IsProjectFile(LFileName) then
+    raise EArgumentException.Create('Eine Projektdatei oder Projektgruppe ist erforderlich (DPR, DPK, DPROJ, GROUPPROJ oder BDSGROUP).');
   if not TFile.Exists(LFileName) then
     raise EDAIFileNotFound.CreateFmt('Projektdatei nicht gefunden: %s', [LFileName]);
 
-  if Assigned(TDAIOTA.ProjectByNameOrPath(LFileName)) then
-  begin
-    Result := TJSONObject.Create;
-    Result.AddPair('file', LFileName);
-    Result.AddPair('opened', TJSONBool.Create(True));
-    Result.AddPair('already_open', TJSONBool.Create(True));
-    Exit;
-  end;
-
-  LActiveProject := TDAIOTA.ActiveProject;
-  if Assigned(LActiveProject) and (TDAIOTA.MainProjectGroup = nil) then
-    raise EInvalidOperation.Create(
-      'Es ist ein einzelnes Projekt ohne Projektgruppe geöffnet. DAI öffnet kein weiteres Projekt, weil die IDE dabei das vorhandene Projekt schließen könnte. ' +
-      'Erstellen oder öffnen Sie zuerst manuell eine Projektgruppe.'
-    );
-
-  if ProjectOperationNeedsConfirmation(LFileName) then
-  begin
-    LOpenProjects := OpenProjectSummary;
-    if not ConfirmWorkspaceChange(
-      'Projekt öffnen',
-      Format(
-        {$IF CompilerVersion >= 36.0}  // Delphi 12+
-        '''
-        DAI wird die folgende Projektdatei öffnen:
-        %s
-
-        Die vorhandenen Projekte sollen geöffnet bleiben. Falls die IDE stattdessen einen Gruppenwechsel verlangt, erscheint zusätzlich deren eigener Dialog.
-
-        Bereits geöffnet:
-        %s
-        ''', [LFileName, LOpenProjects]
-        {$ELSE}
-        'DAI wird die folgende Projektdatei öffnen:' + sLineBreak +
-        '%s' + sLineBreak +
-        '' + sLineBreak +
-        'Die vorhandenen Projekte sollen geöffnet bleiben. Falls die IDE stattdessen einen Gruppenwechsel verlangt, erscheint zusätzlich deren eigener Dialog.' + sLineBreak +
-        '' + sLineBreak +
-        'Bereits geöffnet:' + sLineBreak +
-        '%s'
-        , [LFileName, LOpenProjects]
-        {$IFEND}
-      )
-    ) then
-      raise EAbort.Create('Das Öffnen des Projekts wurde durch den Benutzer abgebrochen.');
-  end;
-
+  LIsGroup := IsProjectGroupFile(LFileName);
+  LReplaceWorkspace := ACloseOthers or LIsGroup;
   LOpened := False;
+  LAlreadyOpen := False;
+  LGroupFileName := '';
+  LGroup := TDAIOTA.MainProjectGroup;
   TDAIOTA.RunOnMainThread(
     procedure
     begin
       if not Supports(BorlandIDEServices, IOTAActionServices, LActionServices) then
         raise EInvalidOperation.Create('IOTAActionServices ist nicht verfügbar.');
-      LOpened := LActionServices.OpenFile(LFileName);
+      if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
+        raise EInvalidOperation.Create('IOTAModuleServices ist nicht verfügbar.');
+      if LModuleServices.MainProjectGroup <> LGroup then
+        raise EInvalidOperation.Create('Die Projektgruppe wurde während der Öffnungsanfrage geändert. Wiederholen Sie die Anfrage.');
+      if LIsGroup then
+        LAlreadyOpen := Assigned(LGroup) and TDAIOTA.SameFile(LGroup.FileName, LFileName)
+      else
+        LAlreadyOpen := Assigned(TDAIOTA.ProjectByNameOrPath(LFileName));
+      if LAlreadyOpen and not ACloseOthers then
+      begin
+        LOpened := True;
+        LReplaceWorkspace := False;
+      end
+      else
+      begin
+        if not LReplaceWorkspace and Assigned(LModuleServices.GetActiveProject) and not Assigned(LGroup) then
+          raise EInvalidOperation.Create(
+            'Ein ungebundenes Projekt ohne Projektgruppe ist geöffnet. Es bleibt geschützt; zum bewussten Wechsel close_others=true verwenden.');
+        if LReplaceWorkspace then
+        begin
+          CloseWorkspaceOnMainThread(LModuleServices);
+          LGroup := nil;
+        end
+        else
+          RequireWritableModuleOnMainThread(LGroup);
+        // False explicitly adds to the existing (possibly implicit) project
+        // group; generic OpenFile does not select this OTA behavior.
+        LOpened := LActionServices.OpenProject(LFileName, LReplaceWorkspace);
+        if LOpened and not LReplaceWorkspace and Assigned(LGroup) and (LModuleServices.MainProjectGroup <> LGroup) then
+          raise EInvalidOperation.Create('Die IDE hat die Projektgruppe beim Anhängen unerwartet gewechselt.');
+        if LOpened then
+          if LIsGroup then
+          begin
+            LGroup := LModuleServices.MainProjectGroup;
+            LOpened := Assigned(LGroup) and TDAIOTA.SameFile(LGroup.FileName, LFileName);
+          end
+          else
+            LOpened := Assigned(TDAIOTA.ProjectByNameOrPath(LFileName));
+      end;
+      if Assigned(LModuleServices.MainProjectGroup) then
+        LGroupFileName := LModuleServices.MainProjectGroup.FileName;
     end);
 
   Result := TJSONObject.Create;
   Result.AddPair('file', LFileName);
   Result.AddPair('opened', TJSONBool.Create(LOpened));
-  Result.AddPair('already_open', TJSONBool.Create(False));
+  Result.AddPair('already_open', TJSONBool.Create(LAlreadyOpen and not ACloseOthers));
+  Result.AddPair('close_others', TJSONBool.Create(ACloseOthers));
+  Result.AddPair('replaced_group', TJSONBool.Create(LOpened and LReplaceWorkspace));
+  Result.AddPair('project_group_file', LGroupFileName);
 end;
 
 class function TDAIProjectService.RemoveFileFromProject(const AProjectNameOrPath: string; const AFileName: string): TJSONObject;

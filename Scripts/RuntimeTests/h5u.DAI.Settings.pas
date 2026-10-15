@@ -12,6 +12,11 @@ type
     Token: string;
     class function Instance: TDAISettings; static;
     procedure Load;
+    procedure RefreshConnectionSettings;
+    class var RefreshCount: Integer;
+    class var RefreshPending: Boolean;
+    class var RefreshedPort: Integer;
+    class var RefreshedToken: string;
   end;
 
 implementation
@@ -30,6 +35,17 @@ end;
 
 procedure TDAISettings.Load;
 begin
+end;
+
+procedure TDAISettings.RefreshConnectionSettings;
+begin
+  Inc(RefreshCount);
+  if RefreshPending then
+  begin
+    Port := RefreshedPort;
+    Token := RefreshedToken;
+    RefreshPending := False;
+  end;
 end;
 
 initialization

@@ -21,6 +21,12 @@ type
     FStartServerButton: TButton;
     FStopServerButton: TButton;
     FLoggingCheckBox: TCheckBox;
+    FUseSharedConnectionSettingsCheckBox: TCheckBox;
+    FLoadingConnectionSettings: Boolean;
+    FDisplayedSharedConnectionSettings: Boolean;
+    FConnectionDraftAvailable: array[Boolean] of Boolean;
+    FConnectionPortDraft: array[Boolean] of string;
+    FConnectionTokenDraft: array[Boolean] of string;
     FPortEdit: TEdit;
     FTokenEdit: TEdit;
     FGenerateTokenButton: TButton;
@@ -49,6 +55,8 @@ type
     procedure RefreshInheritedPermissionHints;
     procedure UpdateProjectPermissionState;
     procedure LoadPermissionSettings;
+    procedure LoadConnectionSettings;
+    procedure ConnectionSettingsScopeClicked(Sender: TObject);
     procedure StartServerClicked(Sender: TObject);
     procedure StopServerClicked(Sender: TObject);
     procedure GenerateTokenClicked(Sender: TObject);
@@ -217,6 +225,20 @@ begin
   FAllowIDEStartStopCheckBox.Hint := 'Gilt für alle Delphi-Versionen und Profile dieses Windows-Benutzers. ' +
     'Wird beim Speichern oder Registrieren wirksam. dai_start bleibt für Statusabfragen registriert.';
   FAllowIDEStartStopCheckBox.ShowHint := True;
+  Inc(LTop, 32);
+
+  FUseSharedConnectionSettingsCheckBox := TCheckBox.Create(Self);
+  FUseSharedConnectionSettingsCheckBox.Parent := Self;
+  FUseSharedConnectionSettingsCheckBox.Name := 'DAIUseSharedConnectionSettingsCheckBox';
+  FUseSharedConnectionSettingsCheckBox.SetBounds(24, LTop, 744, 24);
+  FUseSharedConnectionSettingsCheckBox.Caption := 'Port und Bearer-Token für alle Delphi-Versionen und Profile gemeinsam verwenden';
+  FUseSharedConnectionSettingsCheckBox.Checked := True;
+  FUseSharedConnectionSettingsCheckBox.Hint := 'Standard: gemeinsame Verbindungseinstellungen für diesen Windows-Benutzer. ' +
+    'Ohne Häkchen gelten Port und Bearer-Token nur für diese Delphi-Version und dieses IDE-Profil. ' +
+    'Andere DAI-Einstellungen bleiben IDE-spezifisch. Umschalten zeigt die vorhandenen Werte; ' +
+    'erst Speichern oder Registrieren übernimmt die Auswahl.';
+  FUseSharedConnectionSettingsCheckBox.ShowHint := True;
+  FUseSharedConnectionSettingsCheckBox.OnClick := ConnectionSettingsScopeClicked;
   Inc(LTop, 32);
 
   NewLabel(Self, 'Port', 24, LTop + 4);
@@ -518,18 +540,82 @@ end;
 
 procedure TDAIOptionsFrame.LoadFromSettings;
 begin
+  TDAISettings.Instance.RefreshConnectionSettings;
   FServerEnabledCheckBox.Checked := TDAISettings.Instance.Enabled;
   FLoadedAllowIDEStartStop := TDAISettings.Instance.AllowIDEStartStop;
   FAllowIDEStartStopCheckBox.Checked := FLoadedAllowIDEStartStop;
   FLoggingCheckBox.Checked := TDAISettings.Instance.LogAccessPoints;
-  FPortEdit.Text := IntToStr(TDAISettings.Instance.Port);
-  FTokenEdit.Text := TDAISettings.Instance.Token;
+  LoadConnectionSettings;
   FDirectoriesMemo.Lines.Assign(TDAISettings.Instance.CustomReadDirectories);
   FDirectoriesMemo.TextHint := TDAISettings.Instance.LocalizedProjectsDirectoryHint;
   FDirectoryHintLabel.Caption := 'Vorschlag für diese IDE-Sprache: ' + TDAISettings.Instance.LocalizedProjectsDirectoryHint;
   RefreshServerStatus;
   LoadPermissionSettings;
   RefreshRegistrationStatus;
+end;
+
+procedure TDAIOptionsFrame.LoadConnectionSettings;
+begin
+  FLoadingConnectionSettings := True;
+  try
+    FConnectionDraftAvailable[False] := False;
+    FConnectionDraftAvailable[True] := False;
+    FDisplayedSharedConnectionSettings := TDAISettings.Instance.UseSharedConnectionSettings;
+    FUseSharedConnectionSettingsCheckBox.Checked := FDisplayedSharedConnectionSettings;
+    FPortEdit.Text := IntToStr(TDAISettings.Instance.Port);
+    FTokenEdit.Text := TDAISettings.Instance.Token;
+    FConnectionPortDraft[FDisplayedSharedConnectionSettings] := FPortEdit.Text;
+    FConnectionTokenDraft[FDisplayedSharedConnectionSettings] := FTokenEdit.Text;
+    FConnectionDraftAvailable[FDisplayedSharedConnectionSettings] := True;
+  finally
+    FLoadingConnectionSettings := False;
+  end;
+end;
+
+procedure TDAIOptionsFrame.ConnectionSettingsScopeClicked(Sender: TObject);
+var
+  LShared: Boolean;
+  LPort: Integer;
+  LToken: string;
+begin
+  if FLoadingConnectionSettings then
+    Exit;
+  LShared := FUseSharedConnectionSettingsCheckBox.Checked;
+  if LShared = FDisplayedSharedConnectionSettings then
+    Exit;
+  FConnectionPortDraft[FDisplayedSharedConnectionSettings] := FPortEdit.Text;
+  FConnectionTokenDraft[FDisplayedSharedConnectionSettings] := FTokenEdit.Text;
+  FConnectionDraftAvailable[FDisplayedSharedConnectionSettings] := True;
+  try
+    if not FConnectionDraftAvailable[LShared] then
+    begin
+      if TDAISettings.Instance.ReadConnectionSettings(LShared, LPort, LToken) then
+      begin
+        FConnectionPortDraft[LShared] := IntToStr(LPort);
+        FConnectionTokenDraft[LShared] := LToken;
+      end
+      else
+      begin
+        FConnectionPortDraft[LShared] := FPortEdit.Text;
+        FConnectionTokenDraft[LShared] := FTokenEdit.Text;
+      end;
+      FConnectionDraftAvailable[LShared] := True;
+    end;
+    FPortEdit.Text := FConnectionPortDraft[LShared];
+    FTokenEdit.Text := FConnectionTokenDraft[LShared];
+    FDisplayedSharedConnectionSettings := LShared;
+  except
+    // Keep the scope and its displayed credentials together after a failed preview.
+    FLoadingConnectionSettings := True;
+    try
+      FUseSharedConnectionSettingsCheckBox.Checked := FDisplayedSharedConnectionSettings;
+      FPortEdit.Text := FConnectionPortDraft[FDisplayedSharedConnectionSettings];
+      FTokenEdit.Text := FConnectionTokenDraft[FDisplayedSharedConnectionSettings];
+    finally
+      FLoadingConnectionSettings := False;
+    end;
+    raise;
+  end;
 end;
 
 procedure TDAIOptionsFrame.LoadPermissionSettings;
@@ -888,6 +974,7 @@ begin
     raise EArgumentException.Create(LError);
   TDAISettings.Instance.Enabled := FServerEnabledCheckBox.Checked;
   TDAISettings.Instance.LogAccessPoints := FLoggingCheckBox.Checked;
+  TDAISettings.Instance.UseSharedConnectionSettings := FUseSharedConnectionSettingsCheckBox.Checked;
   TDAISettings.Instance.Port := LPort;
   TDAISettings.Instance.Token := LToken;
   TDAISettings.Instance.CustomReadDirectories.Assign(FDirectoriesMemo.Lines);
@@ -901,6 +988,7 @@ begin
   end;
   FLoadedAllowIDEStartStop := TDAISettings.Instance.AllowIDEStartStop;
   FAllowIDEStartStopCheckBox.Checked := FLoadedAllowIDEStartStop;
+  LoadConnectionSettings;
 
   for LScope := Low(TDAIPermissionScope) to High(TDAIPermissionScope) do
   begin

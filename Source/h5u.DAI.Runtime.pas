@@ -70,6 +70,8 @@ begin
   try
     if not Assigned(FServer) then
       FServer := TDAIMCPServer.Create;
+    if not TDAIMCPServer(FServer).Active then
+      TDAISettings.Instance.RefreshConnectionSettings;
     // The server checks shutdown before idempotence and preserves an active
     // temporary configuration instead of applying the persisted settings.
     Result := TDAIMCPServer(FServer).Start;

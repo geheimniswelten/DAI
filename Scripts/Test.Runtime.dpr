@@ -152,11 +152,45 @@ begin
   Check(TDAIMCPServer.UnsafeDestroyedCount = 0, 'default-start tests never destroy an undrained server');
 end;
 
+procedure ConnectionRefreshChecks;
+var
+  LRefreshCount: Integer;
+begin
+  TDAISettings.RefreshedPort := 7998;
+  TDAISettings.RefreshedToken := 'new-common-fixture';
+  TDAISettings.RefreshPending := True;
+  LRefreshCount := TDAISettings.RefreshCount;
+  Check(TDAIRuntime.StartServer, 'inactive toolbar start accepts refreshed shared credentials');
+  Check(TDAISettings.RefreshCount = LRefreshCount + 1, 'inactive toolbar start refreshes settings');
+  Check(TDAIRuntime.ServerPort = 7998, 'toolbar start applies newly persisted common port');
+  Check(TDAIMCPServer.LastAppliedToken = 'new-common-fixture', 'toolbar start applies newly persisted common token');
+  TDAISettings.RefreshedPort := 7997;
+  TDAISettings.RefreshedToken := 'later-common-fixture';
+  TDAISettings.RefreshPending := True;
+  LRefreshCount := TDAISettings.RefreshCount;
+  Check(TDAIRuntime.StartServer, 'active toolbar start stays idempotent after external common change');
+  Check(TDAISettings.RefreshCount = LRefreshCount, 'active start does not reload credentials beneath running server');
+  Check(TDAIRuntime.ServerPort = 7998, 'active server preserves its effective port');
+  Check(TDAIMCPServer.LastAppliedToken = 'new-common-fixture', 'active server preserves its effective token');
+  Check(TDAIRuntime.StopServer, 'shared fixture server stops normally');
+  Check(TDAIRuntime.StartServer(7996, 'temporary-fixture'), 'explicit options draft can start an inactive server');
+  Check(TDAISettings.RefreshCount = LRefreshCount, 'explicit draft start never substitutes persisted shared credentials');
+  Check(TDAIRuntime.ServerPort = 7996, 'explicit temporary port is retained');
+  Check(TDAIMCPServer.LastAppliedToken = 'temporary-fixture', 'explicit temporary token is retained');
+  Check(TDAIRuntime.StopServer, 'temporary fixture server stops normally');
+  Check(TDAIRuntime.StartServer, 'subsequent toolbar start observes pending external common update');
+  Check(TDAIRuntime.ServerPort = 7997, 'subsequent toolbar start refreshes latest persisted port');
+  Check(TDAIMCPServer.LastAppliedToken = 'later-common-fixture', 'subsequent toolbar start refreshes latest persisted token');
+  TDAIRuntime.Stop;
+  Check(not TDAIRuntime.ServerActive, 'connection refresh fixtures leave no active server');
+end;
+
 begin
   try
     FalseAndReentrantChecks;
     ExceptionAndFallbackChecks;
     DefaultStartExceptionChecks;
+    ConnectionRefreshChecks;
     Writeln(Format('PASS: %d runtime start/shutdown checks', [CheckCount]));
   except
     on E: Exception do

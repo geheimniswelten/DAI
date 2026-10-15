@@ -2,6 +2,13 @@
 
 ## Unveröffentlicht
 
+- Der PreBuild-Aufruf zum Beenden der Bridge liefert auch ohne laufenden Bridge-Prozess Exitcode 0 und erzeugt dadurch keinen Exec-Fehler in der IDE.
+- project_open fügt DPR/DPK/DPROJ standardmäßig der aktuellen Projektgruppe hinzu; project_create erstellt ebenfalls in dieser Gruppe. Vorhandene Einzelprojekte bleiben erhalten.
+- Beide Werkzeuge unterstützen close_others=true zum vorherigen Schließen der aktuellen Gruppe. Native Speicherrückfragen und Abbrechen bleiben wirksam; GROUPPROJ/BDSGROUP/BPG ersetzt die Gruppe weiterhin grundsätzlich.
+- MCP-Werkzeugbeschreibungen, beide Schema-/Skillvarianten und README erklären Standardverhalten und ausdrücklichen Gruppenwechsel.
+- Port und Bearer-Token werden standardmäßig versions- und profilübergreifend gemeinsam gespeichert. Eine neue Option erlaubt weiterhin getrennte Verbindungsdaten pro IDE-Profil; vorhandene lokale Werte bleiben erhalten.
+- Die erste gemeinsame Verwendung übernimmt vorhandene Verbindungsdaten. Bereichswechsel zeigen gespeicherte Zielwerte, erhalten Dialogentwürfe und werden erst beim Speichern oder Registrieren wirksam.
+- Bereits geladene IDEs aktualisieren unveränderte Verbindungsdaten vor einem inaktiven Serverstart; unverändertes Speichern überschreibt keine neueren gemeinsamen Werte. Isolierte Registry-, Options- und Laufzeittests prüfen Migration und Wechselverhalten.
 - Laufzeit-Fragedialoge zeigen den tatsächlichen Projekt- oder globalen Bereich der Anfrage an; Hinweise zu dauerhaften und Session-Entscheidungen verwenden diesen Bereich.
 - Die Berechtigungsoptionen zeigen globale und projektbezogene ComboBoxen mit jeweils 190 Pixeln nebeneinander. Ein Schild-Iconbutton je Zeile öffnet den Dialog für das angezeigte aktive Projekt, sonst global; ohne aktives Projekt ist die Projektspalte deaktiviert.
 - „Default“ kennzeichnet geerbte Projektberechtigungen und entfernt beim Speichern eine eigene Vorgabe. Nur bearbeitete Werte werden übernommen; unveränderte Vererbung und bestehende Entwürfe bleiben erhalten.

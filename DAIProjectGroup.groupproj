@@ -1,0 +1,48 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{C3C6D0BC-E065-4BAB-AF07-BD5B75E5973F}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="DAI.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="DAI.McpBridge.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="DAI">
+        <MSBuild Projects="DAI.dproj"/>
+    </Target>
+    <Target Name="DAI:Clean">
+        <MSBuild Projects="DAI.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="DAI:Make">
+        <MSBuild Projects="DAI.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="DAI_McpBridge">
+        <MSBuild Projects="DAI.McpBridge.dproj"/>
+    </Target>
+    <Target Name="DAI_McpBridge:Clean">
+        <MSBuild Projects="DAI.McpBridge.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="DAI_McpBridge:Make">
+        <MSBuild Projects="DAI.McpBridge.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="DAI;DAI_McpBridge"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="DAI:Clean;DAI_McpBridge:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="DAI:Make;DAI_McpBridge:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

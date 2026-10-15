@@ -556,6 +556,9 @@ begin
     - `file_open`, `file_activate` und `file_close` erwarten `file`; beim Schließen kann Delphi einen Speicherdialog anzeigen.
     - Projekte verwalten: `project_create`, `project_open`, `project_save`, `project_remove`, `unit_create`, `form_unit_create`, `project_file_remove`.
     - `project_create` verwendet standardmäßig `save: true`; `save: false` erzeugt ein ungespeichertes IDE-Projekt, bei VCL einschließlich Hauptformular.
+    - `project_open` (DPR/DPK/DPROJ) und `project_create` ergänzen standardmäßig die aktuelle Projektgruppe und erhalten vorhandene Projekte.
+    - Mit `close_others: true` zuerst die aktuelle Projektgruppe schließen; Delphis Speicherrückfragen und Abbrechen bleiben wirksam.
+    - `project_open` mit GROUPPROJ/BDSGROUP/BPG ersetzt die aktuelle Gruppe grundsätzlich; Delphi kann nur eine Projektgruppe gleichzeitig laden.
     - Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.
     - `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.
 
@@ -764,6 +767,9 @@ begin
     '- `file_open`, `file_activate` und `file_close` erwarten `file`; beim Schließen kann Delphi einen Speicherdialog anzeigen.' + sLineBreak +
     '- Projekte verwalten: `project_create`, `project_open`, `project_save`, `project_remove`, `unit_create`, `form_unit_create`, `project_file_remove`.' + sLineBreak +
     '- `project_create` verwendet standardmäßig `save: true`; `save: false` erzeugt ein ungespeichertes IDE-Projekt, bei VCL einschließlich Hauptformular.' + sLineBreak +
+    '- `project_open` (DPR/DPK/DPROJ) und `project_create` ergänzen standardmäßig die aktuelle Projektgruppe und erhalten vorhandene Projekte.' + sLineBreak +
+    '- Mit `close_others: true` zuerst die aktuelle Projektgruppe schließen; Delphis Speicherrückfragen und Abbrechen bleiben wirksam.' + sLineBreak +
+    '- `project_open` mit GROUPPROJ/BDSGROUP/BPG ersetzt die aktuelle Gruppe grundsätzlich; Delphi kann nur eine Projektgruppe gleichzeitig laden.' + sLineBreak +
     '- Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.' + sLineBreak +
     '- `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.' + sLineBreak +
     '' + sLineBreak +
