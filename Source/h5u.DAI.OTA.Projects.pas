@@ -288,8 +288,7 @@ begin
   Result.AddPair('ancestor', LAncestorName);
 end;
 
-class function TDAIProjectService.CreateProject(const AName: string; const ADirectory: string; const AKind: string;
-  const ASave: Boolean; const ACloseOthers: Boolean): TJSONObject;
+class function TDAIProjectService.CreateProject(const AName: string; const ADirectory: string; const AKind: string; const ASave: Boolean; const ACloseOthers: Boolean): TJSONObject;
 var
   LActiveProject: IOTAProject;
   LCreator: TDAIProjectCreator;

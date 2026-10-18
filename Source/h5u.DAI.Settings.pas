@@ -155,8 +155,7 @@ begin
   end;
 end;
 
-function TryReadStoredConnectionSettings(const ARegistryRoot: string;
-  const AShared: Boolean; out APort: Integer; out AToken: string): Boolean;
+function TryReadStoredConnectionSettings(const ARegistryRoot: string; const AShared: Boolean; out APort: Integer; out AToken: string): Boolean;
 var
   LRegistry: TRegistry;
   LAccess: Cardinal;
@@ -186,8 +185,7 @@ begin
   end;
 end;
 
-procedure WriteStoredConnectionSettings(const ARegistryRoot: string;
-  const AShared: Boolean; const APort: Integer; const AToken: string);
+procedure WriteStoredConnectionSettings(const ARegistryRoot: string; const AShared: Boolean; const APort: Integer; const AToken: string);
 var
   LRegistry: TRegistry;
   LAccess: Cardinal;
@@ -430,8 +428,7 @@ begin
   end;
 end;
 
-function TDAISettings.ReadConnectionSettings(const AShared: Boolean;
-  out APort: Integer; out AToken: string): Boolean;
+function TDAISettings.ReadConnectionSettings(const AShared: Boolean; out APort: Integer; out AToken: string): Boolean;
 var
   LRegistryRoot: string;
   LMutex: THandle;

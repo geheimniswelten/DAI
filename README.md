@@ -47,7 +47,7 @@ zum VCL-Prozess der IDE. Beim angehaltenen Debuggee können dessen Controltexte 
 
 Die lokale Clientregistrierung ergänzt `dai_start` neben `dai`. Der Helfer startet beim Verbinden des MCP-Clients, seine Werkzeuge funktionieren
 auch ohne laufendes Delphi. Registriert wird der vollständige EXE-Pfad der gerade registrierenden IDE; die letzte Registrierung je Client legt
-Version und Win32-/Win64-IDE fest. Ein ausdrücklich verwendetes `-r`-Profil wird gezielt übernommen; andere IDE-Startargumente werden nicht wiederholt.
+Version und Win32-/Win64-IDE für diesen Registrierungsnamen fest. Ein ausdrücklich verwendetes `-r`-Profil wird gezielt übernommen; andere IDE-Startargumente werden nicht wiederholt.
 
 In den DAI-Optionen ist **„KI darf die Delphi-IDE starten und beenden“** standardmäßig aktiviert. Diese Freigabe gilt gemeinsam für alle
 Delphi-Versionen und Profile desselben Windows-Benutzers. Nach dem Speichern sperrt eine deaktivierte Option `delphi_start`, beide Modi von
@@ -92,7 +92,7 @@ laufen; Status erneut prüfen. Auch ohne Token funktionieren die lokalen Prozess
 Manueller Aufruf (der Client kommuniziert anschließend über STDIN/STDOUT):
 
 ```text
-DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.26
+DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.28
 ```
 
 ## Gemeinsame Verbindungsdaten
@@ -112,6 +112,35 @@ Andere bereits geöffnete IDEs lesen die aktuellen gemeinsamen Daten beim Öffne
 Ein aktiver Server behält seine laufende Konfiguration bis zum bewussten Übernehmen bzw. Neustarten. Unverändertes Speichern in einer zweiten IDE
 überschreibt keine inzwischen geänderten gemeinsamen Verbindungsdaten. Ändern sich Port oder Token, müssen die betroffenen Clients erneut registriert
 werden; beim Wechsel der laufenden IDE muss der Client gegebenenfalls seine MCP-Verbindung neu herstellen.
+
+Die Clientregistrierung verwendet den gewählten Einstellungsbereich auch für die Servernamen:
+
+| Verbindungsdaten | MCP-Server | Starthelfer |
+|---|---|---|
+| Gemeinsam | `dai` | `dai_start` |
+| Lokal, Delphi 11 / BDS 22.0 | `dai_bds22_0` | `dai_bds22_0_start` |
+| Lokal, Delphi 12 / BDS 23.0 | `dai_bds23_0` | `dai_bds23_0_start` |
+| Lokal, Delphi 13 / BDS 37.0 | `dai_bds37_0` | `dai_bds37_0_start` |
+
+Bei einem eigenen IDE-Registryprofil ergänzt DAI `_p` und eine stabile Kennung aus dem Profilpfad vor `_start`.
+Die Namen hängen von der BDS-/IDE-Version ab. Win32- und Win64-IDEs desselben Registryprofils verwenden denselben Einstellungsbereich;
+die letzte Registrierung dieses Bereichs legt die Startarchitektur fest. Die DAI-Optionen und `ide_status` zeigen die tatsächlichen Namen.
+Gemeinsame und mehrere lokale Registrierungen können nebeneinander in derselben Clientkonfiguration stehen. Updates und Deregistrierung betreffen
+ausschließlich den gerade gewählten Bereich. Ein Bereichswechsel entfernt keine vorherige Registrierung; zum Entfernen diesen Bereich wählen und deregistrieren.
+Codex erhält eigene Verwaltungsblöcke pro Bereich, andere Clients eigene Verwaltungsdateien. Bestehende globale Verwaltungsdateien bleiben kompatibel.
+Eine alte Registrierung `dai` wird beim ersten lokalen Registrieren erhalten, weil ihre Zugangsdaten auch zu einer anderen IDE gehören können.
+Für die neuen Namen den gewünschten lokalen Bereich einmal registrieren und die betroffene MCP-Verbindung neu laden. Der gemeinsame Skill bleibt
+für alle Bereiche derselbe und wird erst mit der letzten Codex-Registrierung entfernt. Die nachfolgend beschriebene Sperre auf einen aktiven DAI-Server gilt weiterhin.
+
+Der Knopf **„Registrierungen suchen und entfernen“** in den DAI-Optionen durchsucht die bekannten Konfigurationsdateien des ausgewählten KI-Clients
+beziehungsweise aller Clients. Der Dialog zeigt auch Registrierungen anderer Delphi-Versionen und Profile sowie alte Codex-Einträge unter APPDATA.
+So lässt sich eine vergessene Registrierung entfernen, nachdem die zugehörige Delphi-Version deinstalliert wurde. Die alte IDE und ihre Bridge müssen
+dazu nicht vorhanden sein. Client, Server-/Starthelfername, Bereich und Dateipfad helfen bei der Auswahl; Port-/Token-Inhalte werden nicht angezeigt.
+Erst **„Ausgewählte entfernen“** entfernt genau das gewählte Paar beziehungsweise seinen Codex-Verwaltungsblock und legt eine Sicherung an.
+Die Suche verändert keine Konfiguration. Optionsentwürfe bleiben erhalten; Verbindungsbereich, Port und Token werden nicht für die Bereinigung umgestellt.
+DAI prüft den Treffer vor dem Schreiben erneut und entfernt ausschließlich unveränderte verwaltete Einträge. Nach zwischenzeitlichen Änderungen erneut suchen.
+Manuell veränderte, nicht verwaltete oder beschädigte Treffer bleiben gesperrt; fremde MCP-Server und andere DAI-Bereiche bleiben erhalten.
+Betroffene KI-Clients müssen ihre MCP-Verbindung nach dem Entfernen neu laden.
 
 ## Benennung
 

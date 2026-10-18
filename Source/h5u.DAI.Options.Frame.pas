@@ -44,6 +44,7 @@ type
     FSkillStatusLabel: TLabel;
     FRegisterButton: TButton;
     FUnregisterButton: TButton;
+    FFindRegistrationsButton: TButton;
     FShowToolsButton: TButton;
     procedure BuildControls;
     procedure RefreshServerStatus;
@@ -64,6 +65,7 @@ type
     function SelectedClient: string;
     procedure RegisterClicked(Sender: TObject);
     procedure UnregisterClicked(Sender: TObject);
+    procedure FindRegistrationsClicked(Sender: TObject);
     procedure ShowToolsClicked(Sender: TObject);
     function PermissionLevelFromCombo(const AComboBox: TComboBox): TDAIPermissionLevel;
     procedure SetPermissionComboLevel(const AComboBox: TComboBox; const ALevel: TDAIPermissionLevel);
@@ -81,12 +83,14 @@ implementation
 {$R *.dfm}
 
 uses
+  System.Generics.Collections,
   System.IOUtils,
   System.StrUtils,
   System.SysUtils,
   System.Types,
   System.UITypes,
   Vcl.Dialogs,
+  Vcl.ComCtrls,
   Vcl.Graphics,
   h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
@@ -97,6 +101,216 @@ uses
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
   h5u.DAI.Settings;
+
+type
+  TDAIRegistrationCleanupDialog = class(TForm)
+  private
+    FClient: string;
+    FCandidates: TJSONObject;
+    FList: TListView;
+    FDetails: TMemo;
+    FStatus: TLabel;
+    FRemove: TButton;
+    FRefreshing: Boolean;
+    function SelectedCandidate: TJSONObject;
+    procedure SelectionChanged(Sender: TObject; Item: TListItem; Selected: Boolean);
+    procedure SearchClicked(Sender: TObject);
+    procedure RemoveClicked(Sender: TObject);
+    procedure Reload;
+  public
+    constructor CreateForClient(const AClient: string);
+    destructor Destroy; override;
+  end;
+
+constructor TDAIRegistrationCleanupDialog.CreateForClient(const AClient: string);
+var
+  LButton: TButton;
+begin
+  inherited CreateNew(nil);
+  Name := 'DAIRegistrationCleanupDialog';
+  Caption := 'DAI – Registrierungen suchen und entfernen';
+  Position := poScreenCenter;
+  ClientWidth := 960;
+  ClientHeight := 560;
+  Constraints.MinWidth := 760;
+  Constraints.MinHeight := 440;
+  FClient := AClient;
+  FStatus := TLabel.Create(Self);
+  FStatus.Parent := Self;
+  FStatus.SetBounds(16, 16, 928, 24);
+  FStatus.AutoSize := False;
+  FStatus.Anchors := [akLeft, akTop, akRight];
+  FList := TListView.Create(Self);
+  FList.Name := 'DAIRegistrationsList';
+  FList.Parent := Self;
+  FList.SetBounds(16, 48, 928, 300);
+  FList.Anchors := [akLeft, akTop, akRight, akBottom];
+  FList.ViewStyle := vsReport;
+  FList.ReadOnly := True;
+  FList.RowSelect := True;
+  FList.HideSelection := False;
+  FList.Columns.Add.Caption := 'KI-Client';
+  FList.Columns[0].Width := 180;
+  FList.Columns.Add.Caption := 'MCP-Server / Starthelfer';
+  FList.Columns[1].Width := 310;
+  FList.Columns.Add.Caption := 'Bereich';
+  FList.Columns[2].Width := 160;
+  FList.Columns.Add.Caption := 'Status';
+  FList.Columns[3].Width := 240;
+  FList.OnSelectItem := SelectionChanged;
+  FDetails := TMemo.Create(Self);
+  FDetails.Name := 'DAIRegistrationDetails';
+  FDetails.Parent := Self;
+  FDetails.SetBounds(16, 360, 928, 128);
+  FDetails.Anchors := [akLeft, akRight, akBottom];
+  FDetails.ReadOnly := True;
+  FDetails.ScrollBars := ssVertical;
+  FDetails.WordWrap := True;
+  LButton := TButton.Create(Self);
+  LButton.Parent := Self;
+  LButton.SetBounds(16, 510, 160, 30);
+  LButton.Anchors := [akLeft, akBottom];
+  LButton.Caption := 'Erneut suchen';
+  LButton.OnClick := SearchClicked;
+  FRemove := TButton.Create(Self);
+  FRemove.Name := 'DAIRemoveRegistrationButton';
+  FRemove.Parent := Self;
+  FRemove.SetBounds(188, 510, 230, 30);
+  FRemove.Anchors := [akLeft, akBottom];
+  FRemove.Caption := 'Ausgewählte entfernen';
+  FRemove.Enabled := False;
+  FRemove.OnClick := RemoveClicked;
+  LButton := TButton.Create(Self);
+  LButton.Parent := Self;
+  LButton.SetBounds(784, 510, 160, 30);
+  LButton.Anchors := [akRight, akBottom];
+  LButton.Caption := 'Schließen';
+  LButton.Cancel := True;
+  LButton.ModalResult := mrClose;
+  Reload;
+end;
+
+destructor TDAIRegistrationCleanupDialog.Destroy;
+begin
+  if Assigned(FList) then
+    FList.OnSelectItem := nil;
+  FCandidates.Free;
+  inherited Destroy;
+end;
+
+function TDAIRegistrationCleanupDialog.SelectedCandidate: TJSONObject;
+var
+  LArray: TJSONArray;
+  LIndex: NativeInt;
+begin
+  Result := nil;
+  if FRefreshing or not Assigned(FCandidates) or not Assigned(FList.Selected) then
+    Exit;
+  LArray := FCandidates.GetValue<TJSONArray>('registrations', nil);
+  LIndex := NativeInt(FList.Selected.Data) - 1;
+  if not Assigned(LArray) then
+    Exit;
+  if (LIndex < 0) or (LIndex >= LArray.Count) then
+    Exit;
+  if LArray.Items[LIndex] is TJSONObject then
+    Result := TJSONObject(LArray.Items[LIndex]);
+end;
+
+procedure TDAIRegistrationCleanupDialog.SelectionChanged(Sender: TObject; Item: TListItem; Selected: Boolean);
+var
+  LCandidate: TJSONObject;
+begin
+  if FRefreshing then
+    Exit;
+  LCandidate := SelectedCandidate;
+  FRemove.Enabled := False;
+  FDetails.Clear;
+  if not Assigned(LCandidate) then
+    Exit;
+  FRemove.Enabled := LCandidate.GetValue<Boolean>('removable', False);
+  FDetails.Lines.Add('Konfigurationsdatei: ' + LCandidate.GetValue<string>('path', ''));
+  FDetails.Lines.Add('MCP-Server: ' + LCandidate.GetValue<string>('server_name', ''));
+  FDetails.Lines.Add('Starthelfer: ' + LCandidate.GetValue<string>('launcher_server', ''));
+  if LCandidate.GetValue<string>('registry_root', '') <> '' then
+    FDetails.Lines.Add('Einstellungsprofil: ' + LCandidate.GetValue<string>('registry_root'));
+  FDetails.Lines.Add(LCandidate.GetValue<string>('message', ''));
+end;
+
+procedure TDAIRegistrationCleanupDialog.Reload;
+var
+  LArray: TJSONArray;
+  LCandidate: TJSONObject;
+  LItem: TListItem;
+  LIndex: Integer;
+begin
+  FRefreshing := True;
+  FList.Items.BeginUpdate;
+  try
+    FList.Items.Clear;
+    FRemove.Enabled := False;
+    FDetails.Clear;
+    FreeAndNil(FCandidates);
+    try
+      FCandidates := TDAIClientRegistration.FindRegistrations(FClient);
+      LArray := FCandidates.GetValue<TJSONArray>('registrations', nil);
+      if Assigned(LArray) then
+        for LIndex := 0 to LArray.Count - 1 do
+          if LArray.Items[LIndex] is TJSONObject then
+          begin
+            LCandidate := TJSONObject(LArray.Items[LIndex]);
+            LItem := FList.Items.Add;
+            LItem.Data := Pointer(NativeInt(LIndex + 1));
+            LItem.Caption := LCandidate.GetValue<string>('label', LCandidate.GetValue<string>('client', ''));
+            LItem.SubItems.Add(LCandidate.GetValue<string>('server_name', '') + ' / ' + LCandidate.GetValue<string>('launcher_server', ''));
+            if LCandidate.GetValue<Boolean>('current_scope', False) then
+              LItem.SubItems.Add('Aktueller Bereich')
+            else
+              LItem.SubItems.Add('Anderer Bereich');
+            if LCandidate.GetValue<Boolean>('removable', False) then
+              LItem.SubItems.Add('Entfernbar')
+            else
+              LItem.SubItems.Add('Prüfen: ' + LCandidate.GetValue<string>('message', 'nicht verwaltet'));
+          end;
+      FStatus.Caption := Format('%d DAI-Registrierungen gefunden. Zum Entfernen einen Eintrag auswählen.', [FList.Items.Count]);
+    except
+      FStatus.Caption := 'Die Registrierungen konnten nicht gelesen werden. Konfigurationspfade und Zugriffsrechte prüfen.';
+    end;
+  finally
+    FList.Items.EndUpdate;
+    FRefreshing := False;
+  end;
+end;
+
+procedure TDAIRegistrationCleanupDialog.SearchClicked(Sender: TObject);
+begin
+  Reload;
+end;
+
+procedure TDAIRegistrationCleanupDialog.RemoveClicked(Sender: TObject);
+var
+  LCandidate, LResult: TJSONObject;
+  LMessage: string;
+begin
+  LCandidate := SelectedCandidate;
+  if not Assigned(LCandidate) then
+    Exit;
+  if not LCandidate.GetValue<Boolean>('removable', False) then
+    Exit;
+  FRemove.Enabled := False;
+  try
+    LResult := TDAIClientRegistration.RemoveFoundRegistration(LCandidate);
+    try
+      LMessage := LResult.GetValue<string>('message', 'Die Registrierung wurde geprüft.');
+    finally
+      LResult.Free;
+    end;
+    Reload;
+    FStatus.Caption := LMessage;
+  except
+    Reload;
+    FStatus.Caption := 'Die Registrierung konnte nicht entfernt werden. Erneut suchen und den aktuellen Zustand prüfen.';
+  end;
+end;
 
 procedure AddIndentedLines(const ALines: TStrings; const AText: string);
 var
@@ -422,6 +636,16 @@ begin
   FShowToolsButton.SetBounds(368, LTop, 280, 28);
   FShowToolsButton.Caption := 'Skill und MCP-Werkzeuge';
   FShowToolsButton.OnClick := ShowToolsClicked;
+  Inc(LTop, 36);
+
+  FFindRegistrationsButton := TButton.Create(Self);
+  FFindRegistrationsButton.Name := 'DAIFindRegistrationsButton';
+  FFindRegistrationsButton.Parent := Self;
+  FFindRegistrationsButton.SetBounds(24, LTop, 332, 28);
+  FFindRegistrationsButton.Caption := 'Registrierungen suchen und entfernen';
+  FFindRegistrationsButton.Hint := 'Sucht auch DAI-Registrierungen anderer Delphi-Versionen und Profile beim ausgewählten KI-Client.';
+  FFindRegistrationsButton.ShowHint := True;
+  FFindRegistrationsButton.OnClick := FindRegistrationsClicked;
   Inc(LTop, 48);
 
   LInfoLabel := NewLabel(
@@ -826,6 +1050,10 @@ begin
       else if LText = 'error' then LText := 'Fehler';
       FClientStatusMemo.Lines.Add(LObject.GetValue<string>('label', ''));
       AddIndentedLines(FClientStatusMemo.Lines, 'Status: ' + LText);
+      LText := LObject.GetValue<string>('server_name', '');
+      if LText <> '' then AddIndentedLines(FClientStatusMemo.Lines, 'MCP-Server: ' + LText);
+      LText := LObject.GetValue<string>('launcher_server', '');
+      if LText <> '' then AddIndentedLines(FClientStatusMemo.Lines, 'Starthelfer: ' + LText);
       LText := LObject.GetValue<string>('path', '');
       AddIndentedLines(FClientStatusMemo.Lines, LText);
       LText := LObject.GetValue<string>('message', '');
@@ -1031,6 +1259,19 @@ begin
     on E: Exception do
       TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);
   end;
+end;
+
+procedure TDAIOptionsFrame.FindRegistrationsClicked(Sender: TObject);
+var
+  LDialog: TDAIRegistrationCleanupDialog;
+begin
+  LDialog := TDAIRegistrationCleanupDialog.CreateForClient(SelectedClient);
+  try
+    LDialog.ShowModal;
+  finally
+    LDialog.Free;
+  end;
+  RefreshRegistrationStatus;
 end;
 
 end.

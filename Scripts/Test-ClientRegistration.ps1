@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet('Win32', 'Win64')]
     [string]$Platform = 'Win32',
@@ -14,7 +14,7 @@ if ([string]::IsNullOrWhiteSpace($Compiler)) {
     $Compiler = Join-Path $BdsRoot "bin\$compilerName"
 }
 $testProjectRoot = Split-Path -Parent $PSScriptRoot
-$testRunRoot = Join-Path $testProjectRoot ('Work\client-registration-tests-' + [Guid]::NewGuid().ToString('N'))
+$testRunRoot = Join-Path $testProjectRoot ('Work\registration-' + [Guid]::NewGuid().ToString('N'))
 $testBin = Join-Path $testProjectRoot ('Build\Tests-ClientRegistration-' + $Platform)
 $testDcu = Join-Path $testProjectRoot ('Build\Tests-ClientRegistration-' + $Platform + '-Dcu')
 $testFixtures = Join-Path $testRunRoot 'fixtures'

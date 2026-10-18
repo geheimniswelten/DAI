@@ -427,6 +427,12 @@ begin
   else
     Result.AddPair('port', TJSONNumber.Create(TDAISettings.Instance.Port));
   Result.AddPair('configured_port', TJSONNumber.Create(TDAISettings.Instance.Port));
+  Result.AddPair('server_name', DAIRegistrationServerName(TDAISettings.Instance.UseSharedConnectionSettings, TDAISettings.Instance.RegistryRoot));
+  Result.AddPair('launcher_server', DAIRegistrationLauncherName(TDAISettings.Instance.UseSharedConnectionSettings, TDAISettings.Instance.RegistryRoot));
+  if TDAISettings.Instance.UseSharedConnectionSettings then
+    Result.AddPair('connection_scope', 'shared')
+  else
+    Result.AddPair('connection_scope', 'ide_profile');
   Result.AddPair('active_project', TDAIOTA.ActiveProjectFileName);
   Result.AddPair('thread_id', AContext.ThreadId);
   Result.AddPair('transport_session_id', AContext.TransportSessionId);

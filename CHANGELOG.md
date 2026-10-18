@@ -19,6 +19,22 @@
 - Der HTTP-Server erfasst MCP-Zugriffe mit einem atomaren monotonen Zeitstempel. Der bestehende Statustimer liest diesen ohne Worker-/UI-Aufrufe; Health- und abgewiesene Transportanfragen zählen nicht.
 - Isolierte Tests prüfen Zeitgrenzen, Vorrang der Grundzustände, Aktualisierung nach Popupende sowie alle fünf Symbole in fünf Auflösungen.
 
+## 1.2.28
+
+- Die DAI-Optionen bieten „Registrierungen suchen und entfernen“. Der Dialog findet auch DAI-Verbindungen anderer Delphi-Versionen und Profile in den bekannten Clientdateien sowie alte Codex-Registrierungen unter APPDATA.
+- Client, Server-/Starthelfername, Bereich und Konfigurationspfad werden ohne Zugangsdaten angezeigt. Ein ausgewählter unveränderter verwalteter Eintrag kann unabhängig von der alten IDE mit Sicherung entfernt werden.
+- Vollständige Konfigurations-/Verwaltungs-/Blockhashes und erneute Prüfung vor dem Schreiben schützen Änderungen nach der Suche. Fremde, manuell veränderte oder beschädigte Einträge werden nicht automatisch entfernt.
+- Suche und Bereinigung speichern keine Optionsentwürfe und wechseln keine Verbindungsdaten. Andere Bereiche und MCP-Server bleiben erhalten; ein gemeinsamer Codex-Skill bleibt bei weiteren DAI-Registrierungen bestehen.
+- Native Tests prüfen Suche, gezieltes Entfernen, fehlende IDE-/Bridge-Dateien, veraltete Treffer, manipulierte Verwaltungsdaten, alle Clientformate und den tatsächlichen VCL-Dialog unter Win32 und Win64.
+
+## 1.2.27
+
+- Die Clientregistrierung trennt gemeinsame und IDE-spezifische Verbindungsdaten: Gemeinsam bleiben dai/dai_start, lokal entstehen beispielsweise dai_bds22_0/dai_bds22_0_start oder dai_bds37_0/dai_bds37_0_start.
+- Eigene IDE-Profile erhalten eine stabile zusätzliche Kennung. Registrieren, Aktualisieren, Status und Deregistrieren betreffen nur den ausgewählten Bereich; andere Versionen und die gemeinsame Registrierung bleiben erhalten.
+- Codex verwendet getrennte Verwaltungsblöcke, andere Clients getrennte Verwaltungsdateien mit geprüfter Bereichsidentität. Bestehende globale Registrierungen bleiben kompatibel und werden beim lokalen Registrieren nicht ungeprüft übernommen.
+- Die DAI-Optionen und ide_status zeigen die tatsächlichen Registrierungsnamen. Der gemeinsame Skill erklärt die Auswahl der passenden Verbindung und bleibt erhalten, solange weitere Codex-Registrierungen bestehen.
+- Isolierte Tests prüfen gemeinsame und lokale Registrierungen mit unterschiedlichen Zugangsdaten, Updates, Deregistrierung, Profile, Konflikte sowie JSON-, YAML-, JSON5- und TOML-Konfigurationen.
+
 ## 1.2.26
 
 - Das PreBuild-Ereignis der DAI.dproj beendet laufende DAI.McpBridge.exe-Prozesse mit taskkill vor dem Package-Build, damit die anschließend gebaute Bridge-EXE überschrieben werden kann.

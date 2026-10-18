@@ -10,6 +10,7 @@ uses
   System.UITypes,
   Vcl.Buttons,
   Vcl.Controls,
+  Vcl.ComCtrls,
   Vcl.Forms,
   Vcl.ExtCtrls,
   Vcl.StdCtrls,
@@ -33,6 +34,15 @@ type
     Seen: Boolean;
     Variant: Integer;
     Timer: TTimer;
+    procedure InspectDialog(Sender: TObject);
+  end;
+
+  TCleanupProbe = class
+  public
+    Failure: string;
+    Seen: Boolean;
+    Timer: TTimer;
+    Variant: Integer;
     procedure InspectDialog(Sender: TObject);
   end;
 
@@ -172,6 +182,7 @@ begin
     LClients := TJSONArray.Create;
     LStatus.AddPair('clients', LClients);
     LClients.AddElement(TJSONObject.Create.AddPair('label', 'Codex').AddPair('status', 'registered')
+      .AddPair('server_name', 'dai_bds37_0').AddPair('launcher_server', 'dai_bds37_0_start')
       .AddPair('path', 'C:\Synthetic\codex.toml').AddPair('message', 'Nachricht eins.' + #13#10 + #13#10 + '  Nachricht zwei.  ')
       .AddPair('backup', 'C:\Synthetic\codex.toml.dai.backup'));
     LClients.AddElement(TJSONObject.Create.AddPair('label', 'Claude Desktop').AddPair('status', 'unsupported')
@@ -184,22 +195,24 @@ begin
         if TMemo(LComponent).ReadOnly then
           LMemo := TMemo(LComponent);
     Check(Assigned(LMemo), 'Client status memo exists and is readonly');
-    Check(LMemo.Lines.Count = 9, 'Client details consume no empty separator lines');
+    Check(LMemo.Lines.Count = 11, 'Client details consume no empty separator lines');
     Check(LMemo.Lines[0] = 'Codex', 'First client has its own name header');
-    Check(LMemo.Lines[6] = 'Claude Desktop', 'Second client has its own name header');
+    Check(LMemo.Lines[8] = 'Claude Desktop', 'Second client has its own name header');
     Check(LMemo.Lines[1] = '    Status: registriert', 'Translated status is indented below client name');
-    Check(LMemo.Lines[2] = '    C:\Synthetic\codex.toml', 'Configuration path has four spaces');
-    Check(LMemo.Lines[3] = '    Nachricht eins.', 'First message line has four spaces');
-    Check(LMemo.Lines[4] = '    Nachricht zwei.', 'Multiline message trims inner whitespace and uses four spaces');
-    Check(LMemo.Lines[5] = '    Sicherung: C:\Synthetic\codex.toml.dai.backup', 'Backup detail has four spaces');
-    Check(LMemo.Lines[7] = '    Status: manuelle Einrichtung erforderlich', 'Manual client status remains translated');
-    Check(LMemo.Lines[8] = '    Hinweis.', 'Empty path and backup produce no blank lines');
+    Check(LMemo.Lines[2] = '    MCP-Server: dai_bds37_0', 'Actual scoped MCP registration name is visible');
+    Check(LMemo.Lines[3] = '    Starthelfer: dai_bds37_0_start', 'Matching scoped start helper name is visible');
+    Check(LMemo.Lines[4] = '    C:\Synthetic\codex.toml', 'Configuration path has four spaces');
+    Check(LMemo.Lines[5] = '    Nachricht eins.', 'First message line has four spaces');
+    Check(LMemo.Lines[6] = '    Nachricht zwei.', 'Multiline message trims inner whitespace and uses four spaces');
+    Check(LMemo.Lines[7] = '    Sicherung: C:\Synthetic\codex.toml.dai.backup', 'Backup detail has four spaces');
+    Check(LMemo.Lines[9] = '    Status: manuelle Einrichtung erforderlich', 'Manual client status remains translated');
+    Check(LMemo.Lines[10] = '    Hinweis.', 'Empty path and backup produce no blank lines');
     for LIndex := 0 to LMemo.Lines.Count - 1 do
     begin
       LLine := LMemo.Lines[LIndex];
       Check(Trim(LLine) <> '', 'Each rendered client status line contains content');
       Check(Pos(#9, LLine) = 0, 'Status indentation never uses tabs');
-      if (LIndex <> 0) and (LIndex <> 6) then
+      if (LIndex <> 0) and (LIndex <> 8) then
         Check(StartsStr('    ', LLine) and (LLine[5] <> ' '), 'Every detail line starts with exactly four spaces');
     end;
     CheckNoPersistence;
@@ -320,6 +333,128 @@ begin
   end;
 end;
 
+procedure TCleanupProbe.InspectDialog(Sender: TObject);
+var
+  LDialog: TCustomForm;
+  LList: TListView;
+  LRemove: TButton;
+  LDetails: TMemo;
+  LLabel: TLabel;
+  LComponent: TComponent;
+begin
+  Timer.Enabled := False;
+  LDialog := Screen.ActiveCustomForm;
+  try
+    Check(Assigned(LDialog), 'Cleanup opens a native modal form');
+    Check(LDialog.Name = 'DAIRegistrationCleanupDialog', 'Cleanup button opens its intended dialog');
+    Seen := True;
+    LList := LDialog.FindComponent('DAIRegistrationsList') as TListView;
+    LRemove := LDialog.FindComponent('DAIRemoveRegistrationButton') as TButton;
+    LDetails := LDialog.FindComponent('DAIRegistrationDetails') as TMemo;
+    Check(Assigned(LList) and Assigned(LRemove) and Assigned(LDetails), 'Cleanup controls have stable native names');
+    Check(LList.ViewStyle = vsReport, 'Cleanup presents client, names, scope and status as columns');
+    Check(LList.Columns.Count = 4, 'Cleanup list contains four readable columns');
+    Check(not LRemove.Enabled, 'Removing requires an explicit row selection');
+    Check(LDetails.ReadOnly, 'Cleanup preview cannot edit configuration contents');
+    if Variant = 0 then
+    begin
+      Check(LList.Items.Count = 0, 'Empty search remains empty without stale rows');
+      Check(TDAIClientRegistration.RemoveFoundCount = 0, 'Empty search never removes anything');
+    end
+    else
+    begin
+      Check(LList.Items.Count = 2, 'Cleanup displays both removable and changed registrations');
+      Check(LList.Items[0].SubItems[0] = 'dai_bds22_0 / dai_bds22_0_start', 'Old Delphi registration is identified by name');
+      LList.Items[1].Selected := True;
+      Check(not LRemove.Enabled, 'Changed or unowned registrations cannot be removed');
+      Check(Pos('Unverändertheit nicht bestätigt', LDetails.Text) > 0, 'Nonremovable reason is visible in preview');
+      Check(Pos('DO_NOT_DISPLAY_SECRET', LDetails.Text) = 0, 'Cleanup preview omits unrelated secret fields');
+      LList.Items[0].Selected := True;
+      Check(LRemove.Enabled, 'Selecting the old managed registration enables removal');
+      Check(Pos('C:\Synthetic\client.json', LDetails.Text) > 0, 'Preview identifies the exact configuration file');
+      LRemove.Click;
+      Check(TDAIClientRegistration.RemoveFoundCount = 1, 'Explicit removal invokes the targeted backend once');
+      Check(TDAIClientRegistration.LastRemovedServer = 'dai_bds22_0', 'The selected old version is passed without changing settings');
+      Check(TDAIClientRegistration.FindCount = 2, 'After removal the dialog refreshes the inventory');
+      Check(not LRemove.Enabled, 'Fresh results require a new explicit selection');
+      LLabel := nil;
+      for LComponent in LDialog do
+        if LComponent is TLabel then
+          LLabel := TLabel(LComponent);
+      Check(Assigned(LLabel), 'Cleanup has an outcome status label');
+      if Variant = 2 then
+        Check(LLabel.Caption = 'Die Registrierung wurde inzwischen geändert.', 'Stale-snapshot denial is visible without a success claim')
+      else
+        Check(LLabel.Caption = 'Die ausgewählte Registrierung wurde entfernt.', 'Successful removal is reported explicitly');
+    end;
+    LDialog.ModalResult := mrClose;
+  except
+    on E: Exception do
+    begin
+      Failure := E.Message;
+      if Assigned(LDialog) then
+        if LDialog.Name = 'DAIRegistrationCleanupDialog' then
+          LDialog.ModalResult := mrCancel;
+    end;
+  end;
+end;
+
+procedure CheckCleanupDialog(const AFrame: TDAIOptionsFrame);
+var
+  LButton: TButton;
+  LProbe: TCleanupProbe;
+  LVariant: Integer;
+  LPortDraft, LTokenDraft: string;
+  LSharedDraft: Boolean;
+begin
+  LButton := ButtonControl(AFrame, 'Registrierungen suchen und entfernen');
+  Check(Assigned(LButton.OnClick), 'Registration search button has its production handler');
+  LPortDraft := EditControl(AFrame, True).Text;
+  LTokenDraft := EditControl(AFrame, False).Text;
+  LSharedDraft := SharedConnectionControl(AFrame).Checked;
+  LProbe := TCleanupProbe.Create;
+  LProbe.Timer := TTimer.Create(nil);
+  try
+    LProbe.Timer.Enabled := False;
+    LProbe.Timer.Interval := 25;
+    LProbe.Timer.OnTimer := LProbe.InspectDialog;
+    for LVariant := 0 to 2 do
+    begin
+      TDAIClientRegistration.FindCount := 0;
+      TDAIClientRegistration.RemoveFoundCount := 0;
+      TDAIClientRegistration.FindJSON := '';
+      TDAIClientRegistration.RemoveJSON := '';
+      if LVariant <> 0 then
+        TDAIClientRegistration.FindJSON := '{"registrations":[' +
+          '{"client":"codex","label":"Codex","server_name":"dai_bds22_0","launcher_server":"dai_bds22_0_start",' +
+          '"path":"C:\\Synthetic\\client.json","removable":true,"current_scope":false,"message":"Alte Delphi-Registrierung."},' +
+          '{"client":"codex","label":"Codex","server_name":"dai_bds37_0","launcher_server":"dai_bds37_0_start",' +
+          '"path":"C:\\Synthetic\\client.json","removable":false,"current_scope":true,' +
+          '"message":"Unverändertheit nicht bestätigt","token":"DO_NOT_DISPLAY_SECRET"}]}';
+      if LVariant = 2 then
+        TDAIClientRegistration.RemoveJSON := '{"removed":false,"message":"Die Registrierung wurde inzwischen geändert."}';
+      LProbe.Variant := LVariant;
+      LProbe.Seen := False;
+      LProbe.Failure := '';
+      LProbe.Timer.Enabled := True;
+      LButton.Click;
+      LProbe.Timer.Enabled := False;
+      Check(LProbe.Failure = '', 'Cleanup inspection: ' + LProbe.Failure);
+      Check(LProbe.Seen, 'Cleanup dialog was inspected inside its actual modal loop');
+      Check(TDAIClientRegistration.FindCount >= 1, 'Opening cleanup obtains an inventory');
+      Check(EditControl(AFrame, True).Text = LPortDraft, 'Cleanup preserves the draft port');
+      Check(EditControl(AFrame, False).Text = LTokenDraft, 'Cleanup preserves the draft token');
+      Check(SharedConnectionControl(AFrame).Checked = LSharedDraft, 'Cleanup preserves the selected connection scope');
+      CheckNoPersistence;
+    end;
+  finally
+    TDAIClientRegistration.FindJSON := '';
+    TDAIClientRegistration.RemoveJSON := '';
+    LProbe.Timer.Free;
+    LProbe.Free;
+  end;
+end;
+
 procedure RunChecks;
 var
   LFrame: TDAIOptionsFrame;
@@ -372,6 +507,8 @@ begin
       CheckStatusFormatting(LFrame);
       TestStage := 'CatalogDialog';
       CheckCatalogDialog(LFrame);
+      TestStage := 'CleanupDialog';
+      CheckCleanupDialog(LFrame);
       Check(LPortEdit.Text = ' 7102 ', 'Catalog preserves draft port');
       Check(LTokenEdit.Text = '  synthetic-current-options-token  ', 'Catalog preserves draft bearer token');
       TestStage := 'StartStopSettings';

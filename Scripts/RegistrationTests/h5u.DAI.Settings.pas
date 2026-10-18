@@ -10,8 +10,12 @@ type
   public
     Port: Integer;
     Token: string;
+    UseSharedConnectionSettings: Boolean;
+    RegistryRoot: string;
+    SaveCount: Integer;
     class function Instance: TDAISettings; static;
     procedure Save;
+    procedure RefreshConnectionSettings;
   end;
 
 implementation
@@ -23,11 +27,18 @@ begin
     FInstance := TDAISettings.Create;
     FInstance.Port := 7331;
     FInstance.Token := 'test-token-never-use-in-production';
+    FInstance.UseSharedConnectionSettings := True;
+    FInstance.RegistryRoot := 'Software\Embarcadero\BDS\37.0\DAI';
   end;
   Result := FInstance;
 end;
 
 procedure TDAISettings.Save;
+begin
+  Inc(SaveCount);
+end;
+
+procedure TDAISettings.RefreshConnectionSettings;
 begin
 end;
 

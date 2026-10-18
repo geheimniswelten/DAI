@@ -466,6 +466,10 @@ begin
     try
       LOwnership.RemovePair('launcher_entry_sha256').Free;
       LOwnership.RemovePair('launcher_pending_sha256').Free;
+      LOwnership.RemovePair('server_name').Free;
+      LOwnership.RemovePair('launcher_server').Free;
+      LOwnership.RemovePair('connection_scope').Free;
+      LOwnership.RemovePair('registry_root').Free;
       LOwnershipText := LOwnership.ToJSON + sLineBreak;
       TFile.WriteAllText(LPath + '.dai-registration.json', LOwnershipText, TEncoding.UTF8);
     finally
@@ -874,6 +878,578 @@ begin
   Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'skill preflight keeps Codex config unchanged');
 end;
 
+procedure SelectRegistrationScope(AIndex: Integer);
+begin
+  TDAISettings.Instance.UseSharedConnectionSettings := AIndex = 0;
+  if AIndex = 1 then
+    TDAISettings.Instance.RegistryRoot := 'Software\Embarcadero\BDS\22.0\DAI'
+  else
+    TDAISettings.Instance.RegistryRoot := 'Software\Embarcadero\BDS\37.0\DAI';
+  TDAISettings.Instance.Port := 7700 + AIndex;
+  TDAISettings.Instance.Token := 'isolated-scope-fixture-' + IntToStr(AIndex);
+end;
+
+procedure RegistrationScopeNameTests;
+var
+  LName, LOtherName, LRoot: string;
+  LRejected: Boolean;
+begin
+  Check(DAIRegistrationServerName(True, '') = 'dai', 'shared registration does not need an IDE root');
+  Check(DAIRegistrationLauncherName(True, '') = 'dai_start', 'shared launcher keeps legacy name');
+  Check(DAIRegistrationServerName(False, 'Software\Embarcadero\BDS\22.0\DAI') = 'dai_bds22_0', 'Delphi 11 BDS registration name');
+  Check(DAIRegistrationServerName(False, 'Software\Embarcadero\BDS\23.0\DAI') = 'dai_bds23_0', 'Delphi 12 BDS registration name');
+  Check(DAIRegistrationServerName(False, 'Software\Embarcadero\BDS\37.0\DAI') = 'dai_bds37_0', 'Delphi 13 BDS registration name');
+  Check(DAIRegistrationServerName(False, 'software/EMBARCADERO//bds/37.0/dai/') = 'dai_bds37_0',
+    'IDE root slash casing and trailing separator normalize');
+  LName := DAIRegistrationServerName(False, 'Software\Embarcadero\DAITest\37.0\DAI');
+  Check(LName.StartsWith('dai_bds37_0_p') and (Length(LName) = Length('dai_bds37_0_p') + 16), 'custom profile hash suffix bounded');
+  Check(LName = DAIRegistrationServerName(False, 'software/embarcadero/daitest/37.0/dai/'), 'profile suffix stable for normalized root');
+  LOtherName := DAIRegistrationServerName(False, 'Software\Embarcadero\OtherProfile\37.0\DAI');
+  Check(LName <> LOtherName, 'different IDE profiles have independent names');
+  Check(DAIRegistrationLauncherName(False, 'Software\Embarcadero\DAITest\37.0\DAI') = LName + '_start',
+    'custom profile launcher follows scoped server');
+  Check(DAIRegistrationServerName(False, 'Software\Embarcadero\BDS\37.0_DAITest\DAI') <> 'dai_bds37_0',
+    'profile suffix on IDE version remains independent');
+  for LRoot in ['', 'Software\Embarcadero\BDS\37.0', 'Software\Embarcadero\BDS\invalid\DAI',
+    'Software\Embarcadero\BDS\37.0\DAI' + #10] do
+  begin
+    LRejected := False;
+    try
+      DAIRegistrationServerName(False, LRoot);
+    except
+      on E: EArgumentException do LRejected := True;
+    end;
+    Check(LRejected, 'invalid local registry scope fails closed');
+  end;
+end;
+
+function ScopedFixtureEntry(const AText, AFormat: string; const AKeys: TArray<string>;
+  const AServerName: string): string;
+var
+  LKeys: TArray<string>;
+begin
+  LKeys := Copy(AKeys);
+  LKeys[High(LKeys)] := AServerName;
+  Check(TDAIClientConfigText.ExtractEntry(AText, AFormat, LKeys, Result), 'scoped entry exists: ' + AServerName);
+end;
+
+function ScopedFixtureHasEntry(const AText, AFormat: string; const AKeys: TArray<string>;
+  const AServerName: string): Boolean;
+var
+  LKeys: TArray<string>;
+  LIgnored: string;
+begin
+  LKeys := Copy(AKeys);
+  LKeys[High(LKeys)] := AServerName;
+  Result := TDAIClientConfigText.ExtractEntry(AText, AFormat, LKeys, LIgnored);
+end;
+
+procedure ScopedClientTests(const AClient, APath, AFormat: string; const AKeys: TArray<string>);
+const
+  CNames: array[0..2] of string = ('dai', 'dai_bds22_0', 'dai_bds37_0');
+var
+  LJson: TJSONObject;
+  LIndex: Integer;
+  LText, LEntry, LSavedText, LEditedEntry: string;
+  LEntries, LLaunchers, LOwnerships: array[0..2] of string;
+  LSidecars: array[0..2] of string;
+  LKeys: TArray<string>;
+begin
+  for LIndex := 0 to 2 do
+  begin
+    SelectRegistrationScope(LIndex);
+    Check(TDAICodexRegistration.ServerName = CNames[LIndex], AClient + ' scoped server name');
+    Check(TDAICodexRegistration.LauncherServerName = CNames[LIndex] + '_start', AClient + ' scoped launcher name');
+    LJson := TDAIClientRegistration.RegisterFiles(AClient);
+    try
+      Check(ClientStatus(LJson) = 'configured', AClient + ' registers scope ' + IntToStr(LIndex));
+      Check(Pos(TDAISettings.Instance.Token, LJson.ToJSON) = 0, AClient + ' scoped status redacts credential');
+      LSidecars[LIndex] := TJSONObject(TJSONArray(LJson.GetValue('clients')).Items[0]).GetValue<string>('ownership_file');
+    finally
+      LJson.Free;
+    end;
+    Check(LSidecars[LIndex] = APath + '.' + CNames[LIndex] + '-registration.json', AClient + ' isolated ownership filename');
+    LText := TFile.ReadAllText(APath, TEncoding.UTF8);
+    LEntries[LIndex] := ScopedFixtureEntry(LText, AFormat, AKeys, CNames[LIndex]);
+    LLaunchers[LIndex] := ScopedFixtureEntry(LText, AFormat, AKeys, CNames[LIndex] + '_start');
+    Check((Pos(IntToStr(7700 + LIndex), LEntries[LIndex]) > 0) and
+      (Pos(TDAISettings.Instance.Token, LEntries[LIndex]) > 0), AClient + ' own HTTP or proxy endpoint/credential');
+    Check((Pos(IntToStr(7700 + LIndex), LLaunchers[LIndex]) > 0) and
+      (Pos(TDAISettings.Instance.Token, LLaunchers[LIndex]) > 0), AClient + ' own launcher endpoint/credential');
+    LOwnerships[LIndex] := TFile.ReadAllText(LSidecars[LIndex], TEncoding.UTF8);
+  end;
+  LText := TFile.ReadAllText(APath, TEncoding.UTF8);
+  SelectRegistrationScope(0);
+  TDAISettings.Instance.RegistryRoot := 'Software\Embarcadero\BDS\22.0\DAI';
+  LJson := TDAIClientRegistration.Status(AClient);
+  try
+    Check(ClientStatus(LJson) = 'registered', AClient + ' shared ownership survives registering IDE version change');
+  finally
+    LJson.Free;
+  end;
+  LJson := TDAIClientRegistration.RegisterFiles(AClient);
+  try
+    Check(ClientStatus(LJson) = 'unchanged', AClient + ' same shared endpoint from another IDE is idempotent');
+    Check(TFile.ReadAllText(APath, TEncoding.UTF8) = LText, AClient + ' shared IDE version change preserves config bytes');
+    Check(TFile.ReadAllText(LSidecars[0], TEncoding.UTF8) = LOwnerships[0], AClient + ' shared IDE version change preserves global sidecar');
+  finally
+    LJson.Free;
+  end;
+  for LIndex := 0 to 2 do
+  begin
+    Check(ScopedFixtureEntry(LText, AFormat, AKeys, CNames[LIndex]) = LEntries[LIndex], AClient + ' all HTTP scopes coexist');
+    Check(ScopedFixtureEntry(LText, AFormat, AKeys, CNames[LIndex] + '_start') = LLaunchers[LIndex],
+      AClient + ' all launcher scopes coexist');
+    SelectRegistrationScope(LIndex);
+    LJson := TDAIClientRegistration.Status(AClient);
+    try
+      Check(ClientStatus(LJson) = 'registered', AClient + ' independent scope ownership status');
+    finally
+      LJson.Free;
+    end;
+  end;
+  SelectRegistrationScope(1);
+  TDAISettings.Instance.Port := 7801;
+  TDAISettings.Instance.Token := 'isolated-local-scope-rotated';
+  LJson := TDAIClientRegistration.Status(AClient);
+  try
+    Check(ClientStatus(LJson) = 'needs_update', AClient + ' changed local target detected');
+  finally
+    LJson.Free;
+  end;
+  LJson := TDAIClientRegistration.RegisterFiles(AClient);
+  try
+    Check(ClientStatus(LJson) = 'configured', AClient + ' updates selected local scope');
+  finally
+    LJson.Free;
+  end;
+  LText := TFile.ReadAllText(APath, TEncoding.UTF8);
+  for LIndex in [0, 2] do
+  begin
+    Check(ScopedFixtureEntry(LText, AFormat, AKeys, CNames[LIndex]) = LEntries[LIndex], AClient + ' update retains other HTTP bytes');
+    Check(ScopedFixtureEntry(LText, AFormat, AKeys, CNames[LIndex] + '_start') = LLaunchers[LIndex],
+      AClient + ' update retains other launcher bytes');
+    Check(TFile.ReadAllText(LSidecars[LIndex], TEncoding.UTF8) = LOwnerships[LIndex], AClient + ' update retains other sidecar bytes');
+  end;
+  LEntry := ScopedFixtureEntry(LText, AFormat, AKeys, CNames[1]);
+  Check(Pos('7801', LEntry) > 0, AClient + ' selected target updated');
+  LJson := TDAIClientRegistration.UnregisterFiles(AClient);
+  try
+    Check(ClientStatus(LJson) = 'removed', AClient + ' unregister selected local scope');
+  finally
+    LJson.Free;
+  end;
+  LText := TFile.ReadAllText(APath, TEncoding.UTF8);
+  Check(not ScopedFixtureHasEntry(LText, AFormat, AKeys, CNames[1]) and
+    not ScopedFixtureHasEntry(LText, AFormat, AKeys, CNames[1] + '_start'), AClient + ' selected local pair removed');
+  for LIndex in [0, 2] do
+  begin
+    Check(ScopedFixtureEntry(LText, AFormat, AKeys, CNames[LIndex]) = LEntries[LIndex], AClient + ' unregister retains other HTTP bytes');
+    Check(ScopedFixtureEntry(LText, AFormat, AKeys, CNames[LIndex] + '_start') = LLaunchers[LIndex],
+      AClient + ' unregister retains other launcher bytes');
+  end;
+  SelectRegistrationScope(2);
+  LSavedText := LText;
+  LKeys := Copy(AKeys);
+  LKeys[High(LKeys)] := CNames[2] + '_start';
+  if AFormat = 'yaml' then LEditedEntry := CNames[2] + '_start:' + #10 + '  command: "user-edited.exe"'
+  else LEditedEntry := '{"command":"user-edited.exe"}';
+  LText := TDAIClientConfigText.Merge(LText, AFormat, LKeys, LEditedEntry, False);
+  TFile.WriteAllText(APath, LText, TEncoding.UTF8);
+  LJson := TDAIClientRegistration.RegisterFiles(AClient);
+  try
+    Check(ClientStatus(LJson) = 'conflict', AClient + ' edited local launcher blocks replacement');
+    Check(TFile.ReadAllText(APath, TEncoding.UTF8) = LText, AClient + ' conflict retains all config bytes');
+  finally
+    LJson.Free;
+  end;
+  LJson := TDAIClientRegistration.UnregisterFiles(AClient);
+  try
+    Check(ClientStatus(LJson) = 'conflict', AClient + ' edited local launcher blocks partial removal');
+    Check(TFile.ReadAllText(APath, TEncoding.UTF8) = LText, AClient + ' conflict retains both local entries');
+    Check(TFile.ReadAllText(LSidecars[2], TEncoding.UTF8) = LOwnerships[2], AClient + ' conflict retains local ownership');
+  finally
+    LJson.Free;
+  end;
+  TFile.WriteAllText(APath, LSavedText, TEncoding.UTF8);
+  LJson := TDAIClientRegistration.UnregisterFiles(AClient);
+  try
+    Check(ClientStatus(LJson) = 'removed', AClient + ' restored local scope can be removed');
+  finally
+    LJson.Free;
+  end;
+  SelectRegistrationScope(0);
+  LText := TFile.ReadAllText(APath, TEncoding.UTF8);
+  Check(ScopedFixtureEntry(LText, AFormat, AKeys, CNames[0]) = LEntries[0], AClient + ' shared survives both local removals');
+  LJson := TDAIClientRegistration.UnregisterFiles(AClient);
+  try
+    Check(ClientStatus(LJson) = 'removed', AClient + ' shared removal independent');
+  finally
+    LJson.Free;
+  end;
+end;
+
+procedure ScopedCodexTests;
+const
+  CNames: array[0..2] of string = ('dai', 'dai_bds22_0', 'dai_bds37_0');
+var
+  LIndex: Integer;
+  LPath, LText, LSkill, LRetained: string;
+  LJson: TJSONObject;
+  LConflict: Boolean;
+begin
+  LPath := TDAICodexRegistration.CodexConfigFileName;
+  for LIndex := 0 to 2 do
+  begin
+    SelectRegistrationScope(LIndex);
+    TDAICodexRegistration.RegisterFiles;
+    LJson := TDAICodexRegistration.Status;
+    try
+      Check(LJson.GetValue<Boolean>('codex_entry_registered') and LJson.GetValue<Boolean>('launcher_entry_registered'),
+        'Codex selected scope pair registered');
+      Check(not LJson.GetValue<Boolean>('needs_update'), 'Codex selected scope current');
+      Check(Pos(TDAISettings.Instance.Token, LJson.ToJSON) = 0, 'Codex scoped status redacts credential');
+    finally
+      LJson.Free;
+    end;
+  end;
+  LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+  for LIndex := 0 to 2 do
+    Check((Pos('[mcp_servers.' + CNames[LIndex] + ']', LText) > 0) and
+      (Pos('[mcp_servers.' + CNames[LIndex] + '_start]', LText) > 0), 'Codex all versioned pairs coexist');
+  for LIndex := 0 to 2 do
+  begin
+    SelectRegistrationScope(LIndex);
+    LJson := TDAICodexRegistration.Status;
+    try
+      Check(not LJson.GetValue<Boolean>('needs_update'), 'Codex earlier blocks remain current after adding later scopes');
+    finally
+      LJson.Free;
+    end;
+    TDAICodexRegistration.RegisterFiles;
+    Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'Codex repeated scope registration preserves full file bytes and ordering');
+  end;
+  Check(Pos('# >>> DAI managed: dai_bds22_0 >>>', LText) > 0, 'Codex local scope owns a separate marker');
+  LSkill := TFile.ReadAllText(TDAICodexRegistration.SkillFileName, TEncoding.UTF8);
+  Check(LSkill = TDAICodexRegistration.BuildSkillContent, 'Codex one current shared routing skill');
+  Check((Pos('dai_bds', LSkill) > 0), 'Codex skill explains version-specific server routing');
+  SelectRegistrationScope(1);
+  TDAISettings.Instance.Port := 7801;
+  TDAISettings.Instance.Token := 'isolated-local-scope-rotated';
+  TDAICodexRegistration.RegisterFiles;
+  LRetained := TFile.ReadAllText(LPath, TEncoding.UTF8);
+  Check(Pos('7801', LRetained) > 0, 'Codex selected local endpoint updated');
+  Check((Pos('7700', LRetained) > 0) and (Pos('7702', LRetained) > 0), 'Codex update retains shared and other local endpoint');
+  Check((Pos('isolated-scope-fixture-0', LRetained) > 0) and (Pos('isolated-scope-fixture-2', LRetained) > 0),
+    'Codex update retains other scope credentials');
+  TDAICodexRegistration.UnregisterFiles;
+  LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+  Check((Pos('[mcp_servers.dai_bds22_0]', LText) = 0) and (Pos('[mcp_servers.dai_bds22_0_start]', LText) = 0),
+    'Codex unregister removes only selected local pair');
+  Check((Pos('[mcp_servers.dai]', LText) > 0) and (Pos('[mcp_servers.dai_bds37_0]', LText) > 0),
+    'Codex unregister retains other scope blocks');
+  Check(TFile.ReadAllText(TDAICodexRegistration.SkillFileName, TEncoding.UTF8) = LSkill, 'Codex shared skill survives selected scope removal');
+  LJson := TDAICodexRegistration.Status;
+  try
+    Check(not LJson.GetValue<Boolean>('codex_entry_registered') and not LJson.GetValue<Boolean>('launcher_entry_registered') and
+      not LJson.GetValue<Boolean>('needs_update'), 'Codex removed scope status excludes remaining other scopes');
+  finally
+    LJson.Free;
+  end;
+  TDAICodexRegistration.UnregisterFiles;
+  Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'Codex repeated removed-scope unregister preserves other blocks');
+  SelectRegistrationScope(1);
+  LRetained := LText + sLineBreak + '[mcp_servers."dai_bds22_0_start"]' + sLineBreak + 'command = "user.exe"' + sLineBreak;
+  TFile.WriteAllText(LPath, LRetained, TEncoding.UTF8);
+  LConflict := False;
+  try
+    TDAICodexRegistration.RegisterFiles;
+  except
+    on E: EInvalidOperation do LConflict := True;
+  end;
+  Check(LConflict, 'Codex foreign scoped launcher blocks selected registration');
+  Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LRetained, 'Codex foreign local launcher preserves all blocks');
+  TDAICodexRegistration.UnregisterFiles;
+  Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LRetained, 'Codex unregister never takes foreign scoped launcher');
+  Check(TFile.Exists(TDAICodexRegistration.SkillFileName), 'Codex shared skill remains with other owned blocks and foreign launcher');
+  TFile.WriteAllText(LPath, LText, TEncoding.UTF8);
+  SelectRegistrationScope(0);
+  TDAICodexRegistration.UnregisterFiles;
+  Check(TFile.Exists(TDAICodexRegistration.SkillFileName), 'Codex shared skill remains while only one local scope is owned');
+  LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+  Check((Pos('[mcp_servers.dai]', LText) = 0) and (Pos('[mcp_servers.dai_bds37_0]', LText) > 0),
+    'Codex shared unregister retains final local scope');
+  SelectRegistrationScope(2);
+  TDAICodexRegistration.UnregisterFiles;
+  Check(not TFile.Exists(TDAICodexRegistration.SkillFileName), 'Codex last own scope removal cleans shared skill');
+end;
+
+procedure ScopedOwnershipRecoveryTests;
+var
+  LOldPath, LPath, LSidecar11, LSidecar13, LText, LOwnership11, LOwnership13, LHash: string;
+  LJson, LOwnership: TJSONObject;
+begin
+  LOldPath := GetEnvironmentVariable('DAI_LM_STUDIO_CONFIG');
+  LPath := TPath.Combine(TPath.GetDirectoryName(LOldPath), 'scope-recovery.json');
+  SetEnvironmentVariable('DAI_LM_STUDIO_CONFIG', PChar(LPath));
+  try
+    SelectRegistrationScope(1);
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    LJson.Free;
+    SelectRegistrationScope(2);
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    LJson.Free;
+    LSidecar11 := LPath + '.dai_bds22_0-registration.json';
+    LSidecar13 := LPath + '.dai_bds37_0-registration.json';
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    LOwnership13 := TFile.ReadAllText(LSidecar13, TEncoding.UTF8);
+    LOwnership := TJSONObject.ParseJSONValue(TFile.ReadAllText(LSidecar11, TEncoding.UTF8)) as TJSONObject;
+    try
+      LHash := LOwnership.GetValue<string>('entry_sha256');
+      LOwnership.RemovePair('entry_sha256').Free;
+      LOwnership.AddPair('entry_sha256', StringOfChar('a', 64));
+      LOwnership.RemovePair('pending_sha256').Free;
+      LOwnership.AddPair('pending_sha256', LHash);
+      LHash := LOwnership.GetValue<string>('launcher_entry_sha256');
+      LOwnership.RemovePair('launcher_entry_sha256').Free;
+      LOwnership.AddPair('launcher_entry_sha256', StringOfChar('b', 64));
+      LOwnership.RemovePair('launcher_pending_sha256').Free;
+      LOwnership.AddPair('launcher_pending_sha256', LHash);
+      LOwnership.RemovePair('state').Free;
+      LOwnership.AddPair('state', 'pending');
+      TFile.WriteAllText(LSidecar11, LOwnership.ToJSON, TEncoding.UTF8);
+    finally
+      LOwnership.Free;
+    end;
+    SelectRegistrationScope(1);
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'unchanged', 'local pending pair recovers only its selected ownership');
+      Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'local pending recovery keeps complete config bytes');
+      Check(TFile.ReadAllText(LSidecar13, TEncoding.UTF8) = LOwnership13, 'local pending recovery preserves other scope sidecar');
+    finally
+      LJson.Free;
+    end;
+    LOwnership11 := TFile.ReadAllText(LSidecar11, TEncoding.UTF8);
+    LOwnership := TJSONObject.ParseJSONValue(LOwnership11) as TJSONObject;
+    try
+      Check((LOwnership.GetValue<string>('state') = 'registered') and (LOwnership.GetValue<string>('pending_sha256') = '') and
+        (LOwnership.GetValue<string>('launcher_pending_sha256') = ''), 'local pending recovery commits both hashes');
+      LOwnership.RemovePair('registry_root').Free;
+      LOwnership.AddPair('registry_root', 'Software\Embarcadero\BDS\37.0\DAI');
+      TFile.WriteAllText(LSidecar11, LOwnership.ToJSON, TEncoding.UTF8);
+    finally
+      LOwnership.Free;
+    end;
+    LJson := TDAIClientRegistration.UnregisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'conflict', 'local sidecar from other registry profile rejected');
+      Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'wrong-profile ownership removes no config');
+      Check(TFile.ReadAllText(LSidecar13, TEncoding.UTF8) = LOwnership13, 'wrong-profile ownership does not touch matching other scope');
+    finally
+      LJson.Free;
+    end;
+    TFile.WriteAllText(LSidecar11, '{"owner":"user"}', TEncoding.UTF8);
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'conflict', 'foreign local sidecar cannot be adopted');
+      Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'foreign local sidecar retains all config bytes');
+    finally
+      LJson.Free;
+    end;
+    SelectRegistrationScope(2);
+    LJson := TDAIClientRegistration.Status('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'registered', 'foreign other-scope sidecar does not block selected scope status');
+    finally
+      LJson.Free;
+    end;
+    LJson := TDAIClientRegistration.UnregisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'removed', 'selected scope remains independently removable beside foreign local sidecar');
+      Check(TFile.ReadAllText(LSidecar11, TEncoding.UTF8) = '{"owner":"user"}', 'foreign other sidecar retained verbatim');
+    finally
+      LJson.Free;
+    end;
+  finally
+    SetEnvironmentVariable('DAI_LM_STUDIO_CONFIG', PChar(LOldPath));
+  end;
+end;
+
+procedure ScopedProfileRegistrationTests;
+const
+  CRoots: array[0..2] of string = ('Software\Embarcadero\BDS\37.0\DAI',
+    'Software\Embarcadero\DAITest\37.0\DAI', 'Software\Embarcadero\BDS\37.0_DAITest\DAI');
+var
+  LOldPath, LPath, LOldCodexHome, LText, LProfileText, LSkillPath: string;
+  LNames: array[0..2] of string;
+  LIndex: Integer;
+  LJson: TJSONObject;
+begin
+  LOldPath := GetEnvironmentVariable('DAI_LM_STUDIO_CONFIG');
+  LOldCodexHome := GetEnvironmentVariable('CODEX_HOME');
+  LPath := TPath.Combine(TPath.GetDirectoryName(LOldPath), 'profiles.json');
+  SetEnvironmentVariable('DAI_LM_STUDIO_CONFIG', PChar(LPath));
+  SetEnvironmentVariable('CODEX_HOME', PChar(TPath.Combine(LOldCodexHome, 'profile-fixture')));
+  try
+    TDAISettings.Instance.UseSharedConnectionSettings := False;
+    for LIndex := 0 to 2 do
+    begin
+      TDAISettings.Instance.RegistryRoot := CRoots[LIndex];
+      TDAISettings.Instance.Port := 7900 + LIndex;
+      TDAISettings.Instance.Token := 'isolated-profile-fixture-' + IntToStr(LIndex);
+      LNames[LIndex] := TDAICodexRegistration.ServerName;
+      LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+      try
+        Check(ClientStatus(LJson) = 'configured', 'custom IDE profile registers independent JSON pair: ' + ClientStatus(LJson));
+      finally
+        LJson.Free;
+      end;
+      TDAICodexRegistration.RegisterFiles;
+    end;
+    LText := TFile.ReadAllText(LPath, TEncoding.UTF8);
+    LProfileText := TFile.ReadAllText(TDAICodexRegistration.CodexConfigFileName, TEncoding.UTF8);
+    Check((LNames[0] <> LNames[1]) and (LNames[0] <> LNames[2]) and (LNames[1] <> LNames[2]),
+      'default and both custom profile root formats have distinct names');
+    for LIndex := 0 to 2 do
+    begin
+      Check(ScopedFixtureHasEntry(LText, 'json', ['mcpServers', ''], LNames[LIndex]) and
+        ScopedFixtureHasEntry(LText, 'json', ['mcpServers', ''], LNames[LIndex] + '_start'), 'custom JSON profile pairs coexist');
+      Check((Pos('[mcp_servers.' + LNames[LIndex] + ']', LProfileText) > 0) and
+        (Pos('[mcp_servers.' + LNames[LIndex] + '_start]', LProfileText) > 0), 'custom Codex profile pairs coexist');
+    end;
+    TDAISettings.Instance.RegistryRoot := 'software/EMBARCADERO//daitest/37.0/dai/';
+    TDAISettings.Instance.Port := 7901;
+    TDAISettings.Instance.Token := 'isolated-profile-fixture-1';
+    LJson := TDAIClientRegistration.RegisterFiles('lm-studio');
+    try
+      Check(ClientStatus(LJson) = 'unchanged', 'normalized profile root preserves local sidecar ownership');
+      Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'normalized profile registration changes no JSON bytes');
+    finally
+      LJson.Free;
+    end;
+    TDAICodexRegistration.RegisterFiles;
+    Check(TFile.ReadAllText(TDAICodexRegistration.CodexConfigFileName, TEncoding.UTF8) = LProfileText,
+      'normalized profile registration changes no Codex bytes');
+    LSkillPath := TDAICodexRegistration.SkillFileName;
+    for LIndex := 0 to 2 do
+    begin
+      TDAISettings.Instance.RegistryRoot := CRoots[LIndex];
+      LJson := TDAIClientRegistration.UnregisterFiles('lm-studio');
+      try
+        Check(ClientStatus(LJson) = 'removed', 'custom profile unregister removes selected JSON pair');
+      finally
+        LJson.Free;
+      end;
+      TDAICodexRegistration.UnregisterFiles;
+      if LIndex < 2 then
+        Check(TFile.Exists(LSkillPath), 'shared routing skill retained by remaining custom profile');
+    end;
+    Check(not TFile.Exists(LSkillPath), 'last custom profile removal clears shared routing skill');
+  finally
+    SetEnvironmentVariable('DAI_LM_STUDIO_CONFIG', PChar(LOldPath));
+    SetEnvironmentVariable('CODEX_HOME', PChar(LOldCodexHome));
+  end;
+end;
+
+procedure ScopedCodexMarkerTests;
+var
+  LOldHome, LPath, LText, LNewline, LBegin, LEnd: string;
+  LConflict: Boolean;
+begin
+  LOldHome := GetEnvironmentVariable('CODEX_HOME');
+  SetEnvironmentVariable('CODEX_HOME', PChar(TPath.Combine(LOldHome, 'marker-fixture')));
+  try
+    SelectRegistrationScope(1);
+    LPath := TDAICodexRegistration.CodexConfigFileName;
+    LNewline := sLineBreak;
+    LBegin := '# >>> DAI managed: dai_bds22_0 >>>';
+    LEnd := '# <<< DAI managed: dai_bds22_0 <<<';
+    LText := 'notes = """' + LNewline + LBegin + LNewline + '[mcp_servers.dai_bds22_0]' + LNewline +
+      'url="literal-user-text"' + LNewline + LEnd + LNewline + '"""' + LNewline;
+    WriteFixture(LPath, LText);
+    TDAICodexRegistration.RegisterFiles;
+    Check(TFile.ReadAllText(LPath, TEncoding.UTF8).StartsWith(LText), 'local marker in TOML multiline string retained during register');
+    TDAICodexRegistration.UnregisterFiles;
+    Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'local marker in TOML multiline string retained during unregister');
+    LText := LBegin + LNewline + '[mcp_servers.dai_bds22_0]' + LNewline + 'url="own"' + LNewline +
+      '# >>> DAI managed: dai_bds37_0 >>>' + LNewline + '[mcp_servers.dai_bds37_0]' + LNewline +
+      'url="other"' + LNewline + '# <<< DAI managed: dai_bds37_0 <<<' + LNewline + LEnd + LNewline;
+    TFile.WriteAllText(LPath, LText, TEncoding.UTF8);
+    LConflict := False;
+    try
+      TDAICodexRegistration.RegisterFiles;
+    except
+      on E: EInvalidOperation do LConflict := True;
+    end;
+    Check(LConflict, 'nested other-scope marker blocks replacing selected block');
+    Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'nested marker registration conflict retains full bytes');
+    LConflict := False;
+    try
+      TDAICodexRegistration.UnregisterFiles;
+    except
+      on E: EInvalidOperation do LConflict := True;
+    end;
+    Check(LConflict, 'nested other-scope marker blocks removing selected block');
+    Check(TFile.ReadAllText(LPath, TEncoding.UTF8) = LText, 'nested marker removal conflict retains full bytes');
+  finally
+    SetEnvironmentVariable('CODEX_HOME', PChar(LOldHome));
+  end;
+end;
+
+{$I RegistrationTests\CleanupTests.inc}
+
+procedure ScopedRegistrationTests;
+const
+  CEnvironmentNames: array[0..10] of string = ('USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR',
+    'GEMINI_CLI_HOME', 'HERMES_HOME', 'OPENCLAW_STATE_DIR', 'OPENCLAW_CONFIG_PATH', 'DAI_LM_STUDIO_CONFIG', 'DAI_CLAUDE_DESKTOP_CONFIG');
+var
+  LEnvironment: array[0..10] of string;
+  LIndex, LOldPort: Integer;
+  LRoot, LOldToken, LOldRegistryRoot: string;
+  LOldShared: Boolean;
+begin
+  for LIndex := 0 to High(CEnvironmentNames) do
+    LEnvironment[LIndex] := GetEnvironmentVariable(CEnvironmentNames[LIndex]);
+  LOldPort := TDAISettings.Instance.Port;
+  LOldToken := TDAISettings.Instance.Token;
+  LOldRegistryRoot := TDAISettings.Instance.RegistryRoot;
+  LOldShared := TDAISettings.Instance.UseSharedConnectionSettings;
+  // Leave room for the profile hash, sidecar ownership suffix and private GUID backup names.
+  LRoot := TPath.Combine(GRoot, 'scoped');
+  try
+    SetEnvironmentVariable('USERPROFILE', PChar(LRoot));
+    SetEnvironmentVariable('APPDATA', PChar(TPath.Combine(LRoot, 'AppData\Roaming')));
+    SetEnvironmentVariable('LOCALAPPDATA', PChar(TPath.Combine(LRoot, 'AppData\Local')));
+    SetEnvironmentVariable('CODEX_HOME', PChar(TPath.Combine(LRoot, '.codex')));
+    SetEnvironmentVariable('CLAUDE_CONFIG_DIR', PChar(TPath.Combine(LRoot, '.claude')));
+    SetEnvironmentVariable('GEMINI_CLI_HOME', PChar(LRoot));
+    SetEnvironmentVariable('HERMES_HOME', PChar(TPath.Combine(LRoot, '.hermes')));
+    SetEnvironmentVariable('OPENCLAW_STATE_DIR', PChar(TPath.Combine(LRoot, '.openclaw')));
+    SetEnvironmentVariable('OPENCLAW_CONFIG_PATH', PChar(TPath.Combine(LRoot, '.openclaw\openclaw.json')));
+    SetEnvironmentVariable('DAI_LM_STUDIO_CONFIG', PChar(TPath.Combine(LRoot, '.lmstudio\mcp.json')));
+    SetEnvironmentVariable('DAI_CLAUDE_DESKTOP_CONFIG', PChar(TPath.Combine(LRoot, 'Claude\claude_desktop_config.json')));
+    ScopedClientTests('claude-code', TPath.Combine(LRoot, '.claude\.claude.json'), 'json', ['mcpServers', '']);
+    ScopedClientTests('claude-desktop', TPath.Combine(LRoot, 'Claude\claude_desktop_config.json'), 'json', ['mcpServers', '']);
+    ScopedClientTests('gemini', TPath.Combine(LRoot, '.gemini\settings.json'), 'json', ['mcpServers', '']);
+    ScopedClientTests('hermes', TPath.Combine(LRoot, '.hermes\config.yaml'), 'yaml', ['mcp_servers', '']);
+    ScopedClientTests('lm-studio', TPath.Combine(LRoot, '.lmstudio\mcp.json'), 'json', ['mcpServers', '']);
+    ScopedClientTests('openclaw', TPath.Combine(LRoot, '.openclaw\openclaw.json'), 'json5', ['mcp', 'servers', '']);
+    ScopedOwnershipRecoveryTests;
+    ScopedProfileRegistrationTests;
+    ScopedCodexMarkerTests;
+    ScopedCodexTests;
+    CleanupRegistrationTests;
+  finally
+    for LIndex := 0 to High(CEnvironmentNames) do
+      SetEnvironmentVariable(PChar(CEnvironmentNames[LIndex]), PChar(LEnvironment[LIndex]));
+    TDAISettings.Instance.Port := LOldPort;
+    TDAISettings.Instance.Token := LOldToken;
+    TDAISettings.Instance.RegistryRoot := LOldRegistryRoot;
+    TDAISettings.Instance.UseSharedConnectionSettings := LOldShared;
+  end;
+end;
+
 begin
   try
     if ParamCount <> 1 then
@@ -884,6 +1460,8 @@ begin
     SafeFileTests;
     RegistrationTests;
     LauncherRegistrationTests;
+    RegistrationScopeNameTests;
+    ScopedRegistrationTests;
     CodexMigrationTests;
     CodexPreservationTests;
     Writeln('OK: ', GCount, ' isolated registration/parser/file checks');
