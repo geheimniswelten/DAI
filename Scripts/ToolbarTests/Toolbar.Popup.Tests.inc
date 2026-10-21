@@ -17,6 +17,11 @@
     FInitialHint: string;
     FInitialImage: Integer;
     FChangeRuntime: Boolean;
+    FChangeRegistration: Boolean;
+    FChangeUpdate: Boolean;
+    FUpdateChanged: Boolean;
+    FRegistrationChanged: Boolean;
+    FInitialHealthCount: Integer;
     FRuntimeChanged: Boolean;
     procedure Tick(Sender: TObject);
     procedure Cancel;
@@ -26,16 +31,19 @@
   public
     Failure: string;
     TrackingTicks: Integer;
-    constructor Create(APopup: TPopupMenu; const AChangeRuntime: Boolean);
+    constructor Create(APopup: TPopupMenu; const AChangeRuntime, AChangeRegistration, AChangeUpdate: Boolean);
     destructor Destroy; override;
     procedure Run;
   end;
 
-constructor TPopupStabilityProbe.Create(APopup: TPopupMenu; const AChangeRuntime: Boolean);
+constructor TPopupStabilityProbe.Create(APopup: TPopupMenu; const AChangeRuntime, AChangeRegistration, AChangeUpdate: Boolean);
 begin
   inherited Create;
   FPopup := APopup;
   FChangeRuntime := AChangeRuntime;
+  FChangeRegistration := AChangeRegistration;
+  FChangeUpdate := AChangeUpdate;
+  FInitialHealthCount := TDAIClientRegistration.HealthCount;
   FInitialCaption := GHost.DAIAction.Caption;
   FInitialHint := GHost.DAIAction.Hint;
   FInitialImage := GHost.DAIAction.ImageIndex;
@@ -151,6 +159,23 @@ begin
       TDAIIDEToolbar.Refresh;
       CheckStable;
     end;
+    if FChangeRegistration and not FRegistrationChanged and (LElapsed >= 200) then
+    begin
+      TDAIClientRegistration.HealthState := rhNotRegistered;
+      TDAIClientRegistration.HealthDetails := 'Registration removed while the native popup is tracking.';
+      Inc(TDAIClientRegistration.Version);
+      FRegistrationChanged := True;
+      TDAIIDEToolbar.CheckRegistrations;
+      CheckStable;
+    end;
+    if FChangeUpdate and not FUpdateChanged and (LElapsed >= 200) then
+    begin
+      FUpdateChanged := True;
+      TDAIIDEToolbar.SetUpdateAvailable(True, '4.0.0');
+      CheckStable;
+    end;
+    if FChangeRegistration or FChangeUpdate then
+      Check(TDAIClientRegistration.HealthCount = FInitialHealthCount, 'Registration IO is deferred throughout native popup tracking');
     if LElapsed >= 1100 then
       Cancel;
   except
@@ -178,17 +203,33 @@ begin
   end;
   Check(Failure = '', Failure);
   Check(TrackingTicks >= 8, 'Native tracking spans at least two 500-ms production timer intervals');
+  if FChangeRegistration then
+  begin
+    Check(FRegistrationChanged, 'The registration changes while the popup is tracking');
+    PumpFor(650);
+    Check(TDAIClientRegistration.HealthCount = FInitialHealthCount + 1, 'One registration scan runs after native popup close');
+    CheckHealthGlyph('NotRegistered', 'Deferred registration notice appears after native popup close');
+  end;
+  if FChangeUpdate then
+  begin
+    Check(FUpdateChanged, 'The software-update flag changes while the popup is tracking');
+    PumpFor(650);
+    Check(TDAIClientRegistration.HealthCount = FInitialHealthCount, 'A software update does not rescan registrations after popup close');
+    CheckHealthGlyph('UpdateAvailable', 'The deferred software-update notice appears after native popup close');
+    CheckUpdateHint('4.0.0');
+  end;
   if FChangeRuntime then
   begin
     Check(FRuntimeChanged, 'Runtime status changes while the popup is open');
     PumpFor(650);
     Check(GHost.DAIAction.Caption = 'DAI aktiv', 'Deferred status is applied by the first timer tick after popup close');
     Check(Pos('7444', GHost.DAIAction.Hint) > 0, 'Deferred live port is applied after popup close');
-    Check(Pos('ServerGlyph.v3.RecentAccess', GHost.DAIAction.ImageName) > 0, 'Deferred recent activity is applied after popup close');
+    Check(Pos('ServerGlyph.v4.RecentAccess', GHost.DAIAction.ImageName) > 0, 'Deferred recent activity is applied after popup close');
   end;
 end;
 
-procedure TestPopupTracking(const AForeignPopup, AChangeRuntime: Boolean);
+procedure TestPopupTracking(const AForeignPopup, AChangeRuntime: Boolean;
+  const AChangeRegistration: Boolean = False; const AChangeUpdate: Boolean = False);
 var
   LPopup: TPopupMenu;
   LProbe: TPopupStabilityProbe;
@@ -210,7 +251,7 @@ begin
       LPopup.Items.Add(LItem);
     end;
   end;
-  LProbe := TPopupStabilityProbe.Create(LPopup, AChangeRuntime);
+  LProbe := TPopupStabilityProbe.Create(LPopup, AChangeRuntime, AChangeRegistration, AChangeUpdate);
   try
     LProbe.Run;
   finally
@@ -236,4 +277,7 @@ begin
   TestPopupTracking(False, False);
   TestPopupTracking(False, True);
   TestPopupTracking(True, True);
+  TestPopupTracking(False, False, True);
+  TestPopupTracking(True, False, True);
+  TestPopupTracking(False, False, False, True);
 end;

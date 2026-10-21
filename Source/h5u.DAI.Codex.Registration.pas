@@ -24,6 +24,7 @@ type
     class function IDEProfileFromCommandLine(const ACommandLine: string): string; static;
     class function LauncherArguments: TArray<string>; static;
     class function Status: TJSONObject; static;
+    class function ChangeVersion: Integer; static;
     class function FindRegistrations: TJSONArray; static;
     class function RemoveFoundRegistration(const ACandidate: TJSONObject): TJSONObject; static;
     class procedure MigrateSkillFiles; static;
@@ -41,6 +42,7 @@ uses
   Winapi.Windows,
   Winapi.ShellAPI,
   System.SysUtils,
+  System.SyncObjs,
   System.RegularExpressions,
   h5u.DAI.Clients.SafeFiles,
   h5u.DAI.Consts,
@@ -48,6 +50,9 @@ uses
 
 const
   CDAISkillMarker = '<!-- DAI managed skill -->';
+
+var
+  GChangeVersion: Integer;
 
 function LegacyApplicationDataDirectory: string;
 begin
@@ -310,6 +315,29 @@ begin
         if Trim(LLine).StartsWith('[') then
           LInsideMcp := TRegEx.IsMatch(LLine, '^\s*\[\s*["'']?mcp_servers["'']?\s*\]');
       end;
+      AdvanceTomlQuoteState(LLine, LQuoteState);
+    end;
+  finally
+    LLines.Free;
+  end;
+end;
+
+function HasUnmanagedDAIEntry(const AText: string): Boolean;
+var
+  LLine: string;
+  LLines: TStringList;
+  LQuoteState: Integer;
+begin
+  Result := False;
+  LQuoteState := 0;
+  LLines := TStringList.Create;
+  try
+    LLines.Text := AText;
+    for LLine in LLines do
+    begin
+      if (LQuoteState = 0) and TRegEx.IsMatch(LLine, '^\s*\[\s*["'']?mcp_servers["'']?\s*\.\s*["'']?' +
+        TRegEx.Escape(TDAICodexRegistration.ServerName) + '(?:_start)?["'']?\s*[.\]]') then
+        Exit(True);
       AdvanceTomlQuoteState(LLine, LQuoteState);
     end;
   finally
@@ -1094,29 +1122,33 @@ var
   LOriginalSkill: string;
   LSkillExists: Boolean;
 begin
-  if not TFile.Exists(BridgeFileName) then
-    raise EInvalidOperation.Create('DAI.McpBridge.exe fehlt neben dem DAI-Package; den Launcher zuerst bauen bzw. installieren.');
-  TDAISettings.Instance.Save;
-  LConfigFileName := CodexConfigFileName;
-  LConfigExists := TFile.Exists(LConfigFileName);
-  LSkillExists := TFile.Exists(SkillFileName);
-  LOriginalConfig := ReadTextIfExists(LConfigFileName);
-  LOriginalSkill := ReadTextIfExists(SkillFileName);
-  LConfig := RemoveManagedBlock(LOriginalConfig);
-  if HasDaiConfigSection(LConfig, ServerName) or HasDaiConfigSection(LConfig, LauncherServerName) then
-    raise EInvalidOperation.CreateFmt('Ein nicht von DAI verwalteter Codex-Eintrag namens "%s" oder "%s" existiert bereits.',
-      [ServerName, LauncherServerName]);
-  if LSkillExists and not HasManagedSkill(LOriginalSkill) then
-    raise EInvalidOperation.Create('Ein nicht von DAI verwalteter Delphi-Skill existiert bereits und wird nicht überschrieben.');
-  TDAIClientSafeFiles.ValidatePath(LConfigFileName, True);
-  TDAIClientSafeFiles.ValidatePath(SkillFileName, True);
-  ValidateLegacyRegistration;
-  LConfig := UpdatedCodexConfig(LOriginalConfig);
+  try
+    if not TFile.Exists(BridgeFileName) then
+      raise EInvalidOperation.Create('DAI.McpBridge.exe fehlt neben dem DAI-Package; den Launcher zuerst bauen bzw. installieren.');
+    TDAISettings.Instance.Save;
+    LConfigFileName := CodexConfigFileName;
+    LConfigExists := TFile.Exists(LConfigFileName);
+    LSkillExists := TFile.Exists(SkillFileName);
+    LOriginalConfig := ReadTextIfExists(LConfigFileName);
+    LOriginalSkill := ReadTextIfExists(SkillFileName);
+    LConfig := RemoveManagedBlock(LOriginalConfig);
+    if HasDaiConfigSection(LConfig, ServerName) or HasDaiConfigSection(LConfig, LauncherServerName) then
+      raise EInvalidOperation.CreateFmt('Ein nicht von DAI verwalteter Codex-Eintrag namens "%s" oder "%s" existiert bereits.',
+        [ServerName, LauncherServerName]);
+    if LSkillExists and not HasManagedSkill(LOriginalSkill) then
+      raise EInvalidOperation.Create('Ein nicht von DAI verwalteter Delphi-Skill existiert bereits und wird nicht überschrieben.');
+    TDAIClientSafeFiles.ValidatePath(LConfigFileName, True);
+    TDAIClientSafeFiles.ValidatePath(SkillFileName, True);
+    ValidateLegacyRegistration;
+    LConfig := UpdatedCodexConfig(LOriginalConfig);
 
-  TDAIClientSafeFiles.WriteTextWithBackup(LConfigFileName, LConfig, LOriginalConfig, LConfigExists);
-  MigrateSkillFiles;
+    TDAIClientSafeFiles.WriteTextWithBackup(LConfigFileName, LConfig, LOriginalConfig, LConfigExists);
+    MigrateSkillFiles;
 
-  RemoveLegacyRegistration;
+    RemoveLegacyRegistration;
+  finally
+    TInterlocked.Increment(GChangeVersion);
+  end;
 end;
 
 class procedure TDAICodexRegistration.MigrateSkillFiles;
@@ -1124,14 +1156,18 @@ var
   LOriginalSkill: string;
   LSkillExists: Boolean;
 begin
-  LSkillExists := TFile.Exists(SkillFileName);
-  LOriginalSkill := ReadTextIfExists(SkillFileName);
-  if LSkillExists and not HasManagedSkill(LOriginalSkill) then
-    raise EInvalidOperation.Create('Ein nicht von DAI verwalteter Delphi-Skill existiert bereits und wird nicht überschrieben.');
-  TDAIClientSafeFiles.ValidatePath(SkillFileName, True);
-  ValidateLegacySkillFiles;
-  TDAIClientSafeFiles.WriteTextWithBackup(SkillFileName, BuildSkillContent, LOriginalSkill, LSkillExists);
-  RemoveLegacySkillFiles;
+  try
+    LSkillExists := TFile.Exists(SkillFileName);
+    LOriginalSkill := ReadTextIfExists(SkillFileName);
+    if LSkillExists and not HasManagedSkill(LOriginalSkill) then
+      raise EInvalidOperation.Create('Ein nicht von DAI verwalteter Delphi-Skill existiert bereits und wird nicht überschrieben.');
+    TDAIClientSafeFiles.ValidatePath(SkillFileName, True);
+    ValidateLegacySkillFiles;
+    TDAIClientSafeFiles.WriteTextWithBackup(SkillFileName, BuildSkillContent, LOriginalSkill, LSkillExists);
+    RemoveLegacySkillFiles;
+  finally
+    TInterlocked.Increment(GChangeVersion);
+  end;
 end;
 
 class function TDAICodexRegistration.SkillFileName: string;
@@ -1197,6 +1233,7 @@ begin
       Result.AddPair('codex_registration_error', E.Message);
     end;
   end;
+  Result.AddPair('unmanaged_entry_present', TJSONBool.Create(HasUnmanagedDAIEntry(LWithoutManaged)));
   Result.AddPair('codex_entry_registered', TJSONBool.Create(LRegistered));
   Result.AddPair('launcher_entry_registered', TJSONBool.Create(LLauncherRegistered));
   Result.AddPair('needs_update', TJSONBool.Create(LNeedsUpdate));
@@ -1210,6 +1247,7 @@ begin
   Result.AddPair('skill_managed', TJSONBool.Create(HasManagedSkill(LSkill)));
   Result.AddPair('skill_metadata_valid', TJSONBool.Create(HasSkillMetadata(LSkill)));
   Result.AddPair('skill_registered', TJSONBool.Create(HasManagedSkill(LSkill) and HasSkillMetadata(LSkill)));
+  Result.AddPair('skill_current', TJSONBool.Create(HasManagedSkill(LSkill) and (LSkill = BuildSkillContent)));
   Result.AddPair('legacy_codex_config', LLegacyConfigFileName);
   try
     Result.AddPair('legacy_codex_entry_registered', TJSONBool.Create(TDAISettings.Instance.UseSharedConnectionSettings and
@@ -1581,7 +1619,7 @@ begin
   end;
 end;
 
-class function TDAICodexRegistration.RemoveFoundRegistration(const ACandidate: TJSONObject): TJSONObject;
+function RemoveFoundRegistrationImpl(const ACandidate: TJSONObject): TJSONObject;
 var
   LFound: TJSONArray;
   LItem: TJSONValue;
@@ -1595,7 +1633,7 @@ begin
   LMessage := 'Der Suchtreffer ist ungültig oder hat sich seit der Suche geändert; bitte erneut suchen.';
   LMatched := False;
   LRemoved := False;
-  LFound := FindRegistrations;
+  LFound := TDAICodexRegistration.FindRegistrations;
   try
     if (CleanupJsonString(ACandidate, 'client') = 'codex') and CleanupServerNameValid(LName) and
       (CleanupJsonString(ACandidate, 'config_sha256') <> '') and (CleanupJsonString(ACandidate, 'block_sha256') <> '') then
@@ -1632,7 +1670,7 @@ begin
         try
           if not HasRemainingCodexRegistration then
           begin
-            RemoveManagedSkillFile(SkillFileName);
+            RemoveManagedSkillFile(TDAICodexRegistration.SkillFileName);
             RemoveLegacySkillFiles;
           end;
         except
@@ -1657,20 +1695,38 @@ begin
   Result.AddPair('path', LPath);
 end;
 
+class function TDAICodexRegistration.RemoveFoundRegistration(const ACandidate: TJSONObject): TJSONObject;
+begin
+  try
+    Result := RemoveFoundRegistrationImpl(ACandidate);
+  finally
+    TInterlocked.Increment(GChangeVersion);
+  end;
+end;
+
+class function TDAICodexRegistration.ChangeVersion: Integer;
+begin
+  Result := TInterlocked.CompareExchange(GChangeVersion, 0, 0);
+end;
+
 class procedure TDAICodexRegistration.UnregisterFiles;
 var
   LLegacyConfigFileName: string;
 begin
-  TDAISettings.Instance.RefreshConnectionSettings;
-  RemoveManagedConfigFile(CodexConfigFileName);
-  // A local scope must never remove the old global registration belonging to another IDE.
-  LLegacyConfigFileName := LegacyCodexConfigFileName;
-  if TDAISettings.Instance.UseSharedConnectionSettings and not SameText(LLegacyConfigFileName, CodexConfigFileName) then
-    RemoveManagedConfigFile(LLegacyConfigFileName);
-  if not HasRemainingCodexRegistration then
-  begin
-    RemoveManagedSkillFile(SkillFileName);
-    RemoveLegacySkillFiles;
+  try
+    TDAISettings.Instance.RefreshConnectionSettings;
+    RemoveManagedConfigFile(CodexConfigFileName);
+    // A local scope must never remove the old global registration belonging to another IDE.
+    LLegacyConfigFileName := LegacyCodexConfigFileName;
+    if TDAISettings.Instance.UseSharedConnectionSettings and not SameText(LLegacyConfigFileName, CodexConfigFileName) then
+      RemoveManagedConfigFile(LLegacyConfigFileName);
+    if not HasRemainingCodexRegistration then
+    begin
+      RemoveManagedSkillFile(SkillFileName);
+      RemoveLegacySkillFiles;
+    end;
+  finally
+    TInterlocked.Increment(GChangeVersion);
   end;
 end;
 

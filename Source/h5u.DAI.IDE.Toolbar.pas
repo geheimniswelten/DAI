@@ -4,10 +4,16 @@ interface
 
 type
   TDAIIDEToolbar = class sealed
+  private
+    class var FUpdateAvailable: Boolean;
+    class var FUpdateVersion: string;
   public
     // The IDE owns the UI thread; callers must not marshal these during teardown.
     class procedure Install; static;
     class procedure Refresh; static;
+    class procedure CheckRegistrations; static;
+    // Optional result from a future update check; no network access here.
+    class procedure SetUpdateAvailable(const AAvailable: Boolean; const AVersion: string = ''); static;
     class procedure Shutdown; static;
   end;
 
@@ -30,21 +36,23 @@ uses
   Vcl.Imaging.pngimage,
   Vcl.ImgList,
   Vcl.Menus,
+  h5u.DAI.Clients.Registration,
   h5u.DAI.Log,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
   h5u.DAI.Settings;
 
 type
-  TDAIServerGlyphState = (sgInactive, sgActive, sgError, sgRecentAccess, sgEarlierAccess);
+  TDAIServerGlyphState = (sgInactive, sgActive, sgError, sgRecentAccess, sgEarlierAccess, sgNotRegistered, sgRegistrationUpdate, sgUpdateAvailable);
 
 const
   CDAIActionName = 'DAIServerToggleAction';
   CDAIButtonName = 'DAIServerToolButton';
   // New identifiers replace earlier glyphs even within the same IDE session.
-  CDAIImageIds: array[TDAIServerGlyphState] of string = ('h5u.DAI.ServerGlyph.v3.Inactive', 'h5u.DAI.ServerGlyph.v3.Active',
-    'h5u.DAI.ServerGlyph.v3.Error', 'h5u.DAI.ServerGlyph.v3.RecentAccess', 'h5u.DAI.ServerGlyph.v3.EarlierAccess');
-  CDAIImageColors: array[TDAIServerGlyphState] of TColor = ($00808080, $004AA52A, $003636D9, $0000D0FF, $000B86B8);
+  CDAIImageIds: array[TDAIServerGlyphState] of string = ('h5u.DAI.ServerGlyph.v4.Inactive', 'h5u.DAI.ServerGlyph.v4.Active',
+    'h5u.DAI.ServerGlyph.v4.Error', 'h5u.DAI.ServerGlyph.v4.RecentAccess', 'h5u.DAI.ServerGlyph.v4.EarlierAccess',
+    'h5u.DAI.ServerGlyph.v4.NotRegistered', 'h5u.DAI.ServerGlyph.v4.RegistrationUpdate', 'h5u.DAI.ServerGlyph.v4.UpdateAvailable');
+  CDAIImageColors: array[TDAIServerGlyphState] of TColor = ($00808080, $004AA52A, $003636D9, $0000D0FF, $000B86B8, $00B04B91, $002B8CE6, $00D78324);
   CDAIImageSizes: array[0..4] of Integer = (16, 20, 24, 32, 48);
 
 type
@@ -118,6 +126,12 @@ type
     FShuttingDown: Boolean;
     FLastInstallError: string;
     FActionError: string;
+    FRegistrationChecked: Boolean;
+    FRegistrationDirty: Boolean;
+    FRegistrationVersion: Integer;
+    FRegistrationServerActive: Boolean;
+    FRegistrationHealth: TDAIRegistrationHealth;
+    FRegistrationDetails: string;
     procedure LeaveCallback;
     procedure RemoveUI;
     procedure RemoveActionButtons;
@@ -132,6 +146,7 @@ type
     procedure CreatePopup;
     procedure EnsureOwnButtonFitsHorizontally;
     procedure EnsureInstalled;
+    procedure UpdateRegistrationStatus;
     procedure UpdateStatus;
     procedure TimerTick(Sender: TObject);
     procedure ToggleServer(Sender: TObject);
@@ -800,6 +815,29 @@ begin
           Point(H(22), H(26)), Point(H(19), H(29)), Point(H(15), H(25)), Point(H(18), H(22))]);
       sgRecentAccess, sgEarlierAccess:
         LCanvas.Ellipse(P(7), P(7), P(15), P(15));
+      sgNotRegistered:
+        begin
+          LCanvas.Ellipse(P(7), P(7), P(15), P(15));
+          LCanvas.Pen.Width := H(2);
+          LCanvas.Polyline([Point(H(19), H(20)), Point(H(19), H(19)), Point(H(21), H(18)), Point(H(24), H(18)),
+            Point(H(26), H(20)), Point(H(26), H(22)), Point(H(22), H(24)), Point(H(22), H(25))]);
+          LCanvas.Brush.Color := clWhite;
+          LCanvas.FillRect(Rect(H(21), H(27), H(23), H(29)));
+        end;
+      sgRegistrationUpdate:
+        begin
+          LCanvas.Pen.Color := CDAIImageColors[AState];
+          LCanvas.Polygon([Point(P(11), P(7)), Point(P(15), P(15)), Point(P(7), P(15))]);
+          LCanvas.Brush.Color := clWhite;
+          LCanvas.FillRect(Rect(H(21), H(20), H(23), H(25)));
+          LCanvas.FillRect(Rect(H(21), H(27), H(23), H(29)));
+        end;
+      sgUpdateAvailable:
+        begin
+          LCanvas.Pen.Color := CDAIImageColors[AState];
+          LCanvas.Polygon([Point(P(7), P(11)), Point(P(11), P(7)), Point(P(15), P(11)), Point(P(13), P(11)),
+            Point(P(13), P(15)), Point(P(9), P(15)), Point(P(9), P(11))]);
+        end;
     end;
     LSmallBitmap := TBitmap.Create;
     LSmallBitmap.PixelFormat := pf24bit;
@@ -1116,6 +1154,35 @@ begin
   end;
 end;
 
+procedure TDAIToolbarController.UpdateRegistrationStatus;
+var
+  LVersion: Integer;
+  LActive: Boolean;
+begin
+  if FShuttingDown or not Assigned(FAction) or IDEMenuTracking then
+    Exit;
+  LVersion := TDAIClientRegistration.ChangeVersion;
+  LActive := TDAIRuntime.ServerActive;
+  if FRegistrationChecked and not FRegistrationDirty and (FRegistrationVersion = LVersion) and
+    (FRegistrationServerActive = LActive) then
+    Exit;
+  // Registration files are read only on invalidation, never on each status tick.
+  FRegistrationDirty := False;
+  FRegistrationChecked := True;
+  FRegistrationVersion := LVersion;
+  FRegistrationServerActive := LActive;
+  try
+    FRegistrationHealth := TDAIClientRegistration.Health(FRegistrationDetails);
+  except
+    on E: Exception do
+    begin
+      FRegistrationHealth := rhCheckRecommended;
+      // Client-file parse errors may contain credentials; expose no raw exception.
+      FRegistrationDetails := 'Die KI-Registrierungen konnten nicht vollständig geprüft werden. Bitte die DAI-Optionen öffnen.';
+    end;
+  end;
+end;
+
 procedure TDAIToolbarController.UpdateStatus;
 var
   LActive: Boolean;
@@ -1125,10 +1192,12 @@ var
   LCommand: string;
   LImage: Integer;
   LAccessAgeMs: UInt64;
+  LAccessShown: Boolean;
 begin
   if not Assigned(FAction) or IDEMenuTracking then
     Exit;
   LActive := TDAIRuntime.ServerActive;
+  LAccessShown := False;
   LError := TDAIRuntime.LastServerError;
   if FActionError <> '' then
     LError := FActionError;
@@ -1143,11 +1212,13 @@ begin
       if LAccessAgeMs <= 15000 then
       begin
         LImage := FImages[sgRecentAccess];
+        LAccessShown := True;
         LHint := LHint + sLineBreak + 'MCP-Zugriff in den letzten 15 Sekunden.';
       end
       else if LAccessAgeMs <= 900000 then
       begin
         LImage := FImages[sgEarlierAccess];
+        LAccessShown := True;
         LHint := LHint + sLineBreak + 'MCP-Zugriff vor mehr als 15 Sekunden, innerhalb der letzten 15 Minuten.';
       end;
     end;
@@ -1158,6 +1229,42 @@ begin
     LHint := Format('DAI inaktiv; kein aktiver Port. Klicken zum Starten mit gespeichertem Port %d.', [TDAISettings.Instance.Port]);
     LCommand := 'Server &starten';
     LImage := FImages[sgInactive];
+  end;
+  if TDAIIDEToolbar.FUpdateAvailable then
+  begin
+    if not LAccessShown then
+    begin
+      LImage := FImages[sgUpdateAvailable];
+      LCaption := 'DAI: Neue Version verfügbar';
+    end;
+    LHint := LHint + sLineBreak + 'Neue DAI-Version verfügbar';
+    if TDAIIDEToolbar.FUpdateVersion <> '' then
+      LHint := LHint + ': ' + TDAIIDEToolbar.FUpdateVersion;
+    LHint := LHint + '.';
+  end;
+  // Registration problems retain priority over an optional software update.
+  if FRegistrationChecked then
+  begin
+    if not LAccessShown then
+      case FRegistrationHealth of
+        rhNotRegistered:
+          begin
+            LImage := FImages[sgNotRegistered];
+            LCaption := 'DAI nicht registriert';
+          end;
+        rhUpdateRecommended:
+          begin
+            LImage := FImages[sgRegistrationUpdate];
+            LCaption := 'DAI: Registrierung aktualisieren';
+          end;
+        rhCheckRecommended:
+          begin
+            LImage := FImages[sgRegistrationUpdate];
+            LCaption := 'DAI: Registrierung prüfen';
+          end;
+      end;
+    if FRegistrationDetails <> '' then
+      LHint := LHint + sLineBreak + FRegistrationDetails;
   end;
   if LError <> '' then
   begin
@@ -1200,7 +1307,10 @@ begin
     try
       EnsureInstalled;
       if not FShuttingDown then
+      begin
+        UpdateRegistrationStatus;
         UpdateStatus;
+      end;
     except
       on E: Exception do
         if not FShuttingDown then
@@ -1242,7 +1352,11 @@ begin
   finally
     FBusy := False;
     if not FShuttingDown then
+    begin
+      FRegistrationDirty := True;
+      UpdateRegistrationStatus;
       UpdateStatus;
+    end;
     LeaveCallback;
   end;
 end;
@@ -1297,6 +1411,29 @@ begin
   RequireMainThread;
   if Assigned(GController) then
     GController.Refresh;
+end;
+
+class procedure TDAIIDEToolbar.CheckRegistrations;
+begin
+  RequireMainThread;
+  if Assigned(GController) then
+  begin
+    GController.FRegistrationDirty := True;
+    GController.Refresh;
+  end;
+end;
+
+class procedure TDAIIDEToolbar.SetUpdateAvailable(const AAvailable: Boolean; const AVersion: string);
+begin
+  RequireMainThread;
+  FUpdateAvailable := AAvailable;
+  if AAvailable then
+    FUpdateVersion := Trim(AVersion)
+  else
+    FUpdateVersion := '';
+  // Retain a known result before installation and across controller recreation.
+  // Refresh defers all visible changes until native menu tracking has finished.
+  Refresh;
 end;
 
 class procedure TDAIIDEToolbar.Shutdown;

@@ -16,9 +16,17 @@ Solange ein IDE-Menü geöffnet ist, werden Status- und Layoutaktualisierungen d
 Das DAI-Dropdown verwendet feste Tastenkürzel, damit der Statustimer keinen Neuaufbau des angezeigten Menüs auslöst.
 Transparente Serversymbole zeigen eine graue Pause für inaktiv, ein grünes Play-Dreieck für aktiv und ein rotes X bei Fehlern.
 Bei aktivem Server zeigt ein gelber Kreis MCP-Zugriff innerhalb der letzten 15 Sekunden, danach ein ockerfarbener Kreis bis 15 Minuten.
-Ohne Zugriff oder nach mehr als 15 Minuten erscheint wieder Play. Inaktiv und Fehler haben Vorrang vor der Zugriffsanzeige.
+Ohne Zugriff oder nach mehr als 15 Minuten zeigt ein violettes Fragezeichen fehlende KI-Registrierung; ein orangefarbenes Warnsymbol empfiehlt eine Aktualisierung oder Prüfung.
+Bei aktueller Registrierung erscheint wieder Play. Inaktiv unterdrückt die Zugriffsanzeige; Fehler haben Vorrang vor allen Registrierungshinweisen.
+Die Registrierungsprüfung läuft nach dem Package-Start, beim Aktivieren/Deaktivieren und nach Registrieren, Deregistrieren, Bereinigen oder Speichern der Einstellungen.
+Sie berücksichtigt den gewählten Verbindungsbereich und alle unterstützten KI-Clients. Fehlende weitere Clients stören eine vorhandene aktuelle Registrierung nicht.
+Während der beiden Zugriffszustände bleibt das Zugriffssymbol erhalten; der Tooltip enthält weiterhin den Registrierungshinweis. Die Prüfung schreibt keine Clientdateien.
 Gezählt werden authentifizierte MCP-POSTs nach den Transport-/Sitzungsprüfungen und erfolgreiche Session-DELETEs, auch wenn ein Tool einen Fehler meldet.
 Health-Abfragen und abgewiesene HTTP-Zugriffe verändern die Anzeige nicht. Der bestehende Statustimer aktualisiert sie alle 500 ms.
+Ein blauer Aufwärtspfeil ist als eigener Zustand „Neue DAI-Version verfügbar“ vorbereitet. Eine spätere Updateprüfung kann ihn über
+`TDAIIDEToolbar.SetUpdateAvailable(True, 'Versionsnummer')` setzen und mit `False` wieder löschen; standardmäßig ist er ausgeschaltet.
+Es gibt dafür noch keine automatische Updateprüfung oder Netzwerkabfrage. Fehler, Zugriffszustände und Registrierungsprobleme behalten Vorrang;
+eine bekannte neue Version steht auch dann im Tooltip.
 Die primäre Größe beträgt 16×16; weitere Auflösungen werden der IDE über `INTAServices280.AddImage` angeboten. Dafür wird Delphis Standardpackage `vclimg` verwendet.
 Die DAI-Aktion hat denselben stabilen Besitzer wie die IDE-ActionList. Beim Entfernen werden auch Toolbar-Klone derselben Aktion beseitigt.
 Ein öffentlicher ToolsAPI-Lesenotifier erfasst den ursprünglich benannten DAI-Button beim Toolbarrestore. Nach dem Lesen wird dieses
@@ -92,7 +100,7 @@ laufen; Status erneut prüfen. Auch ohne Token funktionieren die lokalen Prozess
 Manueller Aufruf (der Client kommuniziert anschließend über STDIN/STDOUT):
 
 ```text
-DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.28
+DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.30
 ```
 
 ## Gemeinsame Verbindungsdaten

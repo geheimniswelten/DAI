@@ -10,9 +10,13 @@ uses
   System.JSON;
 
 type
+  TDAIRegistrationHealth = (rhNotRegistered, rhCurrent, rhUpdateRecommended, rhCheckRecommended);
+
   TDAIClientRegistration = class sealed
   public
     class function Status(const AClient: string = ''): TJSONObject; static;
+    class function Health(out ADetails: string): TDAIRegistrationHealth; static;
+    class function ChangeVersion: Integer; static;
     class function RegisterFiles(const AClient: string = ''): TJSONObject; static;
     class function UnregisterFiles(const AClient: string = ''): TJSONObject; static;
     class function FindRegistrations(const AClient: string = ''): TJSONObject; static;
@@ -27,6 +31,7 @@ uses
   System.IOUtils,
   System.RegularExpressions,
   System.SysUtils,
+  System.SyncObjs,
   h5u.DAI.Clients.ConfigText,
   h5u.DAI.Clients.SafeFiles,
   h5u.DAI.Codex.Registration,
@@ -67,6 +72,7 @@ const
 
 var
   GRegistrationLock: TObject;
+  GChangeVersion: Integer;
 
 function Endpoint: string;
 begin
@@ -968,12 +974,20 @@ end;
 
 class function TDAIClientRegistration.RegisterFiles(const AClient: string): TJSONObject;
 begin
-  Result := Execute('register', AClient);
+  try
+    Result := Execute('register', AClient);
+  finally
+    TInterlocked.Increment(GChangeVersion);
+  end;
 end;
 
 class function TDAIClientRegistration.UnregisterFiles(const AClient: string): TJSONObject;
 begin
-  Result := Execute('unregister', AClient);
+  try
+    Result := Execute('unregister', AClient);
+  finally
+    TInterlocked.Increment(GChangeVersion);
+  end;
 end;
 
 class function TDAIClientRegistration.FindRegistrations(const AClient: string): TJSONObject;
@@ -1023,7 +1037,7 @@ begin
   end;
 end;
 
-class function TDAIClientRegistration.RemoveFoundRegistration(const ACandidate: TJSONObject): TJSONObject;
+function RemoveFoundRegistrationImpl(const ACandidate: TJSONObject): TJSONObject;
 var
   LIndex: Integer;
   LBase, LDefinition: TClientDefinition;
@@ -1093,6 +1107,109 @@ begin
     end;
   finally
     System.TMonitor.Exit(GRegistrationLock);
+  end;
+end;
+
+class function TDAIClientRegistration.RemoveFoundRegistration(const ACandidate: TJSONObject): TJSONObject;
+begin
+  try
+    Result := RemoveFoundRegistrationImpl(ACandidate);
+  finally
+    TInterlocked.Increment(GChangeVersion);
+  end;
+end;
+
+class function TDAIClientRegistration.ChangeVersion: Integer;
+begin
+  // The toolbar reads only these counters on its timer; configuration files are checked on demand.
+  Result := TInterlocked.CompareExchange(GChangeVersion, 0, 0) + TDAICodexRegistration.ChangeVersion;
+end;
+
+class function TDAIClientRegistration.Health(out ADetails: string): TDAIRegistrationHealth;
+var
+  LStatus, LClient, LCodex: TJSONObject;
+  LValue: TJSONValue;
+  LClients: TJSONArray;
+  LState, LLabel, LReason: string;
+  LHealth: TDAIRegistrationHealth;
+  LRegistered, LDetected, LLegacy: Boolean;
+begin
+  Result := rhNotRegistered;
+  ADetails := 'Keine Registrierung für die aktuellen Verbindungseinstellungen gefunden.';
+  try
+    LStatus := Status;
+    try
+      LClients := LStatus.GetValue<TJSONArray>('clients');
+      for LValue in LClients do
+      begin
+        LClient := LValue as TJSONObject;
+        LState := ReadJsonString(LClient, 'status');
+        LLabel := ReadJsonString(LClient, 'label');
+        LRegistered := LClient.GetValue<Boolean>('registered', False);
+        LDetected := LClient.GetValue<Boolean>('detected', False);
+        LHealth := rhNotRegistered;
+        LReason := '';
+        if LRegistered then
+        begin
+          LHealth := rhCurrent;
+          if (LState = 'needs_update') or (LState = 'missing_bridge') then
+          begin
+            LHealth := rhUpdateRecommended;
+            LReason := 'Registrierung oder Starthelfer aktualisieren.';
+          end;
+        end;
+        if ((LState = 'conflict') or (LState = 'error')) and
+          (LRegistered or (LDetected and (TFile.Exists(ReadJsonString(LClient, 'path')) or
+          TFile.Exists(ReadJsonString(LClient, 'ownership_file'))))) then
+        begin
+          LHealth := rhCheckRecommended;
+          LReason := 'Registrierung konnte nicht eindeutig geprüft werden; DAI-Optionen öffnen.';
+        end;
+        if LClient.TryGetValue<TJSONObject>('codex', LCodex) then
+        begin
+          LLegacy := LCodex.GetValue<Boolean>('legacy_codex_entry_registered', False);
+          if LRegistered or LLegacy then
+          begin
+            if not LCodex.GetValue<Boolean>('bridge_exists', False) or
+              not LCodex.GetValue<Boolean>('skill_current', False) or LLegacy or
+              LCodex.GetValue<Boolean>('legacy_skill_registered', False) then
+            begin
+              LHealth := rhUpdateRecommended;
+              LReason := 'Registrierung, Delphi-Skill oder Starthelfer aktualisieren.';
+            end;
+            if LCodex.GetValue<Boolean>('skill_file_exists', False) and
+              not LCodex.GetValue<Boolean>('skill_managed', False) then
+            begin
+              LHealth := rhCheckRecommended;
+              LReason := 'Vorhandenen Delphi-Skill in den DAI-Optionen prüfen.';
+            end;
+          end;
+          if (ReadJsonString(LCodex, 'codex_registration_error') <> '') or
+            LCodex.GetValue<Boolean>('unmanaged_entry_present', False) then
+          begin
+            LHealth := rhCheckRecommended;
+            LReason := 'Vorhandene Codex-Registrierung in den DAI-Optionen prüfen.';
+          end;
+        end;
+        if Ord(LHealth) > Ord(Result) then
+        begin
+          Result := LHealth;
+          if Result = rhCurrent then
+            ADetails := 'Passend registriert.'
+          else
+            // Never surface parser messages or configuration text in the toolbar hint.
+            ADetails := LLabel + ': ' + LReason;
+        end;
+      end;
+    finally
+      LStatus.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      Result := rhCheckRecommended;
+      ADetails := 'Registrierungen konnten nicht geprüft werden; DAI-Optionen öffnen.';
+    end;
   end;
 end;
 

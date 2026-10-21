@@ -23,6 +23,7 @@ uses
   Vcl.Menus,
   Vcl.ExtCtrls,
   h5u.DAI.IDE.Toolbar,
+  h5u.DAI.Clients.Registration,
   h5u.DAI.Log,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
@@ -354,12 +355,14 @@ end;
 procedure NewHost;
 begin
   TDAIIDEToolbar.Shutdown;
+  TDAIIDEToolbar.SetUpdateAvailable(False);
   BorlandIDEServices := nil;
   GHostKeepAlive := nil;
   GHost := TTestHost.Create;
   GHostKeepAlive := GHost;
   BorlandIDEServices := GHostKeepAlive;
   TDAIRuntime.Reset;
+  TDAIClientRegistration.Reset;
   TDAISettings.Instance.Port := 7331;
   TDAILog.Messages.Clear;
   TDAIPermissionManager.ClearCount := 0;
@@ -409,7 +412,7 @@ begin
   Check(Pos('kein aktiver Port', LAction.Hint) > 0, 'Inactive status does not claim a live endpoint');
   Check(Pos('7331', LAction.Hint) > 0, 'Inactive hint identifies the saved start port');
   LInactiveImage := LAction.ImageIndex;
-  Check(GHost.Images.Count = 5, 'Five independent state glyphs are registered');
+  Check(GHost.Images.Count = 8, 'Eight independent state glyphs are registered');
   Check(GHost.DAIButton.DropdownMenu.Owner = GHost.DAIButton.Owner, 'Dropdown follows official ownership contract');
   Check(GHost.DAIButton.ShowHint, 'Toolbar button exposes its status tooltip');
   Check(GHost.DAIButton.Style = tbsDropDown, 'Options are reachable from a native dropdown');
@@ -419,7 +422,7 @@ begin
   Check(LAction.Caption = 'DAI aktiv', 'Successful start refreshes active status immediately');
   LActiveImage := LAction.ImageIndex;
   Check(LActiveImage <> LInactiveImage, 'Active and inactive states use different glyphs');
-  Check(Pos('ServerGlyph.v3.Active', LAction.ImageName) > 0, 'An active server without MCP access displays Play');
+  Check(Pos('ServerGlyph.v4.Active', LAction.ImageName) > 0, 'An active server without MCP access displays Play');
   TDAIRuntime.Port := 7444;
   TDAISettings.Instance.Port := 7333;
   TDAIIDEToolbar.Refresh;
@@ -428,13 +431,13 @@ begin
   TDAIRuntime.HasMCPAccess := True;
   TDAIRuntime.MCPAccessAgeMs := 15000;
   TDAIIDEToolbar.Refresh;
-  Check(Pos('ServerGlyph.v3.RecentAccess', LAction.ImageName) > 0, 'Access at exactly 15 seconds displays the yellow circle');
+  Check(Pos('ServerGlyph.v4.RecentAccess', LAction.ImageName) > 0, 'Access at exactly 15 seconds displays the yellow circle');
   TDAIRuntime.MCPAccessAgeMs := 15001;
   TDAIIDEToolbar.Refresh;
-  Check(Pos('ServerGlyph.v3.EarlierAccess', LAction.ImageName) > 0, 'Access older than 15 seconds displays the ochre circle');
+  Check(Pos('ServerGlyph.v4.EarlierAccess', LAction.ImageName) > 0, 'Access older than 15 seconds displays the ochre circle');
   TDAIRuntime.MCPAccessAgeMs := 900000;
   TDAIIDEToolbar.Refresh;
-  Check(Pos('ServerGlyph.v3.EarlierAccess', LAction.ImageName) > 0, 'Access at exactly 15 minutes still displays the ochre circle');
+  Check(Pos('ServerGlyph.v4.EarlierAccess', LAction.ImageName) > 0, 'Access at exactly 15 minutes still displays the ochre circle');
   TDAIRuntime.MCPAccessAgeMs := 900001;
   TDAIIDEToolbar.Refresh;
   Check(LAction.ImageIndex = LActiveImage, 'Access older than 15 minutes restores Play');
@@ -444,21 +447,21 @@ begin
   Check(LAction.ImageIndex = LActiveImage, 'A missing access timestamp never displays recent activity');
   TDAIRuntime.HasMCPAccess := True;
   PumpFor(650);
-  Check(Pos('ServerGlyph.v3.RecentAccess', LAction.ImageName) > 0, 'The existing status timer picks up new MCP activity');
+  Check(Pos('ServerGlyph.v4.RecentAccess', LAction.ImageName) > 0, 'The existing status timer picks up new MCP activity');
   TDAIRuntime.MCPAccessAgeMs := 15001;
   PumpFor(650);
-  Check(Pos('ServerGlyph.v3.EarlierAccess', LAction.ImageName) > 0, 'The status timer applies the earlier-access transition');
+  Check(Pos('ServerGlyph.v4.EarlierAccess', LAction.ImageName) > 0, 'The status timer applies the earlier-access transition');
   TDAIRuntime.MCPAccessAgeMs := 900001;
   PumpFor(650);
   Check(LAction.ImageIndex = LActiveImage, 'The status timer restores Play when activity expires');
-  Check(GHost.Images.Count = 5, 'Activity transitions reuse the registered image indices');
+  Check(GHost.Images.Count = 8, 'Activity transitions reuse the registered image indices');
   TDAIRuntime.MCPAccessAgeMs := 0;
   GHost.DAIButton.DropdownMenu.Items[0].Click;
   Check(TDAIRuntime.StopCount = 1, 'Dropdown command also stops through Runtime.StopServer');
   Check(not TDAIRuntime.Active, 'Stop command changes inactive state');
   Check(LAction.ImageIndex = LInactiveImage, 'Stop restores the inactive glyph');
   Check(TDAIRuntime.HasMCPAccess, 'The fixture retains an access timestamp to exercise inactive-state precedence');
-  Check(Pos('ServerGlyph.v3.Inactive', LAction.ImageName) > 0, 'Inactive status displays Pause despite a recent access timestamp');
+  Check(Pos('ServerGlyph.v4.Inactive', LAction.ImageName) > 0, 'Inactive status displays Pause despite a recent access timestamp');
   GHost.DAIButton.DropdownMenu.Items[1].Click;
   Check(GHost.OptionsCount = 1, 'Options shortcut uses the official environment-options service');
   Check(GHost.LastArea = '', 'Options uses the existing page area');
@@ -499,12 +502,12 @@ begin
   Check(Pos('isolated bind failed', LAction.Hint) > 0, 'Bind failure is available in the tooltip');
   Check(not TDAIRuntime.Active, 'Failed start does not claim activation');
   LErrorImage := LAction.ImageIndex;
-  Check(Pos('ServerGlyph.v3.Error', LAction.ImageName) > 0, 'A failed start displays the error X despite recent MCP activity');
+  Check(Pos('ServerGlyph.v4.Error', LAction.ImageName) > 0, 'A failed start displays the error X despite recent MCP activity');
   TDAIRuntime.FailStart := False;
   LAction.Execute;
   Check(LAction.Caption = 'DAI aktiv', 'Successful retry clears the failure state');
   Check(LAction.ImageIndex <> LErrorImage, 'Successful retry restores the active glyph');
-  Check(Pos('ServerGlyph.v3.RecentAccess', LAction.ImageName) > 0, 'Successful retry shows recent activity once the error clears');
+  Check(Pos('ServerGlyph.v4.RecentAccess', LAction.ImageName) > 0, 'Successful retry shows recent activity once the error clears');
   TDAIRuntime.FailStop := True;
   LAction.Execute;
   Check(TDAIRuntime.Active, 'Failed drain does not falsely report a stopped server');
@@ -520,7 +523,7 @@ begin
   TDAIRuntime.RaiseStop := False;
   LAction.Execute;
   Check(LAction.Caption = 'DAI inaktiv', 'Successful stop clears a caught exception');
-  Check(Pos('ServerGlyph.v3.Inactive', LAction.ImageName) > 0, 'Successful stop displays Pause despite retained activity');
+  Check(Pos('ServerGlyph.v4.Inactive', LAction.ImageName) > 0, 'Successful stop displays Pause despite retained activity');
   TDAIRuntime.RaiseStart := True;
   LAction.Execute;
   Check(Pos('isolated start exception', LAction.Hint) > 0, 'Unexpected start exceptions are also contained');
@@ -532,7 +535,8 @@ end;
 procedure TestGlyphs;
 const
   CSizes: array[0..4] of Integer = (16, 20, 24, 32, 48);
-  CStateNames: array[0..4] of string = ('inactive', 'active', 'error', 'recent-access', 'earlier-access');
+  CStateNames: array[0..7] of string = ('inactive', 'active', 'error', 'recent-access', 'earlier-access', 'not-registered',
+    'registration-update', 'update-available');
 var
   LBitmap: TBitmap;
   LPreview: TPngImage;
@@ -543,16 +547,16 @@ var
   LOpaque: Integer;
   LPartial: Integer;
   LTransparent: Integer;
-  LShapes: array[0..4] of TBytes;
-  LColours: array[0..4] of TBytes;
+  LShapes: array[0..7] of TBytes;
+  LColours: array[0..7] of TBytes;
   LGlyphDescription: string;
 begin
   NewHost;
   TDAIIDEToolbar.Install;
   TDAIIDEToolbar.Refresh;
-  Check(GHost.Glyphs.Count = 25, 'Five glyphs each have five independently rendered resolutions');
+  Check(GHost.Glyphs.Count = 40, 'Eight glyphs each have five independently rendered resolutions');
   Check(GHost.Images is TVirtualImageList, 'Regression uses the real modern VCL virtual image list');
-  Check(GHost.ImageCollection.Images.Count = 5, 'All state glyphs enter the real VCL image collection');
+  Check(GHost.ImageCollection.Images.Count = 8, 'All state glyphs enter the real VCL image collection');
   for LIndex := 0 to GHost.Glyphs.Count - 1 do
   begin
     LPng := GHost.Glyphs[LIndex];
@@ -596,32 +600,36 @@ begin
   Check(not CompareMem(@LShapes[1][0], @LShapes[2][0], 256), 'Active/error shapes differ independently of colour');
   Check(CompareMem(@LShapes[3][0], @LShapes[4][0], 256), 'Both activity circles have the same alpha shape');
   Check(not CompareMem(@LColours[3][0], @LColours[4][0], 256 * 3), 'The yellow and ochre activity circles differ in colour');
-  Check(Pos('ServerGlyph.v3.Inactive', GHost.DAIAction.ImageName) > 0, 'Action receives the real VCL inactive image name');
+  Check(not CompareMem(@LShapes[5][0], @LShapes[6][0], 256), 'Question and exclamation notices have distinct shapes');
+  Check(not CompareMem(@LColours[5][0], @LColours[6][0], 256 * 3), 'Registration notices have distinct colours');
+  Check(not CompareMem(@LShapes[6][0], @LShapes[7][0], 256), 'Software and registration update notices have distinct shapes');
+  Check(not CompareMem(@LColours[6][0], @LColours[7][0], 256 * 3), 'Software and registration update notices have distinct colours');
+  Check(Pos('ServerGlyph.v4.Inactive', GHost.DAIAction.ImageName) > 0, 'Action receives the real VCL inactive image name');
   Check(GHost.DAIButton.ImageName = GHost.DAIAction.ImageName, 'Button uses the exact registered image name');
   TDAIRuntime.Active := True;
   TDAIIDEToolbar.Refresh;
-  Check(Pos('ServerGlyph.v3.Active', GHost.DAIAction.ImageName) > 0, 'Active state switches the named image');
+  Check(Pos('ServerGlyph.v4.Active', GHost.DAIAction.ImageName) > 0, 'Active state switches the named image');
   Check(GHost.DAIButton.ImageName = GHost.DAIAction.ImageName, 'Button follows the real VCL action image-name change');
   TDAIRuntime.HasMCPAccess := True;
   TDAIRuntime.MCPAccessAgeMs := 0;
   TDAIIDEToolbar.Refresh;
-  Check(Pos('ServerGlyph.v3.RecentAccess', GHost.DAIAction.ImageName) > 0, 'Recent access switches the named image');
+  Check(Pos('ServerGlyph.v4.RecentAccess', GHost.DAIAction.ImageName) > 0, 'Recent access switches the named image');
   Check(GHost.DAIButton.ImageName = GHost.DAIAction.ImageName, 'Button follows the recent-access image-name change');
   TDAIRuntime.MCPAccessAgeMs := 15001;
   TDAIIDEToolbar.Refresh;
-  Check(Pos('ServerGlyph.v3.EarlierAccess', GHost.DAIAction.ImageName) > 0, 'Earlier access switches the named image');
+  Check(Pos('ServerGlyph.v4.EarlierAccess', GHost.DAIAction.ImageName) > 0, 'Earlier access switches the named image');
   Check(GHost.DAIButton.ImageName = GHost.DAIAction.ImageName, 'Button follows the earlier-access image-name change');
   if ParamCount >= 2 then
   begin
     LBitmap := TBitmap.Create;
     LPreview := TPngImage.Create;
     try
-      LBitmap.SetSize(400, 160);
+      LBitmap.SetSize(640, 160);
       LBitmap.Canvas.Brush.Color := clWhite;
-      LBitmap.Canvas.FillRect(Rect(0, 0, 400, 80));
+      LBitmap.Canvas.FillRect(Rect(0, 0, 640, 80));
       LBitmap.Canvas.Brush.Color := $00332E28;
-      LBitmap.Canvas.FillRect(Rect(0, 80, 400, 160));
-      for LIndex := 0 to 4 do
+      LBitmap.Canvas.FillRect(Rect(0, 80, 640, 160));
+      for LIndex := 0 to 7 do
       begin
         LPng := GHost.Glyphs[LIndex * 5];
         LBitmap.Canvas.Draw(LIndex * 80 + 6, 6, LPng);
@@ -690,7 +698,7 @@ begin
     Check(Assigned(GHost.DAIButton()), 'New registration reinstalls even a finalized/reinitialized pinned image');
     Check(GHost.Toolbar.ButtonCount = 2, 'Reload does not duplicate foreign or owned buttons');
     Check(GHost.Images.Count = LImageCount, 'Reload preserves named VCL image indices');
-    Check(Pos('ServerGlyph.v3.Inactive', GHost.DAIAction.ImageName) > 0, 'Reload does not fall back to an old D glyph');
+    Check(Pos('ServerGlyph.v4.Inactive', GHost.DAIAction.ImageName) > 0, 'Reload does not fall back to an old D glyph');
     FinalizePackage(LModule);
     LFinalized := True;
     Check(not Assigned(GHost.DAIButton()), 'Second real finalization cleans up again');
@@ -1108,6 +1116,18 @@ begin
           Inc(LRejected);
       end;
       try
+        TDAIIDEToolbar.CheckRegistrations;
+      except
+        on E: EInvalidOperation do
+          Inc(LRejected);
+      end;
+      try
+        TDAIIDEToolbar.SetUpdateAvailable(True, 'worker-version');
+      except
+        on E: EInvalidOperation do
+          Inc(LRejected);
+      end;
+      try
         TDAIIDEToolbar.Shutdown;
       except
         on E: EInvalidOperation do
@@ -1122,10 +1142,12 @@ begin
   finally
     LThread.Free;
   end;
-  Check(LRejected = 3, 'Every public UI entry point rejects worker-thread calls');
+  Check(LRejected = 5, 'Every public UI entry point rejects worker-thread calls');
   Check(GHost.AddCount = 1, 'Worker calls never invoke the IDE factory');
 end;
 
+{$I ToolbarTests\Toolbar.Registration.Tests.inc}
+{$I ToolbarTests\Toolbar.Update.Tests.inc}
 {$I ToolbarTests\Toolbar.Stream.Tests.inc}
 {$I ToolbarTests\Toolbar.Layout.Tests.inc}
 {$I ToolbarTests\Toolbar.Popup.Tests.inc}
@@ -1139,6 +1161,14 @@ begin
       TestToolbarStream
     else if ParamStr(3) = 'LayoutGrow' then
       TestToolbarLayoutGrowth
+    else if ParamStr(3) = 'Health' then
+      TestToolbarRegistrationHealth
+    else if ParamStr(3) = 'Update' then
+    begin
+      TestToolbarSoftwareUpdate;
+      TestGlyphs;
+      TestPopupTracking(False, False, False, True);
+    end
     else if ParamStr(3) = 'Popup' then
       TestToolbarPopup
     else
@@ -1146,6 +1176,12 @@ begin
       Writeln('Toolbar checks: readiness and status');
       Flush(Output);
       TestReadinessAndStatus;
+      Writeln('Toolbar checks: registration health');
+      Flush(Output);
+      TestToolbarRegistrationHealth;
+      Writeln('Toolbar checks: software-update notice');
+      Flush(Output);
+      TestToolbarSoftwareUpdate;
       Writeln('Toolbar checks: failed transitions');
       Flush(Output);
       TestFailures;

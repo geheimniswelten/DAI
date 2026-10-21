@@ -57,6 +57,7 @@ type
     procedure UpdateProjectPermissionState;
     procedure LoadPermissionSettings;
     procedure LoadConnectionSettings;
+    procedure StoreSettings(const ARefreshRegistrationHealth: Boolean);
     procedure ConnectionSettingsScopeClicked(Sender: TObject);
     procedure StartServerClicked(Sender: TObject);
     procedure StopServerClicked(Sender: TObject);
@@ -95,6 +96,7 @@ uses
   h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
   h5u.DAI.Consts,
+  h5u.DAI.IDE.Toolbar,
   h5u.DAI.MCP.Tools,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Dialog,
@@ -737,6 +739,7 @@ begin
   if not TDAIRuntime.StartServer(StrToIntDef(Trim(FPortEdit.Text), 0), Trim(FTokenEdit.Text)) then
     TaskMessageDlg('DAI', TDAIRuntime.LastServerError, mtInformation, [mbOK], 0);
   RefreshServerStatus;
+  TDAIIDEToolbar.CheckRegistrations;
 end;
 
 procedure TDAIOptionsFrame.StopServerClicked(Sender: TObject);
@@ -744,6 +747,7 @@ begin
   if not TDAIRuntime.StopServer then
     TaskMessageDlg('DAI', TDAIRuntime.LastServerError, mtWarning, [mbOK], 0);
   RefreshServerStatus;
+  TDAIIDEToolbar.CheckRegistrations;
 end;
 
 procedure TDAIOptionsFrame.GenerateTokenClicked(Sender: TObject);
@@ -776,6 +780,7 @@ begin
   RefreshServerStatus;
   LoadPermissionSettings;
   RefreshRegistrationStatus;
+  TDAIIDEToolbar.CheckRegistrations;
 end;
 
 procedure TDAIOptionsFrame.LoadConnectionSettings;
@@ -1086,13 +1091,17 @@ var
   LResult: TJSONObject;
 begin
   try
-    StoreToSettings;
-    LResult := TDAIClientRegistration.RegisterFiles(SelectedClient);
+    StoreSettings(False);
     try
-      RefreshRegistrationStatus;
-      DisplayClientStatus(LResult);
+      LResult := TDAIClientRegistration.RegisterFiles(SelectedClient);
+      try
+        RefreshRegistrationStatus;
+        DisplayClientStatus(LResult);
+      finally
+        LResult.Free;
+      end;
     finally
-      LResult.Free;
+      TDAIIDEToolbar.CheckRegistrations;
     end;
   except
     on E: Exception do
@@ -1183,6 +1192,11 @@ begin
 end;
 
 procedure TDAIOptionsFrame.StoreToSettings;
+begin
+  StoreSettings(True);
+end;
+
+procedure TDAIOptionsFrame.StoreSettings(const ARefreshRegistrationHealth: Boolean);
 var
   LCategory: TDAIPermissionCategory;
   LContext: TDAIRequestContext;
@@ -1241,6 +1255,8 @@ begin
   if not TDAIRuntime.ApplySettings then
     TaskMessageDlg('DAI', TDAIRuntime.LastServerError, mtWarning, [mbOK], 0);
   RefreshServerStatus;
+  if ARefreshRegistrationHealth then
+    TDAIIDEToolbar.CheckRegistrations;
 end;
 
 procedure TDAIOptionsFrame.UnregisterClicked(Sender: TObject);
@@ -1248,12 +1264,16 @@ var
   LResult: TJSONObject;
 begin
   try
-    LResult := TDAIClientRegistration.UnregisterFiles(SelectedClient);
     try
-      RefreshRegistrationStatus;
-      DisplayClientStatus(LResult);
+      LResult := TDAIClientRegistration.UnregisterFiles(SelectedClient);
+      try
+        RefreshRegistrationStatus;
+        DisplayClientStatus(LResult);
+      finally
+        LResult.Free;
+      end;
     finally
-      LResult.Free;
+      TDAIIDEToolbar.CheckRegistrations;
     end;
   except
     on E: Exception do
@@ -1270,6 +1290,7 @@ begin
     LDialog.ShowModal;
   finally
     LDialog.Free;
+    TDAIIDEToolbar.CheckRegistrations;
   end;
   RefreshRegistrationStatus;
 end;

@@ -1398,6 +1398,7 @@ begin
 end;
 
 {$I RegistrationTests\CleanupTests.inc}
+{$I RegistrationTests\HealthTests.inc}
 
 procedure ScopedRegistrationTests;
 const
@@ -1462,6 +1463,7 @@ begin
     LauncherRegistrationTests;
     RegistrationScopeNameTests;
     ScopedRegistrationTests;
+    RegistrationHealthTests;
     CodexMigrationTests;
     CodexPreservationTests;
     Writeln('OK: ', GCount, ' isolated registration/parser/file checks');

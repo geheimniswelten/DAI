@@ -19,6 +19,18 @@
 - Der HTTP-Server erfasst MCP-Zugriffe mit einem atomaren monotonen Zeitstempel. Der bestehende Statustimer liest diesen ohne Worker-/UI-Aufrufe; Health- und abgewiesene Transportanfragen zählen nicht.
 - Isolierte Tests prüfen Zeitgrenzen, Vorrang der Grundzustände, Aktualisierung nach Popupende sowie alle fünf Symbole in fünf Auflösungen.
 
+## 1.2.30
+
+- Ein zusätzlicher Toolbarzustand zeigt „Neue DAI-Version verfügbar“ mit blauem Aufwärtspfeil und optionaler Versionsangabe im Tooltip. Der Zustand ist für eine spätere Updateprüfung vorbereitet und zunächst ausgeschaltet.
+- SetUpdateAvailable setzt oder löscht den bekannten Updatehinweis im Hauptthread, auch vor dem Toolbaraufbau. Fehler, Zugriffszustände und Registrierungsprobleme behalten Vorrang; offene Menüs bleiben stabil. Es erfolgt keine Netzwerkabfrage.
+
+## 1.2.29
+
+- Das DAI-Toolbaricon zeigt fehlende KI-Registrierung mit violettem Fragezeichen und veraltete oder prüfbedürftige Registrierung mit orangefarbenem Warnsymbol. Tooltip und Beschriftung erläutern den Zustand.
+- Aktuelle und frühere MCP-Zugriffe behalten während der bisherigen 15-Sekunden-/15-Minuten-Zeitfenster Vorrang vor Registrierungshinweisen; Serverfehler bleiben vorrangig.
+- Prüfung nach Package-Start, Serverwechsel, Registrieren, Deregistrieren, Bereinigen und gespeicherten Optionen; keine Dateiabfragen bei gewöhnlichen Statusticks. Nicht genutzte Clients lösen keinen Updatebedarf aus.
+- Die Prüfung berücksichtigt den aktuellen Verbindungsbereich, notwendige Codex-Skillaktualisierungen und Konflikte, ohne Registrierungen oder Optionsentwürfe zu ändern.
+
 ## 1.2.28
 
 - Die DAI-Optionen bieten „Registrierungen suchen und entfernen“. Der Dialog findet auch DAI-Verbindungen anderer Delphi-Versionen und Profile in den bekannten Clientdateien sowie alte Codex-Registrierungen unter APPDATA.

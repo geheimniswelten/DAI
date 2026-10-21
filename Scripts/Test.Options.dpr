@@ -17,6 +17,7 @@ uses
   Winapi.Windows,
   h5u.DAI.Clients.Registration in 'OptionsTests\h5u.DAI.Clients.Registration.pas',
   h5u.DAI.Codex.Registration in 'OptionsTests\h5u.DAI.Codex.Registration.pas',
+  h5u.DAI.IDE.Toolbar in 'OptionsTests\h5u.DAI.IDE.Toolbar.pas',
   h5u.DAI.MCP.Tools in 'OptionsTests\h5u.DAI.MCP.Tools.pas',
   h5u.DAI.OTA.Helpers in 'OptionsTests\h5u.DAI.OTA.Helpers.pas',
   h5u.DAI.Permissions.Dialog in 'OptionsTests\h5u.DAI.Permissions.Dialog.pas',
@@ -404,6 +405,7 @@ var
   LButton: TButton;
   LProbe: TCleanupProbe;
   LVariant: Integer;
+  LHealthCount: Integer;
   LPortDraft, LTokenDraft: string;
   LSharedDraft: Boolean;
 begin
@@ -437,10 +439,12 @@ begin
       LProbe.Seen := False;
       LProbe.Failure := '';
       LProbe.Timer.Enabled := True;
+      LHealthCount := TDAIIDEToolbar.CheckCount;
       LButton.Click;
       LProbe.Timer.Enabled := False;
       Check(LProbe.Failure = '', 'Cleanup inspection: ' + LProbe.Failure);
       Check(LProbe.Seen, 'Cleanup dialog was inspected inside its actual modal loop');
+      Check(TDAIIDEToolbar.CheckCount = LHealthCount + 1, 'Cleanup completion checks toolbar registrations once after its modal loop');
       Check(TDAIClientRegistration.FindCount >= 1, 'Opening cleanup obtains an inventory');
       Check(EditControl(AFrame, True).Text = LPortDraft, 'Cleanup preserves the draft port');
       Check(EditControl(AFrame, False).Text = LTokenDraft, 'Cleanup preserves the draft token');
@@ -819,6 +823,109 @@ begin
   end;
 end;
 
+procedure CheckRegistrationHealthRefresh;
+var
+  LHost: TForm;
+  LFrame: TDAIOptionsFrame;
+  LApplicationHandle: HWND;
+  LPort, LToken: TEdit;
+  LScope: TCheckBox;
+  LComponent: TComponent;
+  LClient: TComboBox;
+  LStoredPort: Integer;
+  LStoredToken: string;
+
+  procedure CreateFrame;
+  begin
+    LFrame := TDAIOptionsFrame.Create(nil);
+    LFrame.Visible := False;
+    LFrame.Parent := LHost;
+    LFrame.LoadFromSettings;
+    LPort := EditControl(LFrame, True);
+    LToken := EditControl(LFrame, False);
+    LScope := SharedConnectionControl(LFrame);
+  end;
+
+begin
+  TestStage := 'RegistrationHealthRefresh';
+  TDAIRuntime.Reset;
+  TDAISettings.Reset;
+  TDAIPermissionManager.Reset;
+  TDAIIDEToolbar.Reset;
+  TDAIClientRegistration.RegisterCount := 0;
+  TDAIClientRegistration.UnregisterCount := 0;
+  LStoredPort := TDAISettings.Instance.Port;
+  LStoredToken := TDAISettings.Instance.Token;
+  TDAISettings.Instance.SavedConnectionAvailable[False] := True;
+  TDAISettings.Instance.SavedConnectionPort[False] := 7441;
+  TDAISettings.Instance.SavedConnectionToken[False] := 'synthetic-local-health-token';
+  LHost := TForm.CreateNew(nil);
+  LFrame := nil;
+  LApplicationHandle := Application.Handle;
+  try
+    LHost.Visible := False;
+    Application.Handle := LHost.Handle;
+    CreateFrame;
+    Check(TDAIIDEToolbar.CheckCount = 1, 'Loading options performs one fresh toolbar registration check');
+    Check(TDAIIDEToolbar.LastShared and (TDAIIDEToolbar.LastPort = LStoredPort), 'Initial health check uses effective saved settings');
+    LPort.Text := '7442';
+    LToken.Text := 'synthetic-shared-health-draft';
+    LScope.Checked := False;
+    LPort.Text := '7443';
+    LToken.Text := 'synthetic-local-health-draft';
+    LClient := nil;
+    for LComponent in LFrame do
+      if LComponent is TComboBox then
+        if TComboBox(LComponent).Items.Count = 10 then
+          LClient := TComboBox(LComponent);
+    Check(Assigned(LClient), 'Client selector exists for isolated health refresh test');
+    LClient.ItemIndex := 1;
+    LClient.OnChange(LClient);
+    Check(TDAIIDEToolbar.CheckCount = 1, 'Scope, credential and client drafts do not rescan or replace toolbar health');
+    Check(TDAISettings.Instance.UseSharedConnectionSettings, 'Draft connection scope does not change effective health settings');
+    FreeAndNil(LFrame);
+    Check(TDAIIDEToolbar.CheckCount = 1, 'Cancelling draft options leaves toolbar health unchanged');
+    Check((TDAISettings.Instance.Port = LStoredPort) and (TDAISettings.Instance.Token = LStoredToken), 'Cancellation preserves effective credential pair');
+    Check(TDAISettings.Instance.SaveCount = 0, 'Cancellation never saves health-related drafts');
+
+    CreateFrame;
+    Check(TDAIIDEToolbar.CheckCount = 2, 'Reopening options checks the current effective registration state');
+    Check(TDAIIDEToolbar.LastShared and (TDAIIDEToolbar.LastToken = LStoredToken), 'Reopening health ignores cancelled local scope and token');
+    LScope.Checked := False;
+    LPort.Text := '7444';
+    LToken.Text := 'synthetic-local-health-accepted';
+    ButtonControl(LFrame, 'Server starten').Click;
+    Check(TDAIIDEToolbar.CheckCount = 3, 'Manual activation checks registration health once');
+    Check(TDAIIDEToolbar.LastStartCount = 1, 'Activation refresh runs after the runtime start');
+    Check(TDAIIDEToolbar.LastShared and (TDAIIDEToolbar.LastPort = LStoredPort), 'Transient activation does not commit scope or credentials to health settings');
+    ButtonControl(LFrame, 'Server stoppen').Click;
+    Check(TDAIIDEToolbar.CheckCount = 4, 'Manual deactivation checks registration health once');
+    Check(TDAIIDEToolbar.LastStopCount = 1, 'Deactivation refresh runs after the runtime stop');
+    LFrame.StoreToSettings;
+    Check(TDAIIDEToolbar.CheckCount = 5, 'Accepting settings checks registration health once');
+    Check((TDAIIDEToolbar.LastSaveCount = 1) and not TDAIIDEToolbar.LastShared, 'Health refresh sees the saved destination scope');
+    Check((TDAIIDEToolbar.LastPort = 7444) and (TDAIIDEToolbar.LastToken = 'synthetic-local-health-accepted'), 'Health refresh sees the saved credential pair');
+    Check(TDAIRuntime.ApplyCount = 1, 'Accepted settings apply runtime state before health refresh');
+    LPort.Text := '7445';
+    ButtonControl(LFrame, 'Registrieren').Click;
+    Check(TDAIIDEToolbar.CheckCount = 6, 'Register performs one final health check without an intermediate save check');
+    Check((TDAIIDEToolbar.LastSaveCount = 2) and (TDAIIDEToolbar.LastRegisterCount = 1), 'Registration health sees both the saved options and completed registration');
+    Check(TDAIIDEToolbar.LastPort = 7445, 'Registration health sees the newly registered destination port');
+    LPort.Text := '7446';
+    LToken.Text := 'synthetic-unaccepted-after-registration';
+    ButtonControl(LFrame, 'Deregistrieren').Click;
+    Check(TDAIIDEToolbar.CheckCount = 7, 'Deregister performs one final health check');
+    Check(TDAIIDEToolbar.LastUnregisterCount = 1, 'Deregistration health runs after client removal');
+    Check((TDAIIDEToolbar.LastSaveCount = 2) and (TDAIIDEToolbar.LastPort = 7445), 'Deregistration health preserves unsaved connection drafts');
+    Check(TDAIIDEToolbar.LastToken = 'synthetic-local-health-accepted', 'Deregistration health uses the effective saved token');
+    Check(not TDAIIDEToolbar.OffMainThread, 'All options registration health hooks execute on the IDE UI thread');
+  finally
+    LFrame.Free;
+    Application.Handle := LApplicationHandle;
+    LHost.Free;
+  end;
+end;
+
 procedure CheckPermissionColumns;
 var
   LFrame: TDAIOptionsFrame;
@@ -1031,6 +1138,7 @@ begin
     CheckLifecycleOptions;
     CheckConnectionScopeOptions;
     CheckPermissionColumns;
+    CheckRegistrationHealthRefresh;
     Writeln('PASS: ', CheckCount, ' native options-frame UI checks');
   except
     on E: Exception do
