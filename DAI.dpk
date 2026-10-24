@@ -25,7 +25,10 @@
 {$IMAGEBASE $400000}
 {$DEFINE DEBUG}
 {$ENDIF IMPLICITBUILDING}
-{$LIBSUFFIX AUTO}
+{$LIBPREFIX 'p$(Platform)'}
+{$LIBSUFFIX 'AUTOs%Platform%'}
+{$LIBVERSION 'v$(Platform)'}
+{$DESIGNONLY}
 {$IMPLICITBUILD OFF}
 
 requires
@@ -57,6 +60,9 @@ contains
   h5u.DAI.Clients.ConfigText in 'Source\h5u.DAI.Clients.ConfigText.pas',
   h5u.DAI.Codex.Registration in 'Source\h5u.DAI.Codex.Registration.pas',
   h5u.DAI.Consts in 'Source\h5u.DAI.Consts.pas',
+  h5u.DAI.Usage in 'Source\h5u.DAI.Usage.pas',
+  h5u.DAI.MCP.ToolUsage in 'Source\h5u.DAI.MCP.ToolUsage.pas',
+  h5u.DAI.Registry.Editor in 'Source\h5u.DAI.Registry.Editor.pas',
   h5u.DAI.IDE.Notifier in 'Source\h5u.DAI.IDE.Notifier.pas',
   h5u.DAI.Log in 'Source\h5u.DAI.Log.pas',
   h5u.DAI.MCP.Protocol in 'Source\h5u.DAI.MCP.Protocol.pas',

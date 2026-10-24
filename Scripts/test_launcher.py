@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import queue
+import re
 import shutil
 import socket
 import subprocess
@@ -28,6 +29,7 @@ TOKEN = "launcher-isolated-test-token"
 VERSION = "launcher-fixture-version"
 POLICY_KEY = r"Software\DelphiAI\DAI"
 POLICY_VALUE = "AllowIDEStartStop"
+USAGE_KEY = POLICY_KEY + r"\UsageLog"
 TEST_REGISTRY_PREFIX = "Software\\DelphiAI\\DAI-Launcher-Tests\\"
 MODERN_META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
                "io.modelcontextprotocol/clientCapabilities": {}}
@@ -273,6 +275,29 @@ class TestEnvironment:
         bridge.initialize()
         return bridge
 
+    def usage_counts(self) -> dict[str, int]:
+        check(self.registry_root is not None, "Usage reads require a test-only HKCU override")
+        # Sum months so a run crossing midnight on a month boundary stays valid.
+        path = self.registry_root + "\\" + USAGE_KEY
+        totals: dict[str, int] = {}
+        try:
+            root = winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, 0,
+                                 winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
+        except FileNotFoundError:
+            return totals
+        with root:
+            for month_index in range(winreg.QueryInfoKey(root)[0]):
+                month = winreg.EnumKey(root, month_index)
+                check(re.fullmatch(r"\d{4}_(?:0[1-9]|1[0-2])", month) is not None,
+                      f"Usage is partitioned by calendar month: {month}")
+                with winreg.OpenKey(root, month, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+                    for value_index in range(winreg.QueryInfoKey(key)[1]):
+                        name, value, value_type = winreg.EnumValue(key, value_index)
+                        check(value_type == winreg.REG_QWORD and isinstance(value, int) and value >= 0,
+                              f"Usage counter has its native QWORD representation: {name}")
+                        totals[name] = totals.get(name, 0) + value
+        return totals
+
     def adopt(self, pid: int, executable: Path | None = None) -> FixtureLease:
         if pid not in self.leases:
             self.leases[pid] = FixtureLease(pid, executable or self.ide)
@@ -510,6 +535,57 @@ def run_missing_executable(env: TestEnvironment) -> None:
     check(response.get("result", {}).get("isError") is True, "Missing IDE start returns tool error")
 
 
+def run_usage_registry(env: TestEnvironment) -> None:
+    bridge = env.make_bridge()
+    check(env.usage_counts() == {}, "Initialize and ping do not create tool counters")
+    bridge.request("server/discover", {"_meta": MODERN_META})
+    bridge.request("tools/list")
+    bridge.request("ping")
+    check(env.usage_counts() == {}, "Protocol discovery and housekeeping are not tool accesses")
+    for params in ({"name": "unknown_tool", "arguments": {}},
+                   {"name": "delphi_status/arbitrary", "arguments": {}},
+                   {"name": 17, "arguments": {}},
+                   {"name": "delphi_status", "arguments": []}):
+        response = bridge.request("tools/call", params)
+        check(response.get("error", {}).get("code") == -32602, "Malformed or unknown call is rejected")
+    response = bridge.request("tools/call", [])
+    check(response.get("error", {}).get("code") == -32602, "Non-object params are rejected")
+    bridge.notify("tools/call", {"name": "delphi_stop", "arguments": {"mode": "terminate"}})
+    bridge.request("ping")
+    check(env.usage_counts() == {}, "Unknown calls, malformed envelopes and notifications do not count")
+
+    bridge.tool("delphi_status")
+    check(env.usage_counts() == {"delphi_status": 1}, "Launcher status is counted exactly once")
+    started = bridge.tool("delphi_start", {"timeout_ms": 100})
+    lease = env.wait_ready(started["process_id"])
+    check(env.usage_counts() == {"delphi_status": 1, "delphi_start": 1},
+          "Launching and its internal status probes count as one start call")
+    stopped = bridge.tool("delphi_stop", {"timeout_ms": 2000})
+    check(stopped["exited"] and lease.wait(), "Usage fixture closes normally")
+    expected = {"delphi_status": 1, "delphi_start": 1, "delphi_stop": 1}
+    check(env.usage_counts() == expected, "Stopping and its probes count as one stop call")
+    bridge.request("tools/call", {"name": "delphi_status", "arguments": {}, "_meta": MODERN_META})
+    expected["delphi_status"] += 1
+    check(env.usage_counts() == expected, "Modern and legacy protocols share the same counter")
+    second = env.make_bridge()
+    second.tool("delphi_status")
+    expected["delphi_status"] += 1
+    check(env.usage_counts() == expected, "Separate launcher processes share the same monthly counters")
+    env.policy(0)
+    lifecycle_denied(bridge, "delphi_start", {"timeout_ms": 0})
+    expected["delphi_start"] += 1
+    check(env.usage_counts() == expected, "Denied known dispatch attempts are counted exactly once")
+    missing = env.make_bridge(ide=env.directory / "not-installed" / "bds.exe")
+    env.policy(1)
+    response = missing.tool_response("delphi_start", {"timeout_ms": 0})
+    check(response.get("result", {}).get("isError") is True, "Failed known operation returns a tool error")
+    expected["delphi_start"] += 1
+    check(env.usage_counts() == expected, "Failed known dispatch attempts are counted exactly once")
+    for helper in (bridge, second, missing):
+        helper.close()
+    check(env.usage_counts() == expected, "STDIO EOF does not add a tool call")
+
+
 def run_early_exit(env: TestEnvironment) -> None:
     bridge = env.make_bridge(mode="early-exit")
     result = bridge.tool("delphi_start", {"timeout_ms": 2000})
@@ -642,7 +718,7 @@ def main() -> None:
     parser.add_argument("--helper-platform", choices=("Win32", "Win64"))
     parser.add_argument("--policy-isolated", action="store_true",
                         help="The generated test helper redirects HKCU into a GUID root; never use with a production bridge")
-    parser.add_argument("--case", action="append", choices=("offline", "cancel", "hang", "online", "simultaneous", "missing-executable", "foreign-listener", "legacy-online", "early-exit", "lifecycle-policy"))
+    parser.add_argument("--case", action="append", choices=("offline", "cancel", "hang", "online", "simultaneous", "missing-executable", "foreign-listener", "legacy-online", "early-exit", "lifecycle-policy", "usage-registry"))
     arguments = parser.parse_args()
     label = f"{arguments.helper_platform or arguments.platform}->{arguments.platform}"
     for executable in (arguments.bridge, arguments.fixture):
@@ -655,13 +731,14 @@ def main() -> None:
                            ("missing-executable", run_missing_executable),
                            ("foreign-listener", run_foreign_listener),
                            ("legacy-online", lambda env: run_online(env, legacy=True)),
-                           ("early-exit", run_early_exit), ("lifecycle-policy", run_lifecycle_policy)):
+                           ("early-exit", run_early_exit), ("lifecycle-policy", run_lifecycle_policy),
+                           ("usage-registry", run_usage_registry)):
             if arguments.case and name not in arguments.case:
                 continue
-            if name == "lifecycle-policy" and not arguments.policy_isolated:
+            if name in ("lifecycle-policy", "usage-registry") and not arguments.policy_isolated:
                 if arguments.case:
-                    raise ValueError("Lifecycle policy tests require the generated test helper with --policy-isolated")
-                print(f"SKIP {label}: lifecycle-policy (external bridge without per-process registry isolation)", flush=True)
+                    raise ValueError(f"{name} tests require the generated test helper with --policy-isolated")
+                print(f"SKIP {label}: {name} (external bridge without per-process registry isolation)", flush=True)
                 continue
             env = TestEnvironment(arguments.bridge, arguments.fixture, arguments.platform, root / name,
                                   arguments.policy_isolated)

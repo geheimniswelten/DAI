@@ -20,7 +20,8 @@ implementation
 
 uses
   System.SysUtils,
-  h5u.DAI.Consts;
+  h5u.DAI.Consts,
+  h5u.DAI.Usage;
 
 function RPCResponse(const AId, AResult: TJSONValue): TJSONObject;
 begin
@@ -267,6 +268,8 @@ begin
     LArguments := TJSONObject.Create;
   try
     try
+      // The STDIO launcher is independent of the HTTP tool dispatcher.
+      TDAIUsage.RecordToolCall(LName, LName <> 'delphi_status');
       LData := FLauncher.Call(LName, LArguments);
       Result := RPCResponse(LId, ToolResult(LData, False, LModern));
     except

@@ -1,3 +1,23 @@
+# DAI 1.2.31 – Nutzungszähler und Aktivitätsanzeige, 24. Oktober 2026
+
+Bekannte Toolaufrufe werden je lokalem Kalendermonat als REG_QWORD unter dem gemeinsamen HKCU-UsageLog gespeichert.
+Gezählt werden Versuche einschließlich Fehlern oder Ablehnungen, unabhängig vom optionalen IDE-Textlog. Status und Orientierung
+verlängern die sichtbare Aktivität nicht; Inhaltszugriffe und Änderungen schon. Transportverwaltung und unbekannte Tools zählen nicht.
+Die Optionen bieten einen per Tastatur erreichbaren Registry-Link, der offene Entwürfe nicht speichert. Kein Upload und keine Diagrammkomponente.
+
+Delphi 13 Win32 und Win64 bestanden jeweils: ToolUsage 1.479, Usage 43, Options 698, HTTP-Protokoll 148 und Launcher 840 Prüfungen.
+Die Usage-Tests bestätigten je Architektur 1.200 parallele Thread-Inkremente sowie gemeinsam 1.200 Inkremente aus vier gemischten
+Win32-/Win64-Prozessen ohne verlorene Zählerstände. Registrytests verwenden isoliertes HKCU; Regedit wurde nicht gestartet.
+Die 27 Python-Verifierregressionen und git diff --check bestehen. Die Vollprüfung meldet weiterhin die zwei vorhandenen
+Abweichungen bei DllSuffix/LIBSUFFIX in den vom Benutzer geänderten Projektmetadaten; das Manifest wurde deshalb nicht neu erzeugt.
+
+Package und Bridge kompilieren mit Compiler 37.0 für Win32 und Win64; die PE-Architekturen wurden geprüft.
+Build.ps1 kompiliert das originale Win32-Package und scheitert danach an seiner Namensprüfung, weil die vorhandenen Metadaten
+p$(Platform)DAIAUTOs%Platform%.v$(Platform).bpl erzeugen. Für die vollständige Package-Prüfung wurde nur eine temporäre DPK-Kopie
+unter Build\Tests-UsagePackage-Source auf das normale Package-Suffix angepasst; alle Units und SDK-Packages stammen aus den
+Produktionsquellen. Die Bridge wurde über ihre echte DPROJ gebaut. Die Benutzer-Metadaten blieben erhalten.
+Delphi 11/12 wurden nicht binär getestet. Keine Installation, Registrierung oder Änderung der laufenden IDE vorgenommen.
+
 # DAI 1.2.19 – Debuggerausdrücke, 4. Oktober 2026
 
 Fünf neue MCP-Werkzeuge ergänzen Auswertung, Wertzuweisung, Cursorausdruck, verzögerte Ergebnisse und native Ausdrucksaktionen.

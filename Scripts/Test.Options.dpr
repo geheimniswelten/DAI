@@ -23,6 +23,7 @@ uses
   h5u.DAI.Permissions.Dialog in 'OptionsTests\h5u.DAI.Permissions.Dialog.pas',
   h5u.DAI.Permissions.Manager in 'OptionsTests\h5u.DAI.Permissions.Manager.pas',
   h5u.DAI.Runtime in 'OptionsTests\h5u.DAI.Runtime.pas',
+  h5u.DAI.Registry.Editor in 'OptionsTests\h5u.DAI.Registry.Editor.pas',
   h5u.DAI.Settings in 'OptionsTests\h5u.DAI.Settings.pas',
   h5u.DAI.Consts,
   h5u.DAI.Types,
@@ -459,6 +460,53 @@ begin
   end;
 end;
 
+procedure CheckUsageRegistryLink(const AFrame: TDAIOptionsFrame);
+var
+  LLink: TLinkLabel;
+  LPortDraft: string;
+  LTokenDraft: string;
+  LStartCount: Integer;
+  LStopCount: Integer;
+  LStatusCount: Integer;
+  LOpenResult: Boolean;
+begin
+  LLink := AFrame.FindComponent('DAIUsageLogLink') as TLinkLabel;
+  Check(Assigned(LLink), 'Usage counters have a named native link');
+  Check(LLink.TabStop, 'Usage registry link participates in keyboard navigation');
+  Check(Pos('Nutzungszähler in der Registry öffnen', LLink.Caption) > 0, 'Link describes its Registry Editor destination');
+  Check(Pos('HKCU\Software\DelphiAI\DAI\UsageLog', LLink.Hint) > 0, 'Link hint identifies the exact usage registry root');
+  Check(Pos('Monatszähler', LLink.Hint) > 0, 'Link explains local monthly counters');
+  Check(Assigned(LLink.OnLinkClick), 'Registry link has its production click handler');
+  LPortDraft := EditControl(AFrame, True).Text;
+  LTokenDraft := EditControl(AFrame, False).Text;
+  LStartCount := TDAIRuntime.StartCount;
+  LStopCount := TDAIRuntime.StopCount;
+  LStatusCount := TDAIClientRegistration.StatusCount;
+  RegistryEditorOpenCount := 0;
+  try
+    // Invalid unsaved settings cannot prevent inspecting counters or be persisted by it.
+    EditControl(AFrame, True).Text := '0';
+    EditControl(AFrame, False).Text := '';
+    for LOpenResult := False to True do
+    begin
+      RegistryEditorOpenResult := LOpenResult;
+      LLink.OnLinkClick(LLink, 'usage', sltID);
+      Check(EditControl(AFrame, True).Text = '0', 'Opening registry preserves the invalid draft port');
+      Check(EditControl(AFrame, False).Text = '', 'Opening registry preserves the empty draft token');
+      CheckNoPersistence;
+    end;
+    Check(RegistryEditorOpenCount = 2, 'Each link activation opens the registry helper once, including cancelled launch');
+    Check(RegistryEditorOwner = AFrame.Handle, 'Registry Editor launch uses the options window as its owner');
+    Check(TDAIRuntime.StartCount = LStartCount, 'Opening registry does not start a server');
+    Check(TDAIRuntime.StopCount = LStopCount, 'Opening registry does not stop a server');
+    Check(TDAIClientRegistration.StatusCount = LStatusCount, 'Opening registry does not inspect client registrations');
+  finally
+    RegistryEditorOpenResult := True;
+    EditControl(AFrame, True).Text := LPortDraft;
+    EditControl(AFrame, False).Text := LTokenDraft;
+  end;
+end;
+
 procedure RunChecks;
 var
   LFrame: TDAIOptionsFrame;
@@ -504,6 +552,8 @@ begin
       Check(LTokenEdit.Text = LStoredToken, 'Initial token loaded from synthetic settings');
       Check(LStart.Enabled and not LStop.Enabled, 'Stopped server button state');
       Check(TDAIRuntime.ServerPort = 0, 'Stopped runtime reports zero port');
+      TestStage := 'UsageRegistryLink';
+      CheckUsageRegistryLink(LFrame);
 
       LPortEdit.Text := ' 7102 ';
       LTokenEdit.Text := '  synthetic-current-options-token  ';

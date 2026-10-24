@@ -18,7 +18,8 @@ uses
   h5u.DAI.MCP.Server,
   h5u.DAI.MCP.Sessions,
   h5u.DAI.MCP.Tools,
-  h5u.DAI.Settings;
+  h5u.DAI.Settings,
+  h5u.DAI.Usage;
 
 const
   CModernMeta = '"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",' +
@@ -130,14 +131,14 @@ var
   LUntil: UInt64;
 begin
   TDAIIDEControl.Completed := 0;
-  Response := Post('{"jsonrpc":"2.0","id":301,"method":"tools/call","params":{"name":"deferred-close","arguments":{},' +
-    CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'deferred-close');
+  Response := Post('{"jsonrpc":"2.0","id":301,"method":"tools/call","params":{"name":"ide_window_control","arguments":{},' +
+    CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'ide_window_control');
   LContent := Response.ContentAsString;
   LJson := TJSONObject.ParseJSONValue(LContent);
   try
     Check((Response.StatusCode = 200) and (LJson is TJSONObject), 'deferred close receives one complete JSON response');
     Check(LJson.GetValue<Integer>('id') = 301, 'deferred close acknowledgement matches request');
-    Check(Pos('deferred-close', LContent) > 0, 'deferred close response contains tool result');
+    Check(Pos('ide_window_control', LContent) > 0, 'deferred close response contains tool result');
     Check(Response.HeaderValue['Content-Length'] = IntToStr(TEncoding.UTF8.GetByteCount(LContent)),
       'deferred close response is not duplicated or truncated');
   finally
@@ -147,8 +148,8 @@ begin
   while (TDAIIDEControl.Completed = 0) and (GetTickCount64 < LUntil) do
     Sleep(1);
   Check(TDAIIDEControl.Completed = 1, 'server completes deferred close exactly once after acknowledgement');
-  Response := Post('{"jsonrpc":"2.0","id":302,"method":"tools/call","params":{"name":"failed-deferred-close","arguments":{},' +
-    CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'failed-deferred-close');
+  Response := Post('{"jsonrpc":"2.0","id":302,"method":"tools/call","params":{"name":"file_write","arguments":{},' +
+    CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'file_write');
   Check(Pos('"isError":true', Response.ContentAsString) > 0, 'failed tool returns error result');
   Check(TDAIIDEControl.Completed = 1, 'failed tool does not complete prepared close');
   Response := Post('{"jsonrpc":"2.0","id":303,"method":"ping","params":{' + CModernMeta + '}}',
@@ -170,58 +171,100 @@ var
   LTick: UInt64;
   LSession: string;
   LHeaders: TNetHeaders;
+  LCalls: Integer;
+
+  procedure CallTool(const AName: string; const AArguments: string = '{}');
+  begin
+    Response := Post('{"jsonrpc":"2.0","id":"access","method":"tools/call","params":{"name":"' + AName +
+      '","arguments":' + AArguments + ',' + CModernMeta + '}}', '', '2026-07-28', 'tools/call', AName);
+  end;
+
 begin
   Check(Server.Stop and Server.Start, 'access checks begin with a fresh listener');
-  Check(Server.LastMCPAccessTick = 0, 'a fresh listener has no MCP access');
+  LCalls := TDAIUsage.CallCount;
+  Check(Server.LastMCPAccessTick = 0, 'a fresh listener has no content access');
   Response := Client.Get(Format('http://127.0.0.1:%d/health', [Server.Port]));
-  Check((Response.StatusCode = 200) and (Server.LastMCPAccessTick = 0), 'health polling is not MCP access');
+  Check((Response.StatusCode = 200) and (Server.LastMCPAccessTick = 0), 'health polling is quiet');
   LHeaders := [TNameValuePair.Create('Authorization', 'Bearer isolated-test-token')];
   Response := Client.Get(Format('http://127.0.0.1:%d/mcp', [Server.Port]), nil, LHeaders);
-  Check((Response.StatusCode = 405) and (Server.LastMCPAccessTick = 0), 'unsupported MCP GET is not access');
+  Check((Response.StatusCode = 405) and (Server.LastMCPAccessTick = 0), 'unsupported MCP GET is quiet');
   Response := Post('{"jsonrpc":"2.0","id":"access","method":"ping","params":{' + CModernMeta + '}}',
     '', '2026-07-28', 'ping', '', '', False);
-  Check((Response.StatusCode = 401) and (Server.LastMCPAccessTick = 0), 'unauthenticated POST is not access');
+  Check((Response.StatusCode = 401) and (Server.LastMCPAccessTick = 0), 'unauthenticated POST is quiet');
   Response := Post('{"jsonrpc":"2.0","id":"access","method":"ping","params":{' + CModernMeta + '}}',
     '', '2026-07-28', 'ping', '', 'http://evil.example');
-  Check((Response.StatusCode = 403) and (Server.LastMCPAccessTick = 0), 'rejected origin is not access');
+  Check((Response.StatusCode = 403) and (Server.LastMCPAccessTick = 0), 'rejected origin is quiet');
   Response := Post('not JSON');
-  Check((Response.StatusCode = 400) and (Server.LastMCPAccessTick = 0), 'malformed JSON is not access');
+  Check((Response.StatusCode = 400) and (Server.LastMCPAccessTick = 0), 'malformed JSON is quiet');
   Response := Post('{"jsonrpc":"2.0","id":"access","method":"ping"}', 'unknown-session');
-  Check((Response.StatusCode = 404) and (Server.LastMCPAccessTick = 0), 'missing transport session is not access');
+  Check((Response.StatusCode = 404) and (Server.LastMCPAccessTick = 0), 'unknown session is quiet');
   Response := Post('{"jsonrpc":"2.0","id":"access","method":"ping","params":{' + CModernMeta + '}}',
     '', '2026-07-28', 'tools/list');
-  Check((Response.StatusCode = 400) and (Server.LastMCPAccessTick = 0), 'mismatched transport header is not access');
-
+  Check((Response.StatusCode = 400) and (Server.LastMCPAccessTick = 0), 'mismatched transport header is quiet');
   Response := Post('{"jsonrpc":"2.0","id":"access","method":"tools/list","params":{' + CModernMeta + '}}',
     '', '2026-07-28', 'tools/list');
-  LTick := Server.LastMCPAccessTick;
-  Check((Response.StatusCode = 200) and (LTick <> 0), 'stateless tools/list records MCP access');
-  Check(Server.Start and Server.Start(Server.Port, 'isolated-test-token'), 'both active start overloads are idempotent');
-  Check(Server.LastMCPAccessTick = LTick, 'idempotent start preserves the last access');
-  WaitForNextAccessTick;
+  Check((Response.StatusCode = 200) and (Server.LastMCPAccessTick = 0), 'tools/list does not show activity');
   Response := Post('{"jsonrpc":"2.0","method":"notifications/initialized","params":{' + CModernMeta + '}}',
     '', '2026-07-28', 'notifications/initialized');
-  Check((Response.StatusCode = 202) and (Server.LastMCPAccessTick > LTick), 'accepted notification refreshes MCP access');
+  Check((Response.StatusCode = 202) and (Server.LastMCPAccessTick = 0), 'notifications do not show activity');
+  Response := Post('{"jsonrpc":"2.0","id":"access","method":"ping","params":{' + CModernMeta + '}}',
+    '', '2026-07-28', 'ping');
+  Check((Response.StatusCode = 200) and (Server.LastMCPAccessTick = 0), 'ping does not show activity');
+  Response := Post('{"jsonrpc":"2.0","id":"access","method":"server/discover","params":{' + CModernMeta + '}}',
+    '', '2026-07-28', 'server/discover');
+  Check((Response.StatusCode = 200) and (Server.LastMCPAccessTick = 0), 'discovery does not show activity');
+  Check(TDAIUsage.CallCount = LCalls, 'housekeeping never increases tool counters');
+  CallTool('unknown_tool');
+  Check((Pos('"isError":true', Response.ContentAsString) > 0) and (TDAIUsage.CallCount = LCalls),
+    'unknown tools do not create usage entries');
+  Response := Post('{"jsonrpc":"2.0","id":"access","method":"tools/call","params":{"name":"file_read",' +
+    '"arguments":[],' + CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'file_read');
+  Check((TDAIUsage.CallCount = LCalls) and (Server.LastMCPAccessTick = 0), 'invalid argument container is not counted');
+  CallTool('ide_status');
+  CallTool('projects_list');
+  CallTool('open_files_list');
+  CallTool('project_files_list');
+  CallTool('directory_files_list');
+  CallTool('project_context', '{"include_compiler_options":false}');
+  Check((Response.StatusCode = 200) and (Server.LastMCPAccessTick = 0), 'orientation tools are quiet');
+  Check(TDAIUsage.CallCount = LCalls + 6, 'orientation tools are each counted once');
+  LCalls := TDAIUsage.CallCount;
+  CallTool('FILE_READ');
+  LTick := Server.LastMCPAccessTick;
+  Check((Response.StatusCode = 200) and (LTick <> 0), 'file contents show activity');
+  Check((TDAIUsage.CallCount = LCalls + 1) and (TDAIUsage.LastToolName = 'file_read'),
+    'tool is counted once using the canonical name');
+  Check(Server.Start and Server.Start(Server.Port, 'isolated-test-token'), 'active starts are idempotent');
+  Check(Server.LastMCPAccessTick = LTick, 'idempotent start preserves activity');
+  WaitForNextAccessTick;
+  CallTool('ide_status');
+  Check(Server.LastMCPAccessTick = LTick, 'status cannot extend earlier content activity');
+  CallTool('directory_files_list', '{"content_query":"hello"}');
+  Check(Server.LastMCPAccessTick > LTick, 'content-filtered file lists show activity');
   LTick := Server.LastMCPAccessTick;
   WaitForNextAccessTick;
-  Response := Post('{"jsonrpc":"2.0","id":"access","method":"tools/call","params":{"name":"failed-deferred-close",' +
-    '"arguments":{},' + CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'failed-deferred-close');
-  Check((Response.StatusCode = 200) and (Pos('"isError":true', Response.ContentAsString) > 0) and
-    (Server.LastMCPAccessTick > LTick), 'an authenticated tool failure still records access');
+  CallTool('project_context');
+  Check(Server.LastMCPAccessTick > LTick, 'compiler option context shows activity');
   LTick := Server.LastMCPAccessTick;
+  LCalls := TDAIUsage.CallCount;
+  WaitForNextAccessTick;
+  CallTool('file_write');
+  Check((Response.StatusCode = 200) and (Pos('"isError":true', Response.ContentAsString) > 0) and
+    (Server.LastMCPAccessTick > LTick) and (TDAIUsage.CallCount = LCalls + 1),
+    'known failed tool attempt still counts once and shows activity');
+  LTick := Server.LastMCPAccessTick;
+  LCalls := TDAIUsage.CallCount;
   WaitForNextAccessTick;
   Response := DeleteSession('unknown-session');
-  Check((Response.StatusCode = 404) and (Server.LastMCPAccessTick = LTick), 'rejected DELETE preserves the last access');
+  Check((Response.StatusCode = 404) and (Server.LastMCPAccessTick = LTick), 'rejected DELETE preserves activity');
   Response := InitializeSession;
   LSession := Response.HeaderValue['Mcp-Session-Id'];
-  Check((Response.StatusCode = 200) and (LSession <> '') and (Server.LastMCPAccessTick > LTick),
-    'legacy initialize records MCP access');
-  LTick := Server.LastMCPAccessTick;
-  WaitForNextAccessTick;
+  Check((Response.StatusCode = 200) and (LSession <> '') and (Server.LastMCPAccessTick = LTick), 'initialize is quiet');
   Response := DeleteSession(LSession);
-  Check((Response.StatusCode = 204) and (Server.LastMCPAccessTick > LTick), 'successful DELETE refreshes MCP access');
+  Check((Response.StatusCode = 204) and (Server.LastMCPAccessTick = LTick), 'successful DELETE is quiet');
+  Check(TDAIUsage.CallCount = LCalls, 'initialize and DELETE do not increase tool counters');
   Check(Server.Stop and Server.Start, 'access listener restarts');
-  Check(Server.LastMCPAccessTick = 0, 'a restarted listener clears previous access');
+  Check(Server.LastMCPAccessTick = 0, 'a restarted listener clears previous activity');
 end;
 
 procedure RunChecks;
@@ -236,11 +279,11 @@ begin
   Response := Post('{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}', SessionId);
   Check((Response.StatusCode = 202) and (Response.ContentAsString = ''),
     'notification returns empty 202; status=' + IntToStr(Response.StatusCode) + '; body=' + Response.ContentAsString);
-  Response := Post('{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"test","arguments":{}}}', SessionId);
+  Response := Post('{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"file_read","arguments":{}}}', SessionId);
   Check((Response.StatusCode = 200) and (TDAIMCPTools.CallCount = 1), 'legacy tool executes once');
-  Response := Post('{"jsonrpc":"2.0","method":"tools/call","params":{"name":"test","arguments":{}}}', SessionId);
+  Response := Post('{"jsonrpc":"2.0","method":"tools/call","params":{"name":"file_read","arguments":{}}}', SessionId);
   Check((Response.StatusCode = 202) and (TDAIMCPTools.CallCount = 1), 'tool notification cannot execute');
-  Response := Post('{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"test","arguments":{},"_meta":{"threadId":"*"}}}', SessionId);
+  Response := Post('{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"file_read","arguments":{},"_meta":{"threadId":"*"}}}', SessionId);
   Check((Response.StatusCode = 200) and (Pos('"thread":""', Response.ContentAsString) > 0), 'remote wildcard is not a chat identity');
 
   Response := Post('{"jsonrpc":"2.0","id":3,"method":"ping"}', 'not-issued-by-server');
@@ -262,8 +305,8 @@ begin
   Check(Pos('"resultType":"complete"', Response.ContentAsString) > 0, 'modern result type');
   Response := Post('{"jsonrpc":"2.0","id":5,"method":"server/discover","params":{' + CModernMeta + '}}', '', '2026-07-28', 'server/discover');
   Check((Response.StatusCode = 200) and (Pos('supportedVersions', Response.ContentAsString) > 0), 'modern discovery');
-  Response := Post('{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"test","arguments":{},' +
-    CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'test');
+  Response := Post('{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"file_read","arguments":{},' +
+    CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'file_read');
   Check((Response.StatusCode = 200) and (TDAIMCPTools.CallCount = 3), 'modern tool executes once');
   Response := Post('{"jsonrpc":"2.0","id":7,"method":"ping","params":{' + CModernMeta + '}}', '', '2026-07-28', 'tools/list');
   Check((Response.StatusCode = 400) and (Pos('-32020', Response.ContentAsString) > 0), 'reject mismatched method header');
@@ -539,13 +582,13 @@ begin
       try
         LClient := THTTPClient.Create;
         LBody := TStringStream.Create('{"jsonrpc":"2.0","id":"sync-stop","method":"tools/call","params":' +
-          '{"name":"sync-stop","arguments":{},' + CModernMeta + '}}', TEncoding.UTF8);
+          '{"name":"project_compile","arguments":{},' + CModernMeta + '}}', TEncoding.UTF8);
         try
           LClient.ConnectionTimeout := 2000;
           LClient.ResponseTimeout := 5000;
           LHeaders := [TNameValuePair.Create('Authorization', 'Bearer ' + LToken),
             TNameValuePair.Create('Content-Type', 'application/json'), TNameValuePair.Create('MCP-Protocol-Version', '2026-07-28'),
-            TNameValuePair.Create('Mcp-Method', 'tools/call'), TNameValuePair.Create('Mcp-Name', 'sync-stop')];
+            TNameValuePair.Create('Mcp-Method', 'tools/call'), TNameValuePair.Create('Mcp-Name', 'project_compile')];
           try
             LResponse := LClient.Post('http://127.0.0.1:' + IntToStr(LPort) + '/mcp', LBody, nil, LHeaders);
           except

@@ -29,7 +29,7 @@
 
 **Manual**
 * open in Delphi and "install" the package
-* .\\DAI.dproj
+* .\\DAIProjectGroup.groupproj
 
 **only Register** 
 * copy .\\Build\\Win32\\Debug\\Bpl\\DAI???.bpl

@@ -9,6 +9,7 @@ uses
   System.Net.URLClient,
   System.SysUtils,
   h5u.DAI.Consts in 'Source\h5u.DAI.Consts.pas',
+  h5u.DAI.Usage in 'Source\h5u.DAI.Usage.pas',
   h5u.DAI.Lifecycle.Policy in 'Source\h5u.DAI.Lifecycle.Policy.pas',
   h5u.DAI.WinAPI.TCP in 'Source\h5u.DAI.WinAPI.TCP.pas',
   h5u.DAI.Launcher.Processes in 'Source\h5u.DAI.Launcher.Processes.pas',

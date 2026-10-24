@@ -17,6 +17,8 @@ uses
   System.SysUtils,
   h5u.DAI.Consts,
   h5u.DAI.MCP.Tools,
+  h5u.DAI.MCP.ToolUsage,
+  h5u.DAI.Usage,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Types;
 
@@ -234,6 +236,8 @@ var
   LMeta: TJSONObject;
   LModern: Boolean;
   LName: string;
+  LCanonicalName: string;
+  LShowsActivity: Boolean;
   LParams: TJSONObject;
   LResult: TJSONObject;
   LToolResult: TJSONObject;
@@ -359,8 +363,12 @@ begin
       LArguments := TJSONObject.Create;
     try
       try
+        if not TDAIMCPToolUsage.TryClassify(LName, LArguments, LCanonicalName, LShowsActivity) then
+          raise EArgumentException.CreateFmt('Unbekanntes MCP-Werkzeug: %s', [LName]);
+        // Count known call attempts once, independently of permission and text logs.
+        TDAIUsage.RecordToolCall(LCanonicalName, LShowsActivity);
         LContext := ExtractRequestContext(LParams, LArguments, ATransportSessionId, AClientName);
-        LToolResult := TDAIMCPTools.CallTool(LName, LArguments, LContext);
+        LToolResult := TDAIMCPTools.CallTool(LCanonicalName, LArguments, LContext);
         try
           Exit(JsonRpcResponse(LId, BuildToolResult(LToolResult, LModern)));
         finally

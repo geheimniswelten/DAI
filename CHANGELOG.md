@@ -1,23 +1,12 @@
 # Änderungsprotokoll
 
-## Unveröffentlicht
+## 1.2.31
 
-- Der PreBuild-Aufruf zum Beenden der Bridge liefert auch ohne laufenden Bridge-Prozess Exitcode 0 und erzeugt dadurch keinen Exec-Fehler in der IDE.
-- project_open fügt DPR/DPK/DPROJ standardmäßig der aktuellen Projektgruppe hinzu; project_create erstellt ebenfalls in dieser Gruppe. Vorhandene Einzelprojekte bleiben erhalten.
-- Beide Werkzeuge unterstützen close_others=true zum vorherigen Schließen der aktuellen Gruppe. Native Speicherrückfragen und Abbrechen bleiben wirksam; GROUPPROJ/BDSGROUP/BPG ersetzt die Gruppe weiterhin grundsätzlich.
-- MCP-Werkzeugbeschreibungen, beide Schema-/Skillvarianten und README erklären Standardverhalten und ausdrücklichen Gruppenwechsel.
-- Port und Bearer-Token werden standardmäßig versions- und profilübergreifend gemeinsam gespeichert. Eine neue Option erlaubt weiterhin getrennte Verbindungsdaten pro IDE-Profil; vorhandene lokale Werte bleiben erhalten.
-- Die erste gemeinsame Verwendung übernimmt vorhandene Verbindungsdaten. Bereichswechsel zeigen gespeicherte Zielwerte, erhalten Dialogentwürfe und werden erst beim Speichern oder Registrieren wirksam.
-- Bereits geladene IDEs aktualisieren unveränderte Verbindungsdaten vor einem inaktiven Serverstart; unverändertes Speichern überschreibt keine neueren gemeinsamen Werte. Isolierte Registry-, Options- und Laufzeittests prüfen Migration und Wechselverhalten.
-- Laufzeit-Fragedialoge zeigen den tatsächlichen Projekt- oder globalen Bereich der Anfrage an; Hinweise zu dauerhaften und Session-Entscheidungen verwenden diesen Bereich.
-- Die Berechtigungsoptionen zeigen globale und projektbezogene ComboBoxen mit jeweils 190 Pixeln nebeneinander. Ein Schild-Iconbutton je Zeile öffnet den Dialog für das angezeigte aktive Projekt, sonst global; ohne aktives Projekt ist die Projektspalte deaktiviert.
-- „Default“ kennzeichnet geerbte Projektberechtigungen und entfernt beim Speichern eine eigene Vorgabe. Nur bearbeitete Werte werden übernommen; unveränderte Vererbung und bestehende Entwürfe bleiben erhalten.
-- Der bei Registrierung erzeugte Codex-Skill verknüpft Delphi-Anfragen ausdrücklich mit DAI und verlangt vor Dateiänderungen die Prüfung auf aktive DAI-Verbindungen und offene IDE-Puffer.
-- Skill und MCP-Verbindungsanweisungen schützen ungespeicherte Benutzeränderungen und erklären den gemeinsamen PAS-/DFM-Editor-Tab sowie das erneute Lesen nach dem Ansichtswechsel. Klassische Initialisierung und moderne Erkennung liefern dieselben Kernhinweise.
-- Statussymbole im 16×16-Toolbaricon sind einen Pixel größer. Play und Pause unterscheiden sich durch kräftigeres grünes Dreieck beziehungsweise ein deutliches graues Pausesymbol; Fehler erscheinen als rotes X.
-- Ein gelber Kreis zeigt MCP-Zugriff in den letzten 15 Sekunden, ein ockerfarbener Kreis Zugriff innerhalb der letzten 15 Minuten. Danach erscheint wieder Play; inaktive Server und Fehler behalten ihre eigenen Symbole.
-- Der HTTP-Server erfasst MCP-Zugriffe mit einem atomaren monotonen Zeitstempel. Der bestehende Statustimer liest diesen ohne Worker-/UI-Aufrufe; Health- und abgewiesene Transportanfragen zählen nicht.
-- Isolierte Tests prüfen Zeitgrenzen, Vorrang der Grundzustände, Aktualisierung nach Popupende sowie alle fünf Symbole in fünf Auflösungen.
+- Bekannte MCP-Toolaufrufe werden lokal je Kalendermonat unter HKCU\Software\DelphiAI\DAI\UsageLog\YYYY_MM als 64-Bit-Zähler gespeichert, gemeinsam für alle Delphi-Versionen und Architekturen. Auch Aufrufe des Starthelfers werden erfasst; HTTP und STDIO-Brücke zählen denselben Aufruf nicht doppelt.
+- Gezählt werden Aufrufversuche einschließlich Fehlern und Berechtigungsablehnungen. Technischer Verbindungsaufbau, Discovery, Ping, Werkzeuglisten, Benachrichtigungen, Sitzungsende und unbekannte Toolnamen zählen nicht. Argumente, Inhalte und Ergebnisse werden nicht gespeichert.
+- Status-, Projekt- und reine Dateilisten aktualisieren das Aktivitätssymbol nicht mehr. Inhaltszugriffe, Compileroptionsabfragen und Änderungen bleiben sichtbar; Dateilisten mit Inhaltsfilter werden anhand ihrer Argumente erkannt.
+- Die DAI-Optionen bieten einen per Tastatur erreichbaren Link zum Nutzungszähler-Pfad im Registrierungs-Editor. Der Link speichert keine offenen Einstellungsentwürfe. Auswertung, Diagramme und Upload sind noch nicht implementiert.
+- Ein benutzerbezogener Mutex schützt gleichzeitige Zähleränderungen. Statistikfehler unterbrechen keine Toolaufrufe; bei nicht verfügbarer Registry/Sperre kann ein Zählschritt ausfallen.
 
 ## 1.2.30
 
@@ -50,7 +39,13 @@
 ## 1.2.26
 
 - Das PreBuild-Ereignis der DAI.dproj beendet laufende DAI.McpBridge.exe-Prozesse mit taskkill vor dem Package-Build, damit die anschließend gebaute Bridge-EXE überschrieben werden kann.
-- Eine nicht laufende Bridge verhindert den Build nicht. Es werden keine Kindprozesse beendet; eine vom Helfer gestartete Delphi-IDE läuft weiter. STDIO-Clients müssen ihre Bridge-Verbindung danach neu herstellen.
+- Der PreBuild-Aufruf zum Beenden der Bridge liefert auch ohne laufenden Bridge-Prozess Exitcode 0 und erzeugt dadurch keinen Exec-Fehler in der IDE. Es werden keine Kindprozesse beendet; eine vom Helfer gestartete Delphi-IDE läuft weiter. STDIO-Clients müssen ihre Bridge-Verbindung danach neu herstellen.
+- project_open fügt DPR/DPK/DPROJ standardmäßig der aktuellen Projektgruppe hinzu; project_create erstellt ebenfalls in dieser Gruppe. Vorhandene Einzelprojekte bleiben erhalten.
+- Beide Werkzeuge unterstützen close_others=true zum vorherigen Schließen der aktuellen Gruppe. Native Speicherrückfragen und Abbrechen bleiben wirksam; GROUPPROJ/BDSGROUP/BPG ersetzt die Gruppe weiterhin grundsätzlich.
+- MCP-Werkzeugbeschreibungen, beide Schema-/Skillvarianten und README erklären Standardverhalten und ausdrücklichen Gruppenwechsel.
+- Port und Bearer-Token werden standardmäßig versions- und profilübergreifend gemeinsam gespeichert. Eine neue Option erlaubt weiterhin getrennte Verbindungsdaten pro IDE-Profil; vorhandene lokale Werte bleiben erhalten.
+- Die erste gemeinsame Verwendung übernimmt vorhandene Verbindungsdaten. Bereichswechsel zeigen gespeicherte Zielwerte, erhalten Dialogentwürfe und werden erst beim Speichern oder Registrieren wirksam.
+- Bereits geladene IDEs aktualisieren unveränderte Verbindungsdaten vor einem inaktiven Serverstart; unverändertes Speichern überschreibt keine neueren gemeinsamen Werte. Isolierte Registry-, Options- und Laufzeittests prüfen Migration und Wechselverhalten.
 
 ## 1.2.25
 
@@ -59,6 +54,11 @@
 - dai_start bleibt registriert; delphi_status und ide_status melden die Freigabe und den Sperrgrund. Änderungen brauchen keine erneute Clientregistrierung.
 - Unveränderte Optionsdialoge und andere Settings-Speicherungen überschreiben keine Freigabe aus einer parallel laufenden IDE. Ungültige oder unlesbare Freigabewerte sperren Prozessaktionen.
 - Isolierte Tests prüfen nachträgliches Sperren und Freigeben eines laufenden Helfers sowie die Sperre vor verzögertem WM_CLOSE, ohne die echte Benutzerfreigabe zu ändern.
+- Laufzeit-Fragedialoge zeigen den tatsächlichen Projekt- oder globalen Bereich der Anfrage an; Hinweise zu dauerhaften und Session-Entscheidungen verwenden diesen Bereich.
+- Die Berechtigungsoptionen zeigen globale und projektbezogene ComboBoxen mit jeweils 190 Pixeln nebeneinander. Ein Schild-Iconbutton je Zeile öffnet den Dialog für das angezeigte aktive Projekt, sonst global; ohne aktives Projekt ist die Projektspalte deaktiviert.
+- „Default“ kennzeichnet geerbte Projektberechtigungen und entfernt beim Speichern eine eigene Vorgabe. Nur bearbeitete Werte werden übernommen; unveränderte Vererbung und bestehende Entwürfe bleiben erhalten.
+- Der bei Registrierung erzeugte Codex-Skill verknüpft Delphi-Anfragen ausdrücklich mit DAI und verlangt vor Dateiänderungen die Prüfung auf aktive DAI-Verbindungen und offene IDE-Puffer.
+- Skill und MCP-Verbindungsanweisungen schützen ungespeicherte Benutzeränderungen und erklären den gemeinsamen PAS-/DFM-Editor-Tab sowie das erneute Lesen nach dem Ansichtswechsel. Klassische Initialisierung und moderne Erkennung liefern dieselben Kernhinweise.
 
 ## 1.2.24
 
@@ -75,6 +75,10 @@
 - Alle Build-Ausgabeverzeichnisse liegen direkt unter Build. Plattform, Konfiguration und Ausgabeart werden mit Bindestrichen verbunden, zum Beispiel Win32-Debug-Dcu.
 - Package- und Bridge-DCUs sowie Testausgaben und generierte Testquellen verwenden das flache Verzeichnislayout. EXE, BPL und DCP bleiben gemeinsam unter Build\Win32 beziehungsweise Build\Win64.
 - Testdaten mit erforderlicher Verzeichnishierarchie verwenden temporäre Fixture-Verzeichnisse.
+- Statussymbole im 16×16-Toolbaricon sind einen Pixel größer. Play und Pause unterscheiden sich durch kräftigeres grünes Dreieck beziehungsweise ein deutliches graues Pausesymbol; Fehler erscheinen als rotes X.
+- Ein gelber Kreis zeigt MCP-Zugriff in den letzten 15 Sekunden, ein ockerfarbener Kreis Zugriff innerhalb der letzten 15 Minuten. Danach erscheint wieder Play; inaktive Server und Fehler behalten ihre eigenen Symbole.
+- Der HTTP-Server erfasst MCP-Zugriffe mit einem atomaren monotonen Zeitstempel. Der bestehende Statustimer liest diesen ohne Worker-/UI-Aufrufe; Health- und abgewiesene Transportanfragen zählen nicht.
+- Isolierte Tests prüfen Zeitgrenzen, Vorrang der Grundzustände, Aktualisierung nach Popupende sowie alle fünf Symbole in fünf Auflösungen.
 
 ## 1.2.22
 

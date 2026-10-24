@@ -7,6 +7,7 @@ uses
   System.JSON,
   Vcl.Buttons,
   Vcl.Controls,
+  Vcl.ExtCtrls,
   Vcl.Forms,
   Vcl.StdCtrls,
   h5u.DAI.Types;
@@ -21,6 +22,7 @@ type
     FStartServerButton: TButton;
     FStopServerButton: TButton;
     FLoggingCheckBox: TCheckBox;
+    FUsageLogLink: TLinkLabel;
     FUseSharedConnectionSettingsCheckBox: TCheckBox;
     FLoadingConnectionSettings: Boolean;
     FDisplayedSharedConnectionSettings: Boolean;
@@ -62,6 +64,7 @@ type
     procedure StartServerClicked(Sender: TObject);
     procedure StopServerClicked(Sender: TObject);
     procedure GenerateTokenClicked(Sender: TObject);
+    procedure UsageLogLinkClicked(Sender: TObject; const Link: string; LinkType: TSysLinkType);
     procedure ClientChanged(Sender: TObject);
     function SelectedClient: string;
     procedure RegisterClicked(Sender: TObject);
@@ -102,6 +105,7 @@ uses
   h5u.DAI.Permissions.Dialog,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
+  h5u.DAI.Registry.Editor,
   h5u.DAI.Settings;
 
 type
@@ -519,7 +523,22 @@ begin
   FLoggingCheckBox.Top := LTop;
   FLoggingCheckBox.Caption := 'Alle Zugriffspunkte mit IOTAMessageServices.AddTitleMessage protokollieren';
   FLoggingCheckBox.Width := 650;
-  Inc(LTop, 40);
+  Inc(LTop, 28);
+
+  FUsageLogLink := TLinkLabel.Create(Self);
+  FUsageLogLink.Parent := Self;
+  FUsageLogLink.Name := 'DAIUsageLogLink';
+  FUsageLogLink.SetBounds(24, LTop, 736, 24);
+  FUsageLogLink.Caption := '<a id="usage">Nutzungszähler in der Registry öffnen</a>';
+  FUsageLogLink.TabStop := True;
+  FUsageLogLink.Hint := 'Lokale Monatszähler für Toolaufrufe aller Delphi-Versionen, einschließlich Status- und Listenabfragen. ' +
+    'Es werden keine Inhalte gespeichert oder Daten hochgeladen. Öffnet HKCU\Software\DelphiAI\DAI\UsageLog.';
+  FUsageLogLink.ShowHint := True;
+  FUsageLogLink.OnLinkClick := UsageLogLinkClicked;
+  Inc(LTop, 26);
+  with NewLabel(Self, 'Toolaufrufe werden lokal je Monat gezählt, unabhängig vom Zugriffsprotokoll. Keine Inhalte, kein Upload.', 24, LTop) do
+    Font.Color := clGrayText;
+  Inc(LTop, 36);
 
   with NewLabel(Self, 'Zusätzliche schreibgeschützte Verzeichnisse', 16, LTop) do
     Font.Style := [fsBold];
@@ -755,6 +774,15 @@ begin
   FTokenEdit.Text := TDAISettings.Instance.GenerateToken;
   FTokenEdit.SetFocus;
   FTokenEdit.SelectAll;
+end;
+
+procedure TDAIOptionsFrame.UsageLogLinkClicked(Sender: TObject; const Link: string; LinkType: TSysLinkType);
+var
+  LError: string;
+begin
+  if not DAIOpenUsageLogInRegistryEditor(Handle, LError) then
+    if LError <> '' then
+      TaskMessageDlg('DAI', LError, mtError, [mbOK], 0);
 end;
 
 function TDAIOptionsFrame.ValidateContents: Boolean;
