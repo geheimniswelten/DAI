@@ -1,4 +1,21 @@
-﻿# DAI 1.2.33 – Manuelle Clientregistrierung, 24. Oktober 2026
+﻿# DAI 1.2.35 – Hint beim Popupöffnen abbrechen, 24. Oktober 2026
+
+Das eigene DAI-TPopupMenu ruft im OnPopup Application.CancelHint auf, bevor die VCL das native Menü öffnet.
+Dadurch werden ein sichtbarer Hint und dessen wartende Anzeige abgebrochen; die allgemeine ShowHint-Einstellung bleibt erhalten.
+Die fokussierte native Popup-Suite besteht mit 3.728 Prüfungen unter Win32 und 3.805 unter Win64.
+Release-Package und Bridge wurden mit Build.ps1 und Delphi 13 für beide Architekturen erfolgreich gebaut und geprüft.
+Statische Vollprüfung und git diff --check bestehen. Delphi 11/12 wurden nicht binär getestet.
+Keine Menüs in der Benutzer-IDE geöffnet, kein IDE-Neustart und keine Clientregistrierung ausgelöst.
+
+# DAI 1.2.34 – Symbolbuttons für Berechtigungen, 24. Oktober 2026
+
+Die zur Laufzeit gesetzten Komponentennamen erzeugten automatisch eine Caption auf den TBitBtn-Berechtigungsbuttons.
+Nach dem Namen wird die Caption jetzt geleert; die VCL zentriert den vorhandenen Schild-Glyph. Tooltip und OnClick bleiben erhalten.
+Die bestehende native Optionsframe-Suite besteht mit 850 Prüfungen je Win32/Win64.
+Release-Package und Bridge wurden über Build.ps1 mit Delphi 13 für beide Architekturen gebaut und geprüft.
+Delphi 11/12 wurden nicht binär getestet. Keine Änderung der laufenden IDE oder Clientregistrierung vorgenommen.
+
+# DAI 1.2.33 – Manuelle Clientregistrierung, 24. Oktober 2026
 
 Die Optionsseite zeigt Verbindungsdaten und clientgerechte Beispiele in einem kopierbaren Dialog.
 Port, Token und gemeinsame/IDE-eigene Verbindung stammen aus den Eingabefeldern; das Anzeigen speichert und registriert nichts.

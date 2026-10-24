@@ -472,6 +472,7 @@ begin
   LButton := TBitBtn.Create(AParent);
   LButton.Parent := AParent;
   LButton.Name := 'DAIPermission' + IntToStr(Ord(ACategory)) + 'DialogButton';
+  LButton.Caption := ''; // SetName supplies a caption; keep only the shield glyph.
   LButton.SetBounds(744, ATop - 1, 24, 24);
   LButton.Tag := Ord(ACategory);
   LButton.Hint := DAIPermissionCategoryName(ACategory) + ' – Berechtigung auswählen';

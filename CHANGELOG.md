@@ -1,5 +1,13 @@
 ﻿# Änderungsprotokoll
 
+## 1.2.35
+
+- Das eigene Popupmenü des DAI-Buttons ruft im OnPopup Application.CancelHint auf. Bereits sichtbare sowie noch wartende VCL-Hints werden vor dem Öffnen abgebrochen, damit sie das Menü nicht verdecken.
+
+## 1.2.34
+
+- Die rechten Berechtigungsbuttons zeigen ausschließlich ihr zentriertes Schildsymbol. Eine von der VCL automatisch aus dem Komponentennamen erzeugte Caption wird entfernt; Tooltip und Funktion bleiben erhalten.
+
 ## 1.2.33
 
 - Die Clientregistrierung bietet „Manuell registrieren…“ mit kopierbaren Verbindungsdaten und Konfigurationsbeispielen für den ausgewählten Client. HTTP-URL und Bearer-Header, STDIO-Brücke und Starthelfer verwenden die aktuellen Eingabefelder sowie die ausgewählte gemeinsame oder IDE-eigene Verbindung. Das Öffnen speichert keine Einstellungen und verändert keine Registrierung.

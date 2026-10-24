@@ -153,6 +153,7 @@ type
     procedure ReportError(const AError: string);
     procedure InstallImages(const AServices: INTAServices; AImages: TCustomImageList);
     procedure CreatePopup;
+    procedure PopupOpening(Sender: TObject);
     procedure EnsureOwnButtonFitsHorizontally;
     procedure EnsureInstalled;
     procedure UpdateRegistrationStatus;
@@ -942,6 +943,7 @@ begin
   // AddToolButton requires dropdown ownership to match its returned button.
   FPopup := TPopupMenu.Create(FButton.Owner);
   FPopup.Name := 'DAIServerPopupMenu';
+  FPopup.OnPopup := PopupOpening;
   // VCL's automatic '&' insertion must not conflict with later status captions.
   FPopup.AutoHotkeys := maManual;
   FPopup.FreeNotification(Self);
@@ -971,6 +973,19 @@ begin
   FProjectPermissionItem.OnClick := OpenOptions;
   FPopup.Items.Add(FProjectPermissionItem);
   FButton.DropdownMenu := FPopup;
+end;
+
+procedure TDAIToolbarController.PopupOpening(Sender: TObject);
+begin
+  if FShuttingDown then
+    Exit;
+  Inc(FCallbackDepth);
+  try
+    // Cancel both a visible hint and its pending show timer before native menu tracking.
+    Application.CancelHint;
+  finally
+    LeaveCallback;
+  end;
 end;
 
 procedure TDAIToolbarController.EnsureOwnButtonFitsHorizontally;
