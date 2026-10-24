@@ -1,4 +1,18 @@
-# Änderungsprotokoll
+﻿# Änderungsprotokoll
+
+## 1.2.33
+
+- Die Clientregistrierung bietet „Manuell registrieren…“ mit kopierbaren Verbindungsdaten und Konfigurationsbeispielen für den ausgewählten Client. HTTP-URL und Bearer-Header, STDIO-Brücke und Starthelfer verwenden die aktuellen Eingabefelder sowie die ausgewählte gemeinsame oder IDE-eigene Verbindung. Das Öffnen speichert keine Einstellungen und verändert keine Registrierung.
+- „Manuell registriert“ unterdrückt im DAI-Button ausschließlich den Hinweis auf eine fehlende Registrierung. Aktualisierungs-, Prüf- und Fehlerhinweise behalten ihren Vorrang. Die Bestätigung wird erst beim Speichern oder Registrieren wirksam und für gemeinsame sowie IDE-eigene Verbindungen getrennt gespeichert.
+
+## 1.2.32
+
+- Berechtigungen nach Aktion und Projektzugehörigkeit aufgeteilt: feste Lesefreigabe für Delphi/GetIt und IDE-Informationen, globale IDE-/DAI-Änderungen, Projektlesen, Projektschreiben, Kompilieren und Ausführen einschließlich Debuggen. Projektoptionen verwenden dieselben Rechte wie die Projektdateien; neue Projekte verwenden den globalen Standard.
+- Zusätzliche schreibgeschützte Verzeichnisse bieten „Lesen immer erlaubt“. Andernfalls gilt das Projektleserecht. Geöffnete Dateien verwenden ebenfalls Projektrechte; Referenzlesefreigaben werden vorrangig geprüft. Offene Dateien werden weiterhin über den IDE-Puffer geändert.
+- Die Checkbox „Auswahl für globales Setting“ ersetzt die Übernahme für niedrigere Erlaubnisstufen. Globale Änderungen setzen die entsprechende Ausnahme des aktuellen Projekts auf Default zurück. Explizite Projektvorgaben haben Vorrang vor globalen Laufzeitfreigaben.
+- Tooltip und Dropdown des DAI-Buttons zeigen die Rechte für IDE und Projekt. Die beiden Einträge unter einem Trennstrich öffnen die Einstellungen. Menüänderungen bleiben während eines geöffneten Menüs zurückgestellt.
+- Berechtigungsdateien sind vor MCP-Dateischreibzugriffen geschützt, einschließlich Windows-Dateinamenaliasen. Nicht deklarierte Werkzeugargumente werden vor der Projektzuordnung abgewiesen.
+- Neue Einstellungen verwenden PermissionsV2 und Projektdateischema 2; alte Berechtigungen werden nicht migriert. Optionen bleiben bis zum Speichern ein Entwurf.
 
 ## 1.2.31
 

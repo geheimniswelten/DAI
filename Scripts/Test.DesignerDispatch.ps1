@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet('Win32', 'Win64', 'Both')][string]$Platform = 'Both',
     [string]$BdsRoot = $env:BDS
@@ -28,7 +28,7 @@ function Extract-One([string]$pattern, [string]$description, [string]$content = 
 $helpers = @()
 foreach ($name in @('JsonObjectFromText', 'AddTool', 'StrictArgumentString', 'RequiredArgumentString',
     'StrictArgumentStringArray', 'StrictArgumentInteger', 'StrictArgumentBoolean', 'ValidateDesignerNumber',
-    'ValidateDesignerArguments', 'RequirePermission')) {
+    'ValidateDesignerArguments', 'RequirePermission', 'RequireFileReadPermission')) {
     $helpers += Extract-One "(?<body>^(?:function|procedure) $name\(.*?^end;\r?\n)" $name
 }
 $dispatchSource = $sourceText.Substring($sourceText.IndexOf('class function TDAIMCPTools.CallTool('))
@@ -47,7 +47,7 @@ uses System.JSON, h5u.DAI.Types;
 function DispatchDesigner(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
 function ListDesignerSchemas: TJSONArray;
 implementation
-uses System.Classes, System.SysUtils, System.Math, h5u.DAI.OTA.Designer, h5u.DAI.OTA.Palette, h5u.DAI.Permissions.Manager;
+uses System.Classes, System.SysUtils, System.Math, h5u.DAI.OTA.Designer, h5u.DAI.OTA.Palette, h5u.DAI.Permissions.Manager, h5u.DAI.OTA.Helpers, h5u.DAI.Settings;
 '@
 $dispatch = @'
 function DispatchDesigner(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;

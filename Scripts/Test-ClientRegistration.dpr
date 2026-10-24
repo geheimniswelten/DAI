@@ -7,6 +7,7 @@ uses
   System.Classes,
   System.IOUtils,
   System.JSON,
+  System.Hash,
   System.Generics.Collections,
   Winapi.Windows,
   h5u.DAI.Settings in 'RegistrationTests\h5u.DAI.Settings.pas',
@@ -321,6 +322,132 @@ begin
   finally
     LJson.Free;
   end;
+end;
+
+function RegistrationFileSnapshot: string;
+var
+  LFiles: TStringList;
+  LFile: string;
+begin
+  LFiles := TStringList.Create;
+  try
+    for LFile in TDirectory.GetFiles(GRoot, '*', TSearchOption.soAllDirectories) do
+      LFiles.Add(LFile + '=' + THashSHA2.GetHashStringFromFile(LFile));
+    LFiles.Sort;
+    Result := LFiles.Text;
+  finally
+    LFiles.Free;
+  end;
+end;
+
+procedure ManualRegistrationInfoTests;
+const
+  CPort = 18475;
+  CToken = 'manual-test-"quoted"-\backslash';
+  CMarker = 'Konfiguration zum Übernehmen:' + sLineBreak;
+var
+  LSnapshot, LText, LConfig, LEntry, LLauncher, LClient, LScopeName, LToken: string;
+  LOldPort, LOldSaves, LOldVersion, LMarkerPosition: Integer;
+  LOldShared, LRejected: Boolean;
+  LKeys: TArray<string>;
+  LJson: TJSONObject;
+  LArgs: TJSONArray;
+  LIndex: Integer;
+begin
+  LSnapshot := RegistrationFileSnapshot;
+  LOldPort := TDAISettings.Instance.Port;
+  LToken := TDAISettings.Instance.Token;
+  LOldShared := TDAISettings.Instance.UseSharedConnectionSettings;
+  LOldSaves := TDAISettings.Instance.SaveCount;
+  LOldVersion := TDAIClientRegistration.ChangeVersion;
+  for LClient in ['codex', 'claude-code', 'claude-desktop', 'gemini', 'hermes', 'lm-studio', 'openclaw', 'eigent', 'gemini-desktop', 'other-client', ''] do
+  begin
+    LText := TDAIClientRegistration.ManualRegistrationInfo(LClient, CPort, CToken, False);
+    LScopeName := DAIRegistrationServerName(False, TDAISettings.Instance.RegistryRoot);
+    Check(Pos('http://127.0.0.1:' + IntToStr(CPort) + '/mcp', LText) > 0, LClient + ' manual HTTP uses draft port');
+    Check(Pos('Authorization: Bearer ' + CToken, LText) > 0, LClient + ' manual bearer uses draft token');
+    Check(Pos('Servername: ' + LScopeName + sLineBreak, LText) > 0, LClient + ' manual server uses draft scope');
+    Check(Pos(LScopeName + '_start', LText) > 0, LClient + ' manual launcher uses draft scope');
+    Check(Pos(TDAICodexRegistration.HostIDEExecutable, LText) > 0, LClient + ' manual launcher identifies host IDE');
+    LMarkerPosition := Pos(CMarker, LText);
+    Check(LMarkerPosition > 0, LClient + ' manual configuration is copyable');
+    LConfig := Copy(LText, LMarkerPosition + Length(CMarker), MaxInt);
+    if LClient = 'codex' then
+    begin
+      Check(Pos('[mcp_servers.' + LScopeName + ']', LConfig) > 0, 'manual Codex HTTP TOML section');
+      Check(Pos('[mcp_servers.' + LScopeName + '_start]', LConfig) > 0, 'manual Codex launcher TOML section');
+      Check(Pos('http_headers = { Authorization = ', LConfig) > 0, 'manual Codex HTTP header native schema');
+      Check(Pos('env = { DAI_MCP_TOKEN = ', LConfig) > 0, 'manual Codex launcher environment native schema');
+      Check(Pos('\"quoted\"', LConfig) > 0, 'manual Codex TOML escapes token quotes');
+      Continue;
+    end;
+    if LClient = 'hermes' then
+      LKeys := ['mcp_servers', LScopeName]
+    else if LClient = 'openclaw' then
+      LKeys := ['mcp', 'servers', LScopeName]
+    else
+      LKeys := ['mcpServers', LScopeName];
+    if LClient = 'hermes' then
+    begin
+      Check(TDAIClientConfigText.ExtractEntry(LConfig, 'yaml', LKeys, LEntry), 'manual Hermes HTTP YAML parses');
+      Check(Pos('Authorization: ', LEntry) > 0, 'manual Hermes HTTP header native schema');
+      LKeys[High(LKeys)] := LScopeName + '_start';
+      Check(TDAIClientConfigText.ExtractEntry(LConfig, 'yaml', LKeys, LLauncher), 'manual Hermes launcher YAML parses');
+      Check(Pos('DAI_MCP_TOKEN: ', LLauncher) > 0, 'manual Hermes launcher environment native schema');
+      Continue;
+    end;
+    Check(TDAIClientConfigText.ExtractEntry(LConfig, 'json', LKeys, LEntry), LClient + ' manual native JSON parses');
+    LJson := TJSONObject.ParseJSONValue(LEntry) as TJSONObject;
+    try
+      if LClient = 'gemini' then
+        Check(LJson.GetValue<string>('httpUrl') = 'http://127.0.0.1:18475/mcp', 'manual Gemini httpUrl native schema')
+      else if (LClient = 'claude-code') or (LClient = 'lm-studio') or (LClient = 'openclaw') then
+        Check(LJson.GetValue<TJSONObject>('headers').GetValue<string>('Authorization') = 'Bearer ' + CToken,
+          LClient + ' manual HTTP token roundtrips')
+      else
+      begin
+        Check(LJson.GetValue<string>('command') = TDAICodexRegistration.BridgeFileName, LClient + ' manual STDIO bridge path');
+        Check(LJson.GetValue<TJSONObject>('env').GetValue<string>('DAI_MCP_TOKEN') = CToken, LClient + ' manual STDIO token roundtrips');
+      end;
+    finally
+      LJson.Free;
+    end;
+    LKeys[High(LKeys)] := LScopeName + '_start';
+    Check(TDAIClientConfigText.ExtractEntry(LConfig, 'json', LKeys, LLauncher), LClient + ' manual launcher JSON parses');
+    LJson := TJSONObject.ParseJSONValue(LLauncher) as TJSONObject;
+    try
+      LArgs := LJson.GetValue<TJSONArray>('args');
+      Check(LArgs.Items[0].Value = '--launcher', LClient + ' manual launcher uses launcher mode');
+      Check(LArgs.Items[2].Value = 'http://127.0.0.1:18475/mcp', LClient + ' manual launcher uses draft URL');
+      Check(LJson.GetValue<TJSONObject>('env').GetValue<string>('DAI_MCP_TOKEN') = CToken, LClient + ' manual launcher token roundtrips');
+    finally
+      LJson.Free;
+    end;
+  end;
+  LText := TDAIClientRegistration.ManualRegistrationInfo('claude', CPort, CToken, True);
+  Check(Pos('Servername: dai' + sLineBreak, LText) > 0, 'manual shared scope keeps dai name');
+  Check(Pos('"type":"http"', LText) > 0, 'manual client alias selects actual schema');
+  for LIndex := 0 to 3 do
+  begin
+    LRejected := False;
+    try
+      case LIndex of
+        0: TDAIClientRegistration.ManualRegistrationInfo('', 80, CToken, True);
+        1: TDAIClientRegistration.ManualRegistrationInfo('', 65536, CToken, True);
+        2: TDAIClientRegistration.ManualRegistrationInfo('', CPort, '', True);
+        3: TDAIClientRegistration.ManualRegistrationInfo('', CPort, 'unsafe' + #13#10 + 'header', True);
+      end;
+    except
+      on E: EDAIClientConfigConflict do LRejected := True;
+    end;
+    Check(LRejected, 'manual invalid credentials rejected without output ' + IntToStr(LIndex));
+  end;
+  Check(TDAISettings.Instance.Port = LOldPort, 'manual info leaves actual port unchanged');
+  Check(TDAISettings.Instance.Token = LToken, 'manual info leaves actual token unchanged');
+  Check(TDAISettings.Instance.UseSharedConnectionSettings = LOldShared, 'manual info leaves actual scope unchanged');
+  Check(TDAISettings.Instance.SaveCount = LOldSaves, 'manual info never saves settings');
+  Check(TDAIClientRegistration.ChangeVersion = LOldVersion, 'manual info never changes registration revision');
+  Check(RegistrationFileSnapshot = LSnapshot, 'manual info creates or changes no configuration or ownership files');
 end;
 
 procedure LauncherRegistrationTests;
@@ -1461,6 +1588,7 @@ begin
     SafeFileTests;
     RegistrationTests;
     LauncherRegistrationTests;
+    ManualRegistrationInfoTests;
     RegistrationScopeNameTests;
     ScopedRegistrationTests;
     RegistrationHealthTests;

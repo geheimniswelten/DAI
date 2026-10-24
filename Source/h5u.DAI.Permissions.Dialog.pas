@@ -10,7 +10,7 @@ type
   TDAIPermissionPromptResult = record
   public
     Level: TDAIPermissionLevel;
-    ApplyToLowerLevels: Boolean;
+    ApplyGlobally: Boolean;
   end;
 
   TDAIPermissionDialog = class sealed
@@ -95,7 +95,7 @@ begin
   Result := DAIPermissionCategoryName(ACategory) + sLineBreak + sLineBreak + AOperation;
   if Trim(AResource) <> '' then
     Result := Result + sLineBreak + sLineBreak + 'Ziel: ' + AResource;
-  if Trim(AContext.ProjectKey) = '' then
+  if DAIPermissionCategoryIsGlobal(ACategory) or (Trim(AContext.ProjectKey) = '') then
     Result := Result + sLineBreak + sLineBreak + 'Berechtigungsbereich: global'
   else
     Result := Result + sLineBreak + sLineBreak + 'Projekt: ' + AContext.ProjectKey;
@@ -105,7 +105,7 @@ end;
 function BuildOptionsText(const ACategory: TDAIPermissionCategory; const AContext: TDAIRequestContext): string;
 begin
   Result := DAIPermissionCategoryName(ACategory) + sLineBreak + sLineBreak;
-  if Trim(AContext.ProjectKey) = '' then
+  if DAIPermissionCategoryIsGlobal(ACategory) or (Trim(AContext.ProjectKey) = '') then
     Result := Result + 'Globaler Standard für Projekte ohne eigene Festlegung.'
   else
     Result := Result + 'Aktuelles Projekt: ' + AContext.ProjectKey;
@@ -123,7 +123,7 @@ var
 begin
   Result := False;
   AResult.Level := plDeny;
-  AResult.ApplyToLowerLevels := False;
+  AResult.ApplyGlobally := DAIPermissionCategoryIsGlobal(ACategory) or (Trim(AContext.ProjectKey) = '');
 
   LDialog := TTaskDialog.Create(nil);
   LObserver := nil;
@@ -134,7 +134,7 @@ begin
     LDialog.Caption := 'DAI';
     if AForOptions then
     begin
-      if Trim(AContext.ProjectKey) = '' then
+      if DAIPermissionCategoryIsGlobal(ACategory) or (Trim(AContext.ProjectKey) = '') then
       begin
         LDialog.Title := 'Berechtigung festlegen – global';
         LScopeText := 'als globalen Standard';
@@ -144,9 +144,10 @@ begin
       else
       begin
         LDialog.Title := 'Berechtigung festlegen – aktuelles Projekt';
-        LScopeText := 'für das aktuelle Projekt';
-        LSessionCaption := 'Für diese Projektsession';
-        LSessionHint := 'Für alle KI-Chats des aktuellen Projekts bis zum Schließen des Projekts oder der IDE zulassen.';
+        LScopeText := 'im gewählten Projekt- oder globalen Bereich';
+        LSessionCaption := 'Für diese Session';
+        LSessionHint := 'Für alle KI-Chats im gewählten Projekt- oder globalen Bereich bis zum Zurücksetzen oder zum Schließen der IDE zulassen.' +
+          ' Bei Projekt-Auswahl endet die Freigabe auch beim Schließen des Projekts.';
       end;
       LDialog.Text := BuildOptionsText(ACategory, AContext);
     end
@@ -154,21 +155,27 @@ begin
     begin
       LDialog.Title := 'Zugriff durch Delphi AI';
       LDialog.Text := BuildDialogText(ACategory, AOperation, AResource, AContext);
-      if Trim(AContext.ProjectKey) = '' then
+      if DAIPermissionCategoryIsGlobal(ACategory) or (Trim(AContext.ProjectKey) = '') then
       begin
         LScopeText := 'als globalen Standard';
         LSessionHint := 'Für diesen KI-Chat bis zum Zurücksetzen der Sitzungsfreigaben oder zum Schließen der Delphi-IDE zulassen.';
       end
       else
       begin
-        LScopeText := 'für dieses Projekt';
-        LSessionHint := 'Für diesen KI-Chat in diesem Projekt bis zum Zurücksetzen der Sitzungsfreigaben oder zum Schließen des Projekts oder der IDE zulassen.';
+        LScopeText := 'im gewählten Projekt- oder globalen Bereich';
+        LSessionHint := 'Für diesen KI-Chat im gewählten Projekt- oder globalen Bereich bis zum Zurücksetzen oder zum Schließen der IDE zulassen.' +
+          ' Bei Projekt-Auswahl endet die Freigabe auch beim Schließen des Projekts.';
       end;
     end;
     LDialog.MainIcon := tdiShield;
     LDialog.CommonButtons := [];
     LDialog.Flags := [tfAllowDialogCancellation, tfUseCommandLinks];
-    LDialog.VerificationText := 'Diese Auswahl für alle anderen Funktionalitäten mit einer geringeren Erlaubnisstufe übernehmen';
+    if not AResult.ApplyGlobally then
+    begin
+      LDialog.VerificationText := 'Auswahl für globales Setting';
+      LDialog.Text := LDialog.Text + sLineBreak + sLineBreak +
+        'Ohne Häkchen gilt die Auswahl für dieses Projekt. Global setzt dessen eigene Festlegung auf Default zurück.';
+    end;
 
     AddCommandButton(
       LDialog,
@@ -241,7 +248,7 @@ begin
     if not LDialog.Execute then
       Exit;
 
-    AResult.ApplyToLowerLevels := tfVerificationFlagChecked in LDialog.Flags;
+    AResult.ApplyGlobally := AResult.ApplyGlobally or (tfVerificationFlagChecked in LDialog.Flags);
     case LDialog.ModalResult of
       mrDAINever:
         AResult.Level := plNever;

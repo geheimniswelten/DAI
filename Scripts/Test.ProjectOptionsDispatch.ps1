@@ -51,8 +51,8 @@ foreach ($toolName in $toolNames) {
         throw "The extracted production dispatch must contain $toolName."
     }
 }
-if (-not $branchText.Contains('TDAIProjectOptionsService.') -or -not $branchText.Contains('RequirePermission(pcReadAccess') -or
-    -not $branchText.Contains('RequirePermission(pcEditInsideIDE')) {
+if (-not $branchText.Contains('TDAIProjectOptionsService.') -or -not $branchText.Contains('RequirePermission(pcProjectRead') -or
+    -not $branchText.Contains('RequirePermission(pcProjectWrite')) {
     throw 'Expected read/edit permissions and final project-options service calls are missing.'
 }
 $callHeader = Extract-One '(?<body>^class function TDAIMCPTools\.CallTool\(.*?\r\nvar\r\n.*?)(?=\r\nbegin\r\n)' 'CallTool declarations'

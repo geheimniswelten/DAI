@@ -39,12 +39,6 @@
         <CfgParent>Base</CfgParent>
         <Base>true</Base>
     </PropertyGroup>
-    <PropertyGroup Condition="('$(Platform)'=='Win32' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win32)'!=''">
-        <Cfg_1_Win32>true</Cfg_1_Win32>
-        <CfgParent>Cfg_1</CfgParent>
-        <Cfg_1>true</Cfg_1>
-        <Base>true</Base>
-    </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Release' or '$(Cfg_2)'!=''">
         <Cfg_2>true</Cfg_2>
         <CfgParent>Base</CfgParent>
@@ -68,7 +62,8 @@
         <VerInfo_Locale>1031</VerInfo_Locale>
         <DllSuffix>$(Auto)</DllSuffix>
         <DCC_OutputNeverBuildDcps>true</DCC_OutputNeverBuildDcps>
-        <PreBuildEvent>cmd /d /c &quot;taskkill /F /IM DAI.McpBridge.exe &gt;nul 2&gt;&amp;1 &amp; exit /b 0&quot;</PreBuildEvent>
+        <PreBuildEvent><![CDATA[cmd /d /c "taskkill /F /IM DAI.McpBridge.exe >nul 2>&1 & exit /b 0"
+$(PreBuildEvent)]]></PreBuildEvent>
         <PreBuildEventIgnoreExitCode>true</PreBuildEventIgnoreExitCode>
         <DesignOnlyPackage>true</DesignOnlyPackage>
     </PropertyGroup>

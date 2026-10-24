@@ -9,6 +9,7 @@ var
   ContextFiles: TArray<string>;
   CurrentFile, CursorExpression, LastExpectedFile: string;
   CursorAvailable, SwitchFileDuringPermission, SwitchDebugDuringPermission: Boolean;
+  ReferenceAlwaysReadable: Boolean;
   CurrentProcessId, CurrentThreadId: Cardinal;
 procedure RecordEvent(const AEvent: string);
 procedure ResetState;
@@ -23,6 +24,7 @@ begin
   Events := nil; ContextFiles := nil; CurrentFile := CSourceFile; CursorExpression := 'Object.Field[2]';
   LastExpectedFile := ''; CursorAvailable := True; SwitchFileDuringPermission := False; SwitchDebugDuringPermission := False;
   CurrentProcessId := 4242; CurrentThreadId := 33;
+  ReferenceAlwaysReadable := False;
 end;
 function ResolveArgumentsContext(const AArguments: TJSONObject; const AContext: TDAIRequestContext): TDAIRequestContext;
 var LValue: TJSONValue;

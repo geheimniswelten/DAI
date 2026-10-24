@@ -17,7 +17,7 @@ $sourceDirectory = Join-Path $projectRoot 'Source'
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 $executables = @{}
 $scenarios = @('fresh', 'legacy', 'separate', 'preview', 'partial-port', 'partial-token', 'malformed-token',
-    'invalid-save', 'stale-save', 'stale-preview', 'refresh', 'concurrent-scope')
+    'invalid-save', 'stale-save', 'stale-preview', 'read-directories', 'refresh', 'concurrent-scope', 'manual-registration')
 
 foreach ($currentPlatform in $platforms) {
     $outputDirectory = Join-Path $projectRoot "Build\Tests-ConnectionSettings-$currentPlatform"

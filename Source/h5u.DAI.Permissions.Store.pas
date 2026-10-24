@@ -45,6 +45,17 @@ begin
   end;
 end;
 
+function PolicyVersion(const ARoot: TJSONObject): Integer;
+var
+  LValue: TJSONValue;
+begin
+  Result := -1;
+  LValue := ARoot.GetValue('version');
+  if LValue is TJSONNumber then
+    if not TryStrToInt(LValue.Value, Result) then
+      Result := -1;
+end;
+
 function ReadProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; out AFound: Boolean): TDAIPermissionLevel;
 var
   LFileName: string;
@@ -64,14 +75,22 @@ begin
   try
     if not Assigned(LRoot) then
       Exit;
+    if PolicyVersion(LRoot) = 1 then
+    begin
+      AFound := False;
+      Exit;
+    end;
+    if PolicyVersion(LRoot) <> 2 then
+      Exit;
     LJsonValue := LRoot.GetValue('permissions');
     if not (LJsonValue is TJSONObject) then
       Exit;
     LPermissions := TJSONObject(LJsonValue);
-    AFound := Assigned(LPermissions.GetValue(DAIPermissionCategoryKey(ACategory)));
-    if not AFound then
+    LJsonValue := LPermissions.GetValue(DAIPermissionCategoryKey(ACategory));
+    AFound := Assigned(LJsonValue);
+    if not (LJsonValue is TJSONString) then
       Exit;
-    LValue := LPermissions.GetValue<string>(DAIPermissionCategoryKey(ACategory), 'ask');
+    LValue := TJSONString(LJsonValue).Value;
     Result := DAIPermissionLevelFromKey(LValue);
     if not (Result in [plNever, plAsk, plAlways]) then
       Result := plAsk;
@@ -86,7 +105,7 @@ var
   LRegistry: TRegistry;
 begin
   Result := plAsk;
-  LKey := TDAISettings.Instance.RegistryRoot + '\Permissions';
+  LKey := TDAISettings.Instance.RegistryRoot + '\PermissionsV2';
   LRegistry := TRegistry.Create(KEY_READ);
   try
     LRegistry.RootKey := HKEY_CURRENT_USER;
@@ -106,7 +125,7 @@ var
   LKey: string;
   LRegistry: TRegistry;
 begin
-  LKey := TDAISettings.Instance.RegistryRoot + '\Permissions';
+  LKey := TDAISettings.Instance.RegistryRoot + '\PermissionsV2';
   LRegistry := TRegistry.Create(KEY_READ or KEY_WRITE);
   try
     LRegistry.RootKey := HKEY_CURRENT_USER;
@@ -135,12 +154,19 @@ begin
     if TFile.Exists(LFileName) then
       raise EInvalidOperation.Create('Die vorhandene Projekt-Berechtigungsdatei ist ungültig und wird nicht überschrieben.');
     LRoot := TJSONObject.Create;
+    LRoot.AddPair('version', TJSONNumber.Create(2));
   end;
   try
+    if not (PolicyVersion(LRoot) in [1, 2]) then
+      raise EInvalidOperation.Create('Die Version der Projekt-Berechtigungsdatei wird nicht unterstützt.');
+    if PolicyVersion(LRoot) = 1 then
+      LRoot.RemovePair('permissions').Free;
     LRoot.RemovePair('version').Free;
-    LRoot.AddPair('version', TJSONNumber.Create(1));
+    LRoot.AddPair('version', TJSONNumber.Create(2));
 
     LJsonValue := LRoot.GetValue('permissions');
+    if Assigned(LJsonValue) and not (LJsonValue is TJSONObject) then
+      raise EInvalidOperation.Create('Die vorhandenen Projekt-Berechtigungen sind ungültig und werden nicht überschrieben.');
     if LJsonValue is TJSONObject then
       LPermissions := TJSONObject(LJsonValue)
     else
@@ -164,7 +190,9 @@ class function TDAIPermissionStore.GetLevel(const ACategory: TDAIPermissionCateg
 var
   LFound: Boolean;
 begin
-  if Trim(AProjectFileName) <> '' then
+  if ACategory = pcReferenceRead then
+    Exit(plAlways);
+  if not DAIPermissionCategoryIsGlobal(ACategory) and (Trim(AProjectFileName) <> '') then
   begin
     Result := ReadProjectLevel(ACategory, AProjectFileName, LFound);
     if LFound then
@@ -182,6 +210,9 @@ end;
 
 class function TDAIPermissionStore.TryGetProjectLevel(const ACategory: TDAIPermissionCategory; const AProjectFileName: string; out ALevel: TDAIPermissionLevel): Boolean;
 begin
+  ALevel := plAsk;
+  if DAIPermissionCategoryIsGlobal(ACategory) then
+    Exit(False);
   ALevel := ReadProjectLevel(ACategory, AProjectFileName, Result);
 end;
 
@@ -192,6 +223,8 @@ var
   LPermissions: TJSONObject;
   LRoot: TJSONObject;
 begin
+  if DAIPermissionCategoryIsGlobal(ACategory) then
+    Exit;
   if Trim(AProjectFileName) = '' then
     raise EInvalidOperation.Create('Ohne aktives Projekt kann keine Projekt-Berechtigung zurückgesetzt werden.');
   LFileName := ProjectSettingsFileName(AProjectFileName);
@@ -202,6 +235,10 @@ begin
   try
     if not Assigned(LRoot) then
       raise EInvalidOperation.Create('Die vorhandene Projekt-Berechtigungsdatei ist ungültig und wird nicht überschrieben.');
+    if PolicyVersion(LRoot) = 1 then
+      Exit;
+    if PolicyVersion(LRoot) <> 2 then
+      raise EInvalidOperation.Create('Die Version der Projekt-Berechtigungsdatei wird nicht unterstützt.');
     LJsonValue := LRoot.GetValue('permissions');
     if not (LJsonValue is TJSONObject) then
       raise EInvalidOperation.Create('Die vorhandenen Projekt-Berechtigungen sind ungültig und werden nicht überschrieben.');
@@ -220,11 +257,13 @@ class procedure TDAIPermissionStore.SetLevel(const ACategory: TDAIPermissionCate
 var
   LPersistedLevel: TDAIPermissionLevel;
 begin
+  if ACategory = pcReferenceRead then
+    Exit;
   LPersistedLevel := ALevel;
   if not (LPersistedLevel in [plNever, plAsk, plAlways]) then
     LPersistedLevel := plAsk;
 
-  if Trim(AProjectFileName) = '' then
+  if DAIPermissionCategoryIsGlobal(ACategory) or (Trim(AProjectFileName) = '') then
     WriteGlobalLevel(ACategory, LPersistedLevel)
   else
     WriteProjectLevel(ACategory, AProjectFileName, LPersistedLevel);

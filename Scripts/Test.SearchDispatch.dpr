@@ -87,14 +87,14 @@ var
 begin
   Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'one permission request per single-project search');
   LRequest := TDAIPermissionManager.Instance.Requests[0];
-  Check(LRequest.Category = pcReadAccess, 'all search tools request read access');
+  Check(LRequest.Category = pcProjectRead, 'all search tools request read access');
   Check(LRequest.Operation <> '', 'permission includes meaningful operation');
   if AToolIndex = 2 then
     Check(LRequest.Resource = 'ExplicitProject', 'project-directory permission targets requested project')
   else if AToolIndex <> 0 then
     Check(LRequest.Resource = CDirectory, 'directory permission targets exact requested directory')
   else
-    Check(LRequest.Resource = '', 'default source search has no explicit directory');
+    Check(LRequest.Resource = GContext.ProjectKey, 'source search authorizes actual project');
   Check(LRequest.Context.ThreadId = GContext.ThreadId, 'thread context retained');
   Check(LRequest.Context.TransportSessionId = GContext.TransportSessionId, 'transport context retained');
   Check(LRequest.Context.ProjectKey = GContext.ProjectKey, 'project context retained');
@@ -350,8 +350,43 @@ begin
         LDenied := True;
     end;
     Check(LDenied, 'one denied affected project aborts whole source search');
-    Check(Length(TDAIPermissionManager.Instance.Requests) = 3, 'all permissions up to denied affected project evaluated');
+    Check(Length(TDAIPermissionManager.Instance.Requests) = 2, 'all permissions up to denied affected project evaluated');
     Check(TDAISourceSearchService.SearchCalls = 0, 'denied affected project prevents source content access');
+  finally
+    LResult.Free;
+    LArguments.Free;
+  end;
+end;
+
+procedure TestReferencePermissions;
+var
+  LArguments, LResult: TJSONObject;
+begin
+  Reset(False);
+  LArguments := ArgumentsFor(0);
+  LResult := nil;
+  try
+    LArguments.AddPair('scope', 'references');
+    TDAIOTA.AlwaysReadable := True;
+    TDAIOTA.ReadOnlyReference := True;
+    TDAISourceSearchService.PreparedRoots := ['C:\TrustedSDK'];
+    TDAISourceSearchService.PreparedProjectKeys := ['C:\Unrelated\ReferencesSDK.dproj'];
+    LResult := DispatchSearch('source_search', LArguments, GContext);
+    Check(TDAISourceSearchService.SearchCalls = 1, 'trusted SDK search ignores unrelated project read denial');
+    Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'reference-only search has no project permission');
+    Check(TDAIPermissionManager.Instance.Requests[0].Category = pcReferenceRead, 'trusted SDK is fixed always read');
+    LResult.Free;
+    LResult := nil;
+    Reset(False);
+    TDAIOTA.ReadOnlyReference := True;
+    TDAISourceSearchService.PreparedRoots := ['C:\AdditionalReadOnly'];
+    try
+      LResult := DispatchSearch('source_search', LArguments, GContext);
+      Check(False, 'custom reference must respect denied project read without always flag');
+    except
+      on E: EAbort do Check(True, 'custom reference obeys project read gate');
+    end;
+    Check(TDAISourceSearchService.SearchCalls = 0, 'denied custom reference never reads content');
   finally
     LResult.Free;
     LArguments.Free;

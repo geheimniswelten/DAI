@@ -32,8 +32,9 @@ begin
   Requests[I].Category := ACategory; Requests[I].Operation := AOperation;
   Requests[I].Resource := AResource; Requests[I].Context := AContext;
   case ACategory of
-    pcReadAccess: Result := ReadAllowed;
-    pcEditInsideIDE: Result := EditAllowed;
+    pcReferenceRead: Result := ReadAllowed;
+    pcProjectRead: Result := ReadAllowed;
+    pcProjectWrite: Result := EditAllowed;
   else raise EInvalidOperation.Create('Unexpected designer permission category.');
   end;
 end;

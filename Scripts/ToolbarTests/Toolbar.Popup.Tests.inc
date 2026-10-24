@@ -19,10 +19,13 @@
     FChangeRuntime: Boolean;
     FChangeRegistration: Boolean;
     FChangeUpdate: Boolean;
+    FChangePermissions: Boolean;
     FUpdateChanged: Boolean;
     FRegistrationChanged: Boolean;
     FInitialHealthCount: Integer;
     FRuntimeChanged: Boolean;
+    FPermissionsChanged: Boolean;
+    FInitialPermissionCount: Integer;
     procedure Tick(Sender: TObject);
     procedure Cancel;
     function NativeItem(const AIndex: Integer): TPopupItemSnapshot;
@@ -31,19 +34,21 @@
   public
     Failure: string;
     TrackingTicks: Integer;
-    constructor Create(APopup: TPopupMenu; const AChangeRuntime, AChangeRegistration, AChangeUpdate: Boolean);
+    constructor Create(APopup: TPopupMenu; const AChangeRuntime, AChangeRegistration, AChangeUpdate, AChangePermissions: Boolean);
     destructor Destroy; override;
     procedure Run;
   end;
 
-constructor TPopupStabilityProbe.Create(APopup: TPopupMenu; const AChangeRuntime, AChangeRegistration, AChangeUpdate: Boolean);
+constructor TPopupStabilityProbe.Create(APopup: TPopupMenu; const AChangeRuntime, AChangeRegistration, AChangeUpdate, AChangePermissions: Boolean);
 begin
   inherited Create;
   FPopup := APopup;
   FChangeRuntime := AChangeRuntime;
   FChangeRegistration := AChangeRegistration;
   FChangeUpdate := AChangeUpdate;
+  FChangePermissions := AChangePermissions;
   FInitialHealthCount := TDAIClientRegistration.HealthCount;
+  FInitialPermissionCount := TDAIPermissionManager.SummaryCount;
   FInitialCaption := GHost.DAIAction.Caption;
   FInitialHint := GHost.DAIAction.Hint;
   FInitialImage := GHost.DAIAction.ImageIndex;
@@ -83,6 +88,7 @@ begin
   LInfo.fMask := MIIM_STRING or MIIM_STATE;
   LInfo.dwTypeData := @LText[0];
   LInfo.cch := Length(LText);
+  LText[0] := #0;
   Check(GetMenuItemInfo(FNativeMenu, AIndex, True, LInfo), 'Native popup item exists during tracking');
   Result.NativeCaption := string(LText);
   Result.NativeState := LInfo.fState and not MFS_HILITE;
@@ -174,6 +180,18 @@ begin
       TDAIIDEToolbar.SetUpdateAvailable(True, '4.0.0');
       CheckStable;
     end;
+    if FChangePermissions and not FPermissionsChanged and (LElapsed >= 200) then
+    begin
+      TDAIPermissionManager.IDESummary := 'schreiben';
+      TDAIPermissionManager.ProjectSummary := 'Vollzugriff';
+      TDAIOTA.ActiveProjectName := 'C:\ToolbarFixture\Deferred.dproj';
+      Inc(TDAIPermissionManager.Version);
+      FPermissionsChanged := True;
+      TDAIIDEToolbar.Refresh;
+      CheckStable;
+    end;
+    if FChangePermissions then
+      Check(TDAIPermissionManager.SummaryCount = FInitialPermissionCount, 'Permission IO is deferred throughout native popup tracking');
     if FChangeRegistration or FChangeUpdate then
       Check(TDAIClientRegistration.HealthCount = FInitialHealthCount, 'Registration IO is deferred throughout native popup tracking');
     if LElapsed >= 1100 then
@@ -226,10 +244,18 @@ begin
     Check(Pos('7444', GHost.DAIAction.Hint) > 0, 'Deferred live port is applied after popup close');
     Check(Pos('ServerGlyph.v4.RecentAccess', GHost.DAIAction.ImageName) > 0, 'Deferred recent activity is applied after popup close');
   end;
+  if FChangePermissions then
+  begin
+    Check(FPermissionsChanged, 'Effective permissions change while the native popup is tracking');
+    PumpFor(650);
+    Check(TDAIPermissionManager.SummaryCount = FInitialPermissionCount + 2, 'Permission summaries refresh once after native popup close');
+    Check(GHost.DAIButton.DropdownMenu.Items[4].Caption = 'IDE : schreiben', 'The IDE permission caption updates after popup close');
+    Check(GHost.DAIButton.DropdownMenu.Items[5].Caption = 'Projekt : Vollzugriff', 'The project permission caption updates after popup close');
+  end;
 end;
 
 procedure TestPopupTracking(const AForeignPopup, AChangeRuntime: Boolean;
-  const AChangeRegistration: Boolean = False; const AChangeUpdate: Boolean = False);
+  const AChangeRegistration: Boolean = False; const AChangeUpdate: Boolean = False; const AChangePermissions: Boolean = False);
 var
   LPopup: TPopupMenu;
   LProbe: TPopupStabilityProbe;
@@ -251,7 +277,7 @@ begin
       LPopup.Items.Add(LItem);
     end;
   end;
-  LProbe := TPopupStabilityProbe.Create(LPopup, AChangeRuntime, AChangeRegistration, AChangeUpdate);
+  LProbe := TPopupStabilityProbe.Create(LPopup, AChangeRuntime, AChangeRegistration, AChangeUpdate, AChangePermissions);
   try
     LProbe.Run;
   finally
@@ -280,4 +306,5 @@ begin
   TestPopupTracking(False, False, True);
   TestPopupTracking(True, False, True);
   TestPopupTracking(False, False, False, True);
+  TestPopupTracking(False, False, False, False, True);
 end;

@@ -5,8 +5,11 @@
 uses
   System.Classes,
   System.Hash,
+  System.IOUtils,
   System.JSON,
   System.SysUtils,
+  Winapi.Windows,
+  h5u.DAI.Types,
   h5u.DAI.OTA.Files,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Text.Encoding;
@@ -271,6 +274,174 @@ begin
   Check(Denied and (TDAIOTA.WriteCount = 0) and (TDAIOTA.Buffer = Original), 'invalid Unicode form is rejected before editor mutation');
 end;
 
+procedure CheckOpenForeignFileGuards;
+const
+  COriginal = 'unit IsolatedBuffer; interface implementation end.';
+  CChanged = 'unit IsolatedBuffer; interface implementation { changed } end.';
+var
+  LDenied: Boolean;
+  LUsedEditor: Boolean;
+  LResult: TJSONObject;
+begin
+  TDAIOTA.Reset(COriginal);
+  Check(Assigned(TDAIOTA.FindSourceEditor('Foreign.pas')) and TDAIOTA.IsFileOpenInEditor('Foreign.pas'), 'foreign fixture has an open editor');
+  LResult := TDAIFileService.ReadFile('Foreign.pas', 0, False);
+  try
+    Check(LResult.GetValue<string>('content') = COriginal, 'an explicitly allowed open foreign file can be read');
+  finally
+    LResult.Free;
+  end;
+  LResult := TDAIFileService.WriteFile('Foreign.pas', CChanged, THashSHA2.GetHashString(COriginal), False, LUsedEditor);
+  try
+    Check(LUsedEditor and (TDAIOTA.Buffer = CChanged), 'an allowed open foreign file uses the existing editor buffer for writes');
+    Check((TDAIOTA.WriteCount = 1) and (TDAIOTA.SaveCount = 0), 'open foreign writes preserve the requested unsaved state');
+  finally
+    LResult.Free;
+  end;
+  TDAIOTA.Reset(COriginal);
+  TDAIOTA.OpenEditor := False;
+  TDAIOTA.WorkspaceAllowed := False;
+  LDenied := False;
+  try
+    LResult := TDAIFileService.ReadFile('Foreign.pas', 0, False);
+    LResult.Free;
+  except
+    on E: EDAIAccessDenied do
+      LDenied := True;
+  end;
+  Check(LDenied, 'a closed external file cannot bypass the file read boundary');
+  LDenied := False;
+  try
+    LResult := TDAIFileService.WriteFile('Foreign.pas', COriginal, '', False, LUsedEditor);
+    LResult.Free;
+  except
+    on E: EDAIAccessDenied do
+      LDenied := True;
+  end;
+  Check(LDenied, 'a closed external file cannot bypass the project write boundary');
+  Check((TDAIOTA.WriteCount = 0) and (TDAIOTA.SaveCount = 0) and (TDAIOTA.Buffer = COriginal), 'foreign write preserves editor and save state');
+
+  TDAIOTA.ReadOnlyReference := True;
+  TDAIOTA.OpenEditor := True;
+  LResult := TDAIFileService.ReadFile('Foreign.pas', 0, False);
+  try
+    Check(LResult.GetValue<string>('content') = COriginal, 'read-only reference can be read through its open buffer');
+  finally
+    LResult.Free;
+  end;
+  TDAIOTA.WorkspaceAllowed := True;
+  LDenied := False;
+  try
+    LResult := TDAIFileService.WriteFile('IsolatedBuffer.pas', COriginal, '', True, LUsedEditor);
+    LResult.Free;
+  except
+    on E: EDAIAccessDenied do
+      LDenied := True;
+  end;
+  Check(LDenied and (TDAIOTA.WriteCount = 0) and (TDAIOTA.SaveCount = 0), 'read-only reference denies writes even when also a workspace file');
+end;
+
+procedure CheckPermissionPolicyWriteGuards;
+const
+  COriginal = '{"version":2,"permissions":{"compile":"never","execute":"never"}}';
+  CChanged = '{"version":2,"permissions":{"compile":"always","execute":"always"}}';
+  CNames: array[0..3] of string = ('Policy.dai.permissions.json', 'POLICY.DAI.PERMISSIONS.JSON',
+    'Policy.dai.permissions.json.', 'Policy.dai.permissions.json::$DATA');
+var
+  LDirectory: string;
+  LPolicyFile: string;
+  LName: string;
+  LShortPath: string;
+  LRequired: DWORD;
+  LWritten: DWORD;
+  LExists: Boolean;
+  LOpenEditor: Boolean;
+  LDenied: Boolean;
+  LUsedEditor: Boolean;
+  LResult: TJSONObject;
+begin
+  LDirectory := TPath.Combine(TPath.GetTempPath, 'DAI-Policy-Write-Test-' + TGUID.NewGuid.ToString);
+  TDirectory.CreateDirectory(LDirectory);
+  LPolicyFile := TPath.Combine(LDirectory, 'Policy.dai.permissions.json');
+  try
+    for LName in CNames do
+      for LExists in TArray<Boolean>.Create(False, True) do
+        for LOpenEditor in TArray<Boolean>.Create(False, True) do
+        begin
+          if LExists then
+            TFile.WriteAllText(LPolicyFile, COriginal, TEncoding.UTF8);
+          try
+            TDAIOTA.Reset(COriginal);
+            TDAIOTA.OpenEditor := LOpenEditor;
+            LDenied := False;
+            LUsedEditor := True;
+            try
+              LResult := TDAIFileService.WriteFile(IncludeTrailingPathDelimiter(LDirectory) + LName, CChanged, '', True, LUsedEditor);
+              LResult.Free;
+            except
+              on E: EDAIAccessDenied do
+                LDenied := True;
+            end;
+            Check(LDenied, 'permission policy writes are denied for existing/new files, buffers, case and Windows aliases');
+            Check(not LUsedEditor, 'permission policy denial does not expose or select an editor buffer');
+            Check((TDAIOTA.ReadCount = 0) and (TDAIOTA.FindCount = 0), 'permission policy guard precedes editor lookup and content reads');
+            Check((TDAIOTA.WriteCount = 0) and (TDAIOTA.SaveCount = 0), 'permission policy denial invokes neither editor writer nor save');
+            Check(TDAIOTA.Buffer = COriginal, 'permission policy denial preserves the original editor contents');
+            Check(TFile.Exists(LPolicyFile) = LExists, 'permission policy denial never creates a new policy file');
+            if LExists then
+              Check(TFile.ReadAllText(LPolicyFile, TEncoding.UTF8) = COriginal, 'permission policy denial preserves existing disk contents');
+          finally
+            if TFile.Exists(LPolicyFile) then
+              TFile.Delete(LPolicyFile);
+          end;
+        end;
+    TFile.WriteAllText(LPolicyFile, COriginal, TEncoding.UTF8);
+    try
+      LRequired := GetShortPathNameW(PWideChar(LPolicyFile), nil, 0);
+      LShortPath := '';
+      if LRequired > 0 then
+      begin
+        SetLength(LShortPath, LRequired);
+        LWritten := GetShortPathNameW(PWideChar(LPolicyFile), PWideChar(LShortPath), LRequired);
+        if (LWritten > 0) and (LWritten < LRequired) then
+          SetLength(LShortPath, LWritten)
+        else
+          LShortPath := '';
+      end;
+      if (LShortPath <> '') and not SameText(TPath.GetFileName(LShortPath), TPath.GetFileName(LPolicyFile)) then
+      begin
+        TDAIOTA.Reset(COriginal);
+        LDenied := False;
+        try
+          LResult := TDAIFileService.WriteFile(LShortPath, CChanged, '', True, LUsedEditor);
+          LResult.Free;
+        except
+          on E: EDAIAccessDenied do
+            LDenied := True;
+        end;
+        Check(LDenied, 'an existing 8.3 alias cannot bypass the permission policy write guard');
+        Check((TDAIOTA.ReadCount = 0) and (TDAIOTA.WriteCount = 0) and (TDAIOTA.SaveCount = 0), '8.3 policy denial precedes editor access');
+        Check(TDAIOTA.Buffer = COriginal, '8.3 policy denial preserves the editor buffer');
+        Check(TFile.ReadAllText(LPolicyFile, TEncoding.UTF8) = COriginal, '8.3 policy denial preserves the existing disk contents');
+      end
+      else
+        Writeln('SKIP: no distinct 8.3 policy filename is available on the isolated test volume.');
+    finally
+      TFile.Delete(LPolicyFile);
+    end;
+    TDAIOTA.Reset(COriginal);
+    LResult := TDAIFileService.WriteFile(TPath.Combine(LDirectory, 'Notes.dai.permissions.json.txt'), CChanged, '', False, LUsedEditor);
+    try
+      Check(LUsedEditor and (TDAIOTA.WriteCount = 1), 'a similar ordinary filename remains editable through its existing buffer');
+      Check(TDAIOTA.Buffer = CChanged, 'the policy guard matches the basename suffix rather than an arbitrary substring');
+    finally
+      LResult.Free;
+    end;
+  finally
+    TDirectory.Delete(LDirectory);
+  end;
+end;
+
 procedure RunChecks;
 const
   CUnicode = 'unit IsolatedBuffer; interface { Grüße 漢字 ' + #$D83D#$DE00 + ' } implementation end.';
@@ -363,8 +534,10 @@ end;
 
 begin
   try
-    RegisterClass(TDAIFormTextFixture);
+    System.Classes.RegisterClass(TDAIFormTextFixture);
     RunChecks;
+    CheckOpenForeignFileGuards;
+    CheckPermissionPolicyWriteGuards;
     CheckInterfaceReads;
     CheckUnitWriteGuards;
     CheckFormUnicode('dfm');

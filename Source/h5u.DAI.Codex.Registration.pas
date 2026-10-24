@@ -739,7 +739,7 @@ begin
     - Öffnen läuft asynchron: `request_id` aus der Antwort danach nur als `{"request_id":"..."}` an `options_open` übergeben.
     - Status: `queued`, `opened`, `focused`, `unsupported`, `error`, `closed`, `cancelled`; weitere Selektoren neben `request_id` sind gesperrt.
     - `page_selected` und `option_focused` bestätigen einzelne Schritte; `focus_verified: null` bedeutet unbekannten Fokus.
-    - Suche/Status verlangen Leserechte; Öffnen zusätzlich IDE-Bearbeitungs- und Ausführungsrechte.
+    - Suche/Status sind frei lesbar; Öffnen benötigt je nach Ziel IDE-Änderungsrechte oder Projektschreibrechte.
     - Bei `option` bevorzugt DAI `INTAIDEInsightItem.Execute` eines eindeutigen echten Optionseintrags als native Navigation.
     - Allgemeine Commands-/Datei-/Build-Einträge oder mehrdeutige Treffer werden nicht ausgeführt; Controlnavigation dient als Fallback.
     - Insight nur mit `query` zeigt Suchpopup und Suchfeldfokus. Ein öffentlicher gefilterter Ergebnisindex zur Vorwahl ist nicht verfügbar.
@@ -787,7 +787,7 @@ begin
     - `form_component_create`: class_name aus der Palette über CreateComponent einfügen; optional name, Parent, Integerposition/-größe und select.
     - parent wählt explizit; parent_mode ist explicit/selected/selected_parent/root. Create nutzt selected mit Containerfallback, Move behält sonst den Parent.
     - Create-Koordinaten -1 überlassen den Wert dem Designer; bei Move unterstützt FMX auch Dezimalpositionen. Owner und visuellen Parent unterscheiden.
-    - Mutationen benötigen Lese- und IDE-Bearbeitungsrechte, sind Workspace-begrenzt und speichern nie automatisch. Tatsächlichen modified-Status prüfen.
+    - Mutationen benötigen Projektlese- und Projektschreibrechte, sind Workspace-begrenzt und speichern nie automatisch. Tatsächlichen modified-Status prüfen.
     - Parentwechsel darf nativ erfolgen und meldet Designeränderung; keine gemeinsame Undo-Transaktion behaupten. Komplexe Properties nicht frei erfinden.
     - Beim Erzeugen/Umbenennen tatsächlichen Namen prüfen; source_declaration_verified: false bedeutet keine unabhängig bestätigte Pascal-Feldsynchronisierung.
     - DFM/FMX bevorzugt über native Designerwerkzeuge ändern; direkte Textänderungen nur im IDE-Textpuffer mit `file_read`/`file_write`.
@@ -811,13 +811,13 @@ begin
     - `debugger_evaluate` liest expression oder use_cursor: true im angehaltenen Thread; process_id/thread_id sind OS-IDs.
     - source_file und line setzen gemeinsam den lexikalischen Quellkontext, keinen Stackframe; side_effects ist standardmäßig none.
     - side_effects properties/all und debugger_modify benötigen Ausführungsrechte; value ist ein Delphi-Wertausdruck, z.B. "1".
-    - Debuggerwerte, Änderungen und Ergebnisstatus brauchen globale Rechte; Cursorlesen zusätzlich Rechte des tatsächlichen Dateiprojekts.
+    - Debuggerwerte und Ergebnisstatus brauchen globale Ausführungsrechte; Cursorlesen zusätzlich Dateileserechte.
     - debugger_cursor_expression liefert die sichtbare einzeilige Auswahl oder einen einfachen Zugriff am Cursor, inklusive Pufferhash und UTF-8-Bytepositionen.
     - use_cursor darf nicht mit expression/source_file/line kombiniert werden; Designer und komplexe automatische Ausdrücke werden abgewiesen.
     - Bei deferred mit debugger_evaluation_status(request_id) abfragen; Timeout bricht die SDK-Operation nicht ab, sdk_pending beachten.
     - Modify braucht eine erfolgreiche synchrone beschreibbare Vorprüfung; nach deferred erneut ausdrücklich anfordern, modified kann null sein.
     - debugger_expression_ui(action) unterstützt add_watch, watch_at_cursor, evaluate_modify und inspect_at_cursor, mit aktuellem Editor/Cursor.
-    - Native Aktionen brauchen Lese-/IDE-Bearbeitungs-/Ausführungsrechte; ausschließlich request_id fragt den Status ab. action_invoked bestätigt nur den Aufruf.
+    - Native Aktionen brauchen Dateileserechte und globale Ausführungsrechte; ausschließlich request_id fragt den Status ab. action_invoked bestätigt nur den Aufruf.
     - Watchliste auflisten/bearbeiten/löschen ist öffentlich nicht unterstützt; bekannte Ausdrücke einzeln auswerten, keinen eigenen IDE-Watchzustand erfinden.
     - `project_run` unterstützt `debugger` und `build_first`; `project_stop` beendet die Ausführung. Prüfe den Rückgabestatus vor weiteren Schritten.
     - `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; `debugger_windows_list` liest Fenster des Debuggerprozesses.
@@ -825,7 +825,7 @@ begin
     - Bei angehaltenem Debuggee können Controltexte fehlen; beachte `text_status`, Zeitlimit und `truncated`, ohne die Anwendung dafür fortzusetzen.
     - `ide_dialog_inspect` liest den aktiven sichtbaren modalen VCL-Dialog und liefert `snapshot_token` sowie die tatsächlichen Buttonnamen.
     - `ide_dialog_click` nutzt `snapshot_token` und `button_name`; `ide_dialog_close` setzt mit demselben Token das gewünschte `modal_result` an der Form.
-    - Dialogaktionen brauchen IDE-Bearbeitungs- und Ausführungsrechte. Tokens verfallen nach 30 Sekunden; bei geändertem Dialog erneut auslesen.
+    - Dialogaktionen brauchen globale IDE-Änderungs- und Ausführungsrechte. Tokens verfallen nach 30 Sekunden; bei geändertem Dialog erneut auslesen.
     - DAI-Zugriffsfreigaben und WinAPI-Dialoge lassen sich damit nicht bedienen. Buttonnamen und Ergebniswerte aus dem aktuellen Dialog übernehmen.
     - `ide_window_control` steuert die IDE mit `action`: `minimize`, `restore`, `foreground`, `background` oder `close`.
     - Vordergrundanforderungen können von Windows abgelehnt werden; `foreground` und `minimized` in der Antwort beschreiben den tatsächlichen Zustand.
@@ -844,13 +844,13 @@ begin
     - Beim Projekt zählt der SDK-Zielpfad der aktuellen Config/Platform. Es gibt keinen Projektwechsel oder automatischen Build.
     - Bei Bedarf vor der Installation separat `project_compile` ausführen; anschließend `succeeded` und den Package-Status prüfen.
     - Installieren benötigt ein vorhandenes DesignTime- oder Run+Design-Package mit der Architektur der laufenden IDE.
-    - Packageaktionen brauchen Lese-, IDE-Bearbeitungs- und Ausführungsrechte; die Statusabfrage braucht nur Leserechte.
+    - Packageaktionen brauchen IDE-Änderungs- und Ausführungsrechte; die Statusabfrage ist frei lesbar.
     - Das laufende DAI-Package und feste IDE-Packages sind vor Änderungen geschützt; geladene Abhängigkeiten können die Entfernung sperren.
     - Deinstallation löscht die BPL nicht und erlaubt fehlende Dateien. `succeeded` ist das tatsächliche SDK-Ergebnis.
     - Direkte Compileraufrufe mit `msbuild_execute` oder `dcc32_execute` nur für beauftragte Compileraufgaben verwenden.
     - Lesen und Schreiben ist auf geöffnete Workspaces bzw. freigegebene Referenzpfade beschränkt.
     - Delphi-Sourcen, Demos, GetIt-Repositories und zusätzliche Referenzverzeichnisse sind ausschließlich lesbar.
-    - Die IDE fragt nach Lesezugriff, IDE-Bearbeitung, Dateibearbeitung, Kompilieren und Ausführen; eine Ablehnung respektieren.
+    - Die IDE fragt nach IDE-Änderung, Projektlesen/-schreiben, Kompilieren und Debuggen/Ausführen; Ablehnungen respektieren.
     - Sitzungsfreigaben gelten nach Projekt und KI-Chat bzw. MCP-Sitzung. Ohne stabile Identität ist eine Sitzungsfreigabe nur einmal wirksam.
     - Werkzeuge und Argumente aus der aktuellen MCP-Werkzeugliste prüfen; eine erfolgreiche Registrierung bestätigt keine aktive Verbindung.
 
@@ -955,7 +955,7 @@ begin
     '- Öffnen läuft asynchron: `request_id` aus der Antwort danach nur als `{"request_id":"..."}` an `options_open` übergeben.' + sLineBreak +
     '- Status: `queued`, `opened`, `focused`, `unsupported`, `error`, `closed`, `cancelled`; weitere Selektoren neben `request_id` sind gesperrt.' + sLineBreak +
     '- `page_selected` und `option_focused` bestätigen einzelne Schritte; `focus_verified: null` bedeutet unbekannten Fokus.' + sLineBreak +
-    '- Suche/Status verlangen Leserechte; Öffnen zusätzlich IDE-Bearbeitungs- und Ausführungsrechte.' + sLineBreak +
+    '- Suche/Status sind frei lesbar; Öffnen benötigt je nach Ziel IDE-Änderungsrechte oder Projektschreibrechte.' + sLineBreak +
     '- Bei `option` bevorzugt DAI `INTAIDEInsightItem.Execute` eines eindeutigen echten Optionseintrags als native Navigation.' + sLineBreak +
     '- Allgemeine Commands-/Datei-/Build-Einträge oder mehrdeutige Treffer werden nicht ausgeführt; Controlnavigation dient als Fallback.' + sLineBreak +
     '- Insight nur mit `query` zeigt Suchpopup und Suchfeldfokus. Ein öffentlicher gefilterter Ergebnisindex zur Vorwahl ist nicht verfügbar.' + sLineBreak +
@@ -1007,7 +1007,7 @@ begin
     'Create nutzt selected mit Containerfallback, Move behält sonst den Parent.' + sLineBreak +
     '- Create-Koordinaten -1 überlassen den Wert dem Designer; bei Move unterstützt FMX auch Dezimalpositionen. ' +
     'Owner und visuellen Parent unterscheiden.' + sLineBreak +
-    '- Mutationen benötigen Lese- und IDE-Bearbeitungsrechte, sind Workspace-begrenzt und speichern nie automatisch. ' +
+    '- Mutationen benötigen Projektlese- und Projektschreibrechte, sind Workspace-begrenzt und speichern nie automatisch. ' +
     'Tatsächlichen modified-Status prüfen.' + sLineBreak +
     '- Parentwechsel darf nativ erfolgen und meldet Designeränderung; keine gemeinsame Undo-Transaktion behaupten. ' +
     'Komplexe Properties nicht frei erfinden.' + sLineBreak +
@@ -1035,13 +1035,14 @@ begin
     '- `debugger_evaluate` liest expression oder use_cursor: true im angehaltenen Thread; process_id/thread_id sind OS-IDs.' + sLineBreak +
     '- source_file und line setzen gemeinsam den lexikalischen Quellkontext, keinen Stackframe; side_effects ist standardmäßig none.' + sLineBreak +
     '- side_effects properties/all und debugger_modify benötigen Ausführungsrechte; value ist ein Delphi-Wertausdruck, z.B. "1".' + sLineBreak +
-    '- Debuggerwerte, Änderungen und Ergebnisstatus brauchen globale Rechte; Cursorlesen zusätzlich Rechte des tatsächlichen Dateiprojekts.' + sLineBreak +
+    '- Debuggerwerte und Ergebnisstatus brauchen globale Ausführungsrechte; Cursorlesen zusätzlich Dateileserechte.' + sLineBreak +
     '- debugger_cursor_expression liefert die sichtbare einzeilige Auswahl oder einen einfachen Zugriff am Cursor, inklusive Pufferhash und UTF-8-Bytepositionen.' + sLineBreak +
     '- use_cursor darf nicht mit expression/source_file/line kombiniert werden; Designer und komplexe automatische Ausdrücke werden abgewiesen.' + sLineBreak +
     '- Bei deferred mit debugger_evaluation_status(request_id) abfragen; Timeout bricht die SDK-Operation nicht ab, sdk_pending beachten.' + sLineBreak +
     '- Modify braucht eine erfolgreiche synchrone beschreibbare Vorprüfung; nach deferred erneut ausdrücklich anfordern, modified kann null sein.' + sLineBreak +
     '- debugger_expression_ui(action) unterstützt add_watch, watch_at_cursor, evaluate_modify und inspect_at_cursor, mit aktuellem Editor/Cursor.' + sLineBreak +
-    '- Native Aktionen brauchen Lese-/IDE-Bearbeitungs-/Ausführungsrechte; ausschließlich request_id fragt den Status ab. action_invoked bestätigt nur den Aufruf.' + sLineBreak +
+    '- Native Aktionen brauchen Dateileserechte und globale Ausführungsrechte; request_id fragt den Status ab. ' +
+    'action_invoked bestätigt nur den Aufruf.' + sLineBreak +
     '- Watchliste auflisten/bearbeiten/löschen ist öffentlich nicht unterstützt; bekannte Ausdrücke einzeln auswerten, keinen eigenen IDE-Watchzustand erfinden.' + sLineBreak +
     '- `project_run` unterstützt `debugger` und `build_first`; `project_stop` beendet die Ausführung. Prüfe den Rückgabestatus vor weiteren Schritten.' + sLineBreak +
     '- `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; `debugger_windows_list` liest Fenster des Debuggerprozesses.' + sLineBreak +
@@ -1049,7 +1050,7 @@ begin
     '- Bei angehaltenem Debuggee können Controltexte fehlen; beachte `text_status`, Zeitlimit und `truncated`, ohne die Anwendung dafür fortzusetzen.' + sLineBreak +
     '- `ide_dialog_inspect` liest den aktiven sichtbaren modalen VCL-Dialog und liefert `snapshot_token` sowie die tatsächlichen Buttonnamen.' + sLineBreak +
     '- `ide_dialog_click` nutzt `snapshot_token` und `button_name`; `ide_dialog_close` setzt mit demselben Token das gewünschte `modal_result` an der Form.' + sLineBreak +
-    '- Dialogaktionen brauchen IDE-Bearbeitungs- und Ausführungsrechte. Tokens verfallen nach 30 Sekunden; bei geändertem Dialog erneut auslesen.' + sLineBreak +
+    '- Dialogaktionen brauchen globale IDE-Änderungs- und Ausführungsrechte. Tokens verfallen nach 30 Sekunden; bei geändertem Dialog erneut auslesen.' + sLineBreak +
     '- DAI-Zugriffsfreigaben und WinAPI-Dialoge lassen sich damit nicht bedienen. Buttonnamen und Ergebniswerte aus dem aktuellen Dialog übernehmen.' + sLineBreak +
     '- `ide_window_control` steuert die IDE mit `action`: `minimize`, `restore`, `foreground`, `background` oder `close`.' + sLineBreak +
     '- Vordergrundanforderungen können von Windows abgelehnt werden; `foreground` und `minimized` in der Antwort beschreiben den tatsächlichen Zustand.' + sLineBreak +
@@ -1068,13 +1069,13 @@ begin
     '- Beim Projekt zählt der SDK-Zielpfad der aktuellen Config/Platform. Es gibt keinen Projektwechsel oder automatischen Build.' + sLineBreak +
     '- Bei Bedarf vor der Installation separat `project_compile` ausführen; anschließend `succeeded` und den Package-Status prüfen.' + sLineBreak +
     '- Installieren benötigt ein vorhandenes DesignTime- oder Run+Design-Package mit der Architektur der laufenden IDE.' + sLineBreak +
-    '- Packageaktionen brauchen Lese-, IDE-Bearbeitungs- und Ausführungsrechte; die Statusabfrage braucht nur Leserechte.' + sLineBreak +
+    '- Packageaktionen brauchen IDE-Änderungs- und Ausführungsrechte; die Statusabfrage ist frei lesbar.' + sLineBreak +
     '- Das laufende DAI-Package und feste IDE-Packages sind vor Änderungen geschützt; geladene Abhängigkeiten können die Entfernung sperren.' + sLineBreak +
     '- Deinstallation löscht die BPL nicht und erlaubt fehlende Dateien. `succeeded` ist das tatsächliche SDK-Ergebnis.' + sLineBreak +
     '- Direkte Compileraufrufe mit `msbuild_execute` oder `dcc32_execute` nur für beauftragte Compileraufgaben verwenden.' + sLineBreak +
     '- Lesen und Schreiben ist auf geöffnete Workspaces bzw. freigegebene Referenzpfade beschränkt.' + sLineBreak +
     '- Delphi-Sourcen, Demos, GetIt-Repositories und zusätzliche Referenzverzeichnisse sind ausschließlich lesbar.' + sLineBreak +
-    '- Die IDE fragt nach Lesezugriff, IDE-Bearbeitung, Dateibearbeitung, Kompilieren und Ausführen; eine Ablehnung respektieren.' + sLineBreak +
+    '- Die IDE fragt nach IDE-Änderung, Projektlesen/-schreiben, Kompilieren und Debuggen/Ausführen; Ablehnungen respektieren.' + sLineBreak +
     '- Sitzungsfreigaben gelten nach Projekt und KI-Chat bzw. MCP-Sitzung. Ohne stabile Identität ist eine Sitzungsfreigabe nur einmal wirksam.' + sLineBreak +
     '- Werkzeuge und Argumente aus der aktuellen MCP-Werkzeugliste prüfen; eine erfolgreiche Registrierung bestätigt keine aktive Verbindung.' + sLineBreak
     ,

@@ -58,7 +58,7 @@ begin
   Requests[LIndex].Resource := AResource;
   Requests[LIndex].Context := AContext;
   case ACategory of
-    pcEditInsideIDE:
+    pcIDEOptions:
       Result := EditAllowed;
     pcExecute:
       Result := ExecuteAllowed;

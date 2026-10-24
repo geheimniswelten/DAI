@@ -13,9 +13,10 @@ type
   EDAIExecutableNotFound = class(EDAIFileNotFound);
 
   TDAIPermissionCategory = (
-    pcReadAccess,
-    pcEditInsideIDE,
-    pcEditOutsideIDE,
+    pcReferenceRead,
+    pcIDEOptions,
+    pcProjectRead,
+    pcProjectWrite,
     pcCompile,
     pcExecute
   );
@@ -54,6 +55,7 @@ type
     DurationMs: Int64;
   end;
 
+function DAIPermissionCategoryIsGlobal(const ACategory: TDAIPermissionCategory): Boolean;
 function DAIPermissionCategoryName(const ACategory: TDAIPermissionCategory): string;
 function DAIPermissionCategoryKey(const ACategory: TDAIPermissionCategory): string;
 function DAIPermissionLevelName(const ALevel: TDAIPermissionLevel): string;
@@ -63,15 +65,22 @@ function DAIPermissionLevelRank(const ALevel: TDAIPermissionLevel): Integer;
 
 implementation
 
+function DAIPermissionCategoryIsGlobal(const ACategory: TDAIPermissionCategory): Boolean;
+begin
+  Result := ACategory in [pcReferenceRead, pcIDEOptions];
+end;
+
 function DAIPermissionCategoryKey(const ACategory: TDAIPermissionCategory): string;
 begin
   case ACategory of
-    pcReadAccess:
-      Result := 'read';
-    pcEditInsideIDE:
-      Result := 'edit_inside_ide';
-    pcEditOutsideIDE:
-      Result := 'edit_outside_ide';
+    pcReferenceRead:
+      Result := 'reference_read';
+    pcIDEOptions:
+      Result := 'ide_options';
+    pcProjectRead:
+      Result := 'project_read';
+    pcProjectWrite:
+      Result := 'project_write';
     pcCompile:
       Result := 'compile';
     pcExecute:
@@ -84,16 +93,18 @@ end;
 function DAIPermissionCategoryName(const ACategory: TDAIPermissionCategory): string;
 begin
   case ACategory of
-    pcReadAccess:
-      Result := 'Lesezugriffe';
-    pcEditInsideIDE:
-      Result := 'Bearbeiten innerhalb der IDE';
-    pcEditOutsideIDE:
-      Result := 'Dateien außerhalb der IDE bearbeiten';
+    pcReferenceRead:
+      Result := 'Delphi-/GetIt-Sourcen und IDE-Optionen lesen';
+    pcIDEOptions:
+      Result := 'IDE-Optionen ändern';
+    pcProjectRead:
+      Result := 'Projekt und Projektdateien lesen';
+    pcProjectWrite:
+      Result := 'Projekt und Projektdateien ändern';
     pcCompile:
       Result := 'Kompilieren';
     pcExecute:
-      Result := 'Ausführen';
+      Result := 'Projekt ausführen und debuggen';
   else
     Result := 'Unbekannte Funktionalität';
   end;

@@ -82,8 +82,9 @@ begin
     for I := 0 to Expected - 1 do
     begin
       Request := TDAIPermissionManager.Instance.Requests[I];
-      if I = 0 then Check(Request.Category = pcReadAccess, 'read precedes operation')
-      else Check(Request.Category = pcEditInsideIDE, 'edit precedes mutation');
+      if (I = 0) and (AIndex = 6) then Check(Request.Category = pcReferenceRead, 'palette metadata is always readable')
+      else if I = 0 then Check(Request.Category = pcProjectRead, 'read precedes operation')
+      else Check(Request.Category = pcProjectWrite, 'edit precedes mutation');
       if AIndex = 6 then Check(Request.Resource = '', 'palette resource global')
       else Check(Request.Resource = CFile, 'actual form permission resource');
       Check(Request.Context.ProjectKey = Context.ProjectKey, 'owning project retained');

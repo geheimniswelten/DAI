@@ -8,6 +8,7 @@ type
     class var CheckCount: Integer;
     class var OffMainThread: Boolean;
     class var LastShared: Boolean;
+    class var LastManualClientRegistration: Boolean;
     class var LastPort: Integer;
     class var LastToken: string;
     class var LastSaveCount: Integer;
@@ -33,6 +34,7 @@ begin
   Inc(CheckCount);
   OffMainThread := OffMainThread or (GetCurrentThreadId <> MainThreadID);
   LastShared := TDAISettings.Instance.UseSharedConnectionSettings;
+  LastManualClientRegistration := TDAISettings.Instance.ManualClientRegistration;
   LastPort := TDAISettings.Instance.Port;
   LastToken := TDAISettings.Instance.Token;
   LastSaveCount := TDAISettings.Instance.SaveCount;
@@ -47,6 +49,7 @@ begin
   CheckCount := 0;
   OffMainThread := False;
   LastShared := False;
+  LastManualClientRegistration := False;
   LastPort := 0;
   LastToken := '';
   LastSaveCount := 0;

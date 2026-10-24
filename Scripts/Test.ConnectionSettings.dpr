@@ -551,6 +551,42 @@ begin
   end;
 end;
 
+procedure CheckCustomReadDirectoryPermission;
+var
+  LSettings, LOther: TDAISettings;
+  LBefore: string;
+begin
+  LSettings := SettingsForIDE('22.0');
+  try
+    Check(not LSettings.CustomReadDirectoriesAlwaysAllowed, 'Additional directories require project reading permission by default');
+    LBefore := RegistrySnapshot('Software');
+    LSettings.CustomReadDirectoriesAlwaysAllowed := True;
+    Check(RegistrySnapshot('Software') = LBefore, 'Changing the additional directory flag does not save immediately');
+    LSettings.Load;
+    Check(not LSettings.CustomReadDirectoriesAlwaysAllowed, 'Load discards an unsaved directory reading draft');
+    LSettings.CustomReadDirectoriesAlwaysAllowed := True;
+    LSettings.CustomReadDirectories.Add('C:\Synthetic-Additional-Read-Only');
+    LSettings.Save;
+    LSettings.Free;
+    LSettings := nil;
+    LSettings := SettingsForIDE('22.0');
+    Check(LSettings.CustomReadDirectoriesAlwaysAllowed, 'Global additional directory reading flag survives reload');
+    Check(LSettings.CustomReadDirectories.IndexOf('C:\Synthetic-Additional-Read-Only') >= 0, 'Directory roots survive alongside their reading flag');
+    LOther := SettingsForIDE('37.0');
+    try
+      Check(not LOther.CustomReadDirectoriesAlwaysAllowed, 'IDE-profile settings do not become project or shared-connection settings');
+    finally
+      LOther.Free;
+    end;
+    LSettings.CustomReadDirectoriesAlwaysAllowed := False;
+    LSettings.Save;
+    LSettings.Load;
+    Check(not LSettings.CustomReadDirectoriesAlwaysAllowed, 'Clearing the additional directory reading flag persists');
+  finally
+    LSettings.Free;
+  end;
+end;
+
 procedure CheckRefresh;
 var
   LSettings: TDAISettings;
@@ -631,6 +667,71 @@ begin
   end;
 end;
 
+procedure CheckManualRegistration;
+var
+  LFirst: TDAISettings;
+  LSecond: TDAISettings;
+  LBefore: string;
+  LRegistry: TRegistry;
+begin
+  LFirst := SettingsForIDE('22.0');
+  try
+    LSecond := SettingsForIDE('37.0');
+    try
+      Check(not LFirst.ManualClientRegistration, 'Manual registration defaults to false');
+      Check(not LFirst.ReadManualClientRegistration(False), 'Own-IDE manual registration also defaults to false');
+      LBefore := RegistrySnapshot('Software');
+      LFirst.ManualClientRegistration := True;
+      Check(LFirst.ManualClientRegistration, 'Explicit confirmation is available as a pending draft');
+      Check(not LFirst.ReadManualClientRegistration(True), 'Manual-registration preview reads persisted values only');
+      Check(not LSecond.ManualClientRegistration, 'A pending confirmation is not visible to another IDE');
+      Check(RegistrySnapshot('Software') = LBefore, 'Staging manual registration performs no registry write');
+      LFirst.DiscardManualRegistrationChange;
+      Check(not LFirst.ManualClientRegistration, 'Discarding the draft restores the stored false value');
+      LFirst.ManualClientRegistration := True;
+      LFirst.Load;
+      Check(not LFirst.ManualClientRegistration, 'Reloading discards an uncommitted manual-confirmation draft');
+      LFirst.ManualClientRegistration := True;
+      LFirst.Save;
+      Check(LSecond.ManualClientRegistration, 'Another IDE sees a stored shared confirmation without reload');
+      CheckStoredPair(CSharedRoot, LFirst.Port, LFirst.Token, 'Saving confirmation preserves shared credentials');
+      LSecond.Enabled := False;
+      LSecond.Save;
+      Check(LFirst.ManualClientRegistration, 'An unrelated save preserves another IDE manual confirmation');
+      SelectScope(LFirst, False);
+      Check(not LFirst.ManualClientRegistration, 'A separate connection does not inherit shared manual confirmation');
+      LFirst.ManualClientRegistration := True;
+      LFirst.Save;
+      Check(LFirst.ReadManualClientRegistration(False), 'Manual confirmation persists in the selected own-IDE profile');
+      Check(LFirst.ReadManualClientRegistration(True), 'Own-IDE confirmation preserves the shared flag');
+      SelectScope(LSecond, False);
+      Check(not LSecond.ManualClientRegistration, 'Another separate IDE profile remains independent');
+      SelectScope(LFirst, True);
+      LFirst.ManualClientRegistration := False;
+      LFirst.Save;
+      Check(not LFirst.ReadManualClientRegistration(True), 'Shared manual confirmation can be explicitly cleared');
+      Check(LFirst.ReadManualClientRegistration(False), 'Clearing shared confirmation preserves own-IDE confirmation');
+      SelectScope(LSecond, True);
+      Check(not LSecond.ManualClientRegistration, 'Other shared IDEs observe a cleared flag without reload');
+      LSecond.Enabled := True;
+      LSecond.Save;
+      Check(not LFirst.ManualClientRegistration, 'An unrelated stale save cannot resurrect a cleared flag');
+      LRegistry := OpenRegistry(CSharedRoot, True);
+      try
+        LRegistry.DeleteValue('ManualClientRegistration');
+        LRegistry.WriteString('ManualClientRegistration', 'True');
+      finally
+        LRegistry.Free;
+      end;
+      Check(not LFirst.ManualClientRegistration, 'A malformed string flag does not suppress a missing-registration notice');
+    finally
+      LSecond.Free;
+    end;
+  finally
+    LFirst.Free;
+  end;
+end;
+
 procedure CheckCrossWrite;
 var
   LSettings: TDAISettings;
@@ -639,6 +740,7 @@ begin
   try
     LSettings.Port := 8911;
     LSettings.Token := 'synthetic-cross-architecture';
+    LSettings.ManualClientRegistration := True;
     LSettings.Save;
     CheckStoredPair(CSharedRoot, 8911, 'synthetic-cross-architecture', 'Cross-architecture writer publishes common values');
   finally
@@ -654,6 +756,7 @@ begin
   try
     Check(LSettings.UseSharedConnectionSettings, 'Other architecture defaults to shared mode');
     CheckPair(LSettings, 8911, 'synthetic-cross-architecture', 'Other IDE architecture reads the same common registry store');
+    Check(LSettings.ManualClientRegistration, 'Other architecture reads the same shared manual-registration flag');
   finally
     LSettings.Free;
   end;
@@ -682,10 +785,14 @@ begin
       CheckStaleSave
     else if TestStage = 'stale-preview' then
       CheckStalePreviewSave
+    else if TestStage = 'read-directories' then
+      CheckCustomReadDirectoryPermission
     else if TestStage = 'refresh' then
       CheckRefresh
     else if TestStage = 'concurrent-scope' then
       CheckSameIDEConcurrentScope
+    else if TestStage = 'manual-registration' then
+      CheckManualRegistration
     else if TestStage = 'cross-write' then
       CheckCrossWrite
     else if TestStage = 'cross-read' then

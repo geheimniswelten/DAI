@@ -58,9 +58,9 @@ begin
   Requests[LIndex].Resource := AResource;
   Requests[LIndex].Context := AContext;
   case ACategory of
-    pcReadAccess:
+    pcProjectRead:
       Result := ReadAllowed;
-    pcEditInsideIDE:
+    pcProjectWrite:
       Result := EditAllowed;
   else
     raise EInvalidOperation.Create('Unexpected permission category in project-options dispatch fixture.');

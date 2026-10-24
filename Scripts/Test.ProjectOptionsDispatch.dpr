@@ -79,9 +79,9 @@ begin
   Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'exactly one permission request');
   LRequest := TDAIPermissionManager.Instance.Requests[0];
   if AToolIndex in [1, 2] then
-    LExpectedCategory := pcReadAccess
+    LExpectedCategory := pcProjectRead
   else
-    LExpectedCategory := pcEditInsideIDE;
+    LExpectedCategory := pcProjectWrite;
   Check(LRequest.Category = LExpectedCategory, 'correct permission category for ' + CToolNames[AToolIndex]);
   Check(LRequest.Operation = COperations[AToolIndex], 'meaningful permission operation for ' + CToolNames[AToolIndex]);
   Check(LRequest.Resource = AProject, 'permission bound to exact requested project');

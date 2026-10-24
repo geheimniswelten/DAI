@@ -29,10 +29,13 @@ type
     FConnectionDraftAvailable: array[Boolean] of Boolean;
     FConnectionPortDraft: array[Boolean] of string;
     FConnectionTokenDraft: array[Boolean] of string;
+    FManualRegistrationLoaded: array[Boolean] of Boolean;
+    FManualRegistrationDraft: array[Boolean] of Boolean;
     FPortEdit: TEdit;
     FTokenEdit: TEdit;
     FGenerateTokenButton: TButton;
     FDirectoriesMemo: TMemo;
+    FDirectoriesAlwaysAllowedCheckBox: TCheckBox;
     FDirectoryHintLabel: TLabel;
     FProjectLabel: TLabel;
     FPermissionProjectKey: string;
@@ -47,6 +50,8 @@ type
     FRegisterButton: TButton;
     FUnregisterButton: TButton;
     FFindRegistrationsButton: TButton;
+    FManualRegistrationButton: TButton;
+    FManualClientRegistrationCheckBox: TCheckBox;
     FShowToolsButton: TButton;
     procedure BuildControls;
     procedure RefreshServerStatus;
@@ -54,6 +59,7 @@ type
     procedure AddPermissionRow(const AParent: TWinControl; const ACategory: TDAIPermissionCategory; var ATop: Integer);
     procedure PopulatePermissionCombo(const AComboBox: TComboBox);
     procedure PermissionChanged(Sender: TObject);
+    procedure ResetProjectPermissionDraft(const ACategory: TDAIPermissionCategory);
     procedure PermissionDialogClicked(Sender: TObject);
     procedure RefreshInheritedPermissionHints;
     procedure UpdateProjectPermissionState;
@@ -71,6 +77,7 @@ type
     procedure UnregisterClicked(Sender: TObject);
     procedure FindRegistrationsClicked(Sender: TObject);
     procedure ShowToolsClicked(Sender: TObject);
+    procedure ManualRegistrationClicked(Sender: TObject);
     function PermissionLevelFromCombo(const AComboBox: TComboBox): TDAIPermissionLevel;
     procedure SetPermissionComboLevel(const AComboBox: TComboBox; const ALevel: TDAIPermissionLevel);
     function PermissionContext(const AScope: TDAIPermissionScope): TDAIRequestContext;
@@ -94,6 +101,7 @@ uses
   System.Types,
   System.UITypes,
   Vcl.Dialogs,
+  Vcl.Clipbrd,
   Vcl.ComCtrls,
   Vcl.Graphics,
   h5u.DAI.Clients.Registration,
@@ -109,6 +117,14 @@ uses
   h5u.DAI.Settings;
 
 type
+  TDAIManualRegistrationDialog = class(TForm)
+  private
+    FInfoMemo: TMemo;
+    procedure CopyClicked(Sender: TObject);
+  public
+    constructor CreateWithInfo(const AInfo: string);
+  end;
+
   TDAIRegistrationCleanupDialog = class(TForm)
   private
     FClient: string;
@@ -127,6 +143,55 @@ type
     constructor CreateForClient(const AClient: string);
     destructor Destroy; override;
   end;
+
+constructor TDAIManualRegistrationDialog.CreateWithInfo(const AInfo: string);
+var
+  LCopyButton, LCloseButton: TButton;
+begin
+  inherited CreateNew(nil);
+  Name := 'DAIManualRegistrationDialog';
+  Caption := 'DAI – Manuelle Client-Registrierung';
+  Position := poScreenCenter;
+  BorderStyle := bsSizeable;
+  ClientWidth := 920;
+  ClientHeight := 610;
+  Constraints.MinWidth := 600;
+  Constraints.MinHeight := 360;
+  Font.Name := 'Segoe UI';
+  Font.Size := 9;
+  FInfoMemo := TMemo.Create(Self);
+  FInfoMemo.Name := 'DAIManualRegistrationMemo';
+  FInfoMemo.Parent := Self;
+  FInfoMemo.SetBounds(16, 16, ClientWidth - 32, ClientHeight - 74);
+  FInfoMemo.Anchors := [akLeft, akTop, akRight, akBottom];
+  FInfoMemo.ReadOnly := True;
+  FInfoMemo.ScrollBars := ssBoth;
+  FInfoMemo.WordWrap := False;
+  FInfoMemo.Font.Name := 'Consolas';
+  FInfoMemo.Font.Size := 10;
+  FInfoMemo.Text := AInfo;
+  FInfoMemo.SelStart := 0;
+  LCopyButton := TButton.Create(Self);
+  LCopyButton.Name := 'DAIManualRegistrationCopyButton';
+  LCopyButton.Parent := Self;
+  LCopyButton.SetBounds(16, ClientHeight - 44, 200, 28);
+  LCopyButton.Anchors := [akLeft, akBottom];
+  LCopyButton.Caption := 'Angaben kopieren';
+  LCopyButton.OnClick := CopyClicked;
+  LCloseButton := TButton.Create(Self);
+  LCloseButton.Parent := Self;
+  LCloseButton.SetBounds(ClientWidth - 128, ClientHeight - 44, 112, 28);
+  LCloseButton.Anchors := [akRight, akBottom];
+  LCloseButton.Caption := 'Schließen';
+  LCloseButton.Default := True;
+  LCloseButton.Cancel := True;
+  LCloseButton.ModalResult := mrClose;
+end;
+
+procedure TDAIManualRegistrationDialog.CopyClicked(Sender: TObject);
+begin
+  Clipboard.AsText := FInfoMemo.Text;
+end;
 
 constructor TDAIRegistrationCleanupDialog.CreateForClient(const AClient: string);
 var
@@ -396,7 +461,7 @@ begin
     LComboBox.Style := csDropDownList;
     PopulatePermissionCombo(LComboBox);
     if LScope = psProject then
-      LComboBox.Items.Add('Default')
+      LComboBox.Items.Add(IfThen(DAIPermissionCategoryIsGlobal(ACategory), 'Nur global', 'Default'))
     else
       LComboBox.Items[4] := 'Für diese IDE-Sitzung';
     LComboBox.Tag := Ord(LScope) * (Ord(High(TDAIPermissionCategory)) + 1) + Ord(ACategory);
@@ -555,7 +620,17 @@ begin
   FDirectoriesMemo.Height := 100;
   FDirectoriesMemo.ScrollBars := ssVertical;
   FDirectoriesMemo.WordWrap := False;
-  Inc(LTop, 122);
+  Inc(LTop, 108);
+
+  FDirectoriesAlwaysAllowedCheckBox := TCheckBox.Create(Self);
+  FDirectoriesAlwaysAllowedCheckBox.Parent := Self;
+  FDirectoriesAlwaysAllowedCheckBox.Name := 'DAICustomReadDirectoriesAlwaysAllowedCheckBox';
+  FDirectoriesAlwaysAllowedCheckBox.SetBounds(24, LTop, 736, 24);
+  FDirectoriesAlwaysAllowedCheckBox.Caption := 'Lesen immer erlaubt';
+  FDirectoriesAlwaysAllowedCheckBox.Hint := 'Globales Setting für die zusätzlichen Verzeichnisse. Ohne Häkchen gilt die Leseberechtigung ' +
+    'des aktuellen Projekts, ohne aktives Projekt die globale Leseberechtigung. Schreibzugriffe bleiben gesperrt.';
+  FDirectoriesAlwaysAllowedCheckBox.ShowHint := True;
+  Inc(LTop, 38);
 
   with NewLabel(Self, 'Berechtigungen', 16, LTop) do
     Font.Style := [fsBold];
@@ -577,7 +652,7 @@ begin
 
   LInfoLabel := NewLabel(
     Self,
-    '„Verweigern“, „Nur diesmal“ und „Für diese Session“ sind Laufzeitentscheidungen. „Nie“ und „Immer“ gelten im jeweiligen Bereich.',
+    'Globale Änderungen setzen die entsprechende Auswahl des aktuellen Projekts auf „Default“. Delphi-Sourcen, GetIt und IDE-Lesezugriffe sind immer erlaubt.',
     24,
     LTop
   );
@@ -593,6 +668,7 @@ begin
 
   FClientComboBox := TComboBox.Create(Self);
   FClientComboBox.Parent := Self;
+  FClientComboBox.Name := 'DAIClientComboBox';
   FClientComboBox.Left := 24;
   FClientComboBox.Top := LTop;
   FClientComboBox.Width := 330;
@@ -667,7 +743,26 @@ begin
   FFindRegistrationsButton.Hint := 'Sucht auch DAI-Registrierungen anderer Delphi-Versionen und Profile beim ausgewählten KI-Client.';
   FFindRegistrationsButton.ShowHint := True;
   FFindRegistrationsButton.OnClick := FindRegistrationsClicked;
-  Inc(LTop, 48);
+
+  FManualRegistrationButton := TButton.Create(Self);
+  FManualRegistrationButton.Name := 'DAIManualRegistrationButton';
+  FManualRegistrationButton.Parent := Self;
+  FManualRegistrationButton.SetBounds(368, LTop, 280, 28);
+  FManualRegistrationButton.Caption := 'Manuell registrieren…';
+  FManualRegistrationButton.Hint := 'Zeigt Verbindungsdaten und Konfigurationsbeispiele für die manuelle Registrierung beim ausgewählten KI-Client.';
+  FManualRegistrationButton.ShowHint := True;
+  FManualRegistrationButton.OnClick := ManualRegistrationClicked;
+  Inc(LTop, 36);
+
+  FManualClientRegistrationCheckBox := TCheckBox.Create(Self);
+  FManualClientRegistrationCheckBox.Name := 'DAIManualClientRegistrationCheckBox';
+  FManualClientRegistrationCheckBox.Parent := Self;
+  FManualClientRegistrationCheckBox.SetBounds(24, LTop, 736, 24);
+  FManualClientRegistrationCheckBox.Caption := 'Manuell registriert';
+  FManualClientRegistrationCheckBox.Hint := 'Für die ausgewählte Verbindung: Der DAI-Button ignoriert „Nicht registriert“. ' +
+    'Hinweise auf veraltete oder fehlerhafte automatisch erkannte Registrierungen bleiben sichtbar. Wird beim Speichern oder Registrieren übernommen.';
+  FManualClientRegistrationCheckBox.ShowHint := True;
+  Inc(LTop, 42);
 
   LInfoLabel := NewLabel(
     Self,
@@ -686,6 +781,23 @@ begin
 
   Align := alTop;
   Height := LTop;
+end;
+
+procedure TDAIOptionsFrame.ManualRegistrationClicked(Sender: TObject);
+var
+  LDialog: TDAIManualRegistrationDialog;
+  LInfo: string;
+begin
+  if not ValidateContents then
+    Exit;
+  LInfo := TDAIClientRegistration.ManualRegistrationInfo(SelectedClient, StrToInt(Trim(FPortEdit.Text)),
+    Trim(FTokenEdit.Text), FUseSharedConnectionSettingsCheckBox.Checked);
+  LDialog := TDAIManualRegistrationDialog.CreateWithInfo(LInfo);
+  try
+    LDialog.ShowModal;
+  finally
+    LDialog.Free;
+  end;
 end;
 
 procedure TDAIOptionsFrame.ShowToolsClicked(Sender: TObject);
@@ -803,6 +915,7 @@ begin
   FLoggingCheckBox.Checked := TDAISettings.Instance.LogAccessPoints;
   LoadConnectionSettings;
   FDirectoriesMemo.Lines.Assign(TDAISettings.Instance.CustomReadDirectories);
+  FDirectoriesAlwaysAllowedCheckBox.Checked := TDAISettings.Instance.CustomReadDirectoriesAlwaysAllowed;
   FDirectoriesMemo.TextHint := TDAISettings.Instance.LocalizedProjectsDirectoryHint;
   FDirectoryHintLabel.Caption := 'Vorschlag für diese IDE-Sprache: ' + TDAISettings.Instance.LocalizedProjectsDirectoryHint;
   RefreshServerStatus;
@@ -824,6 +937,10 @@ begin
     FConnectionPortDraft[FDisplayedSharedConnectionSettings] := FPortEdit.Text;
     FConnectionTokenDraft[FDisplayedSharedConnectionSettings] := FTokenEdit.Text;
     FConnectionDraftAvailable[FDisplayedSharedConnectionSettings] := True;
+    FManualRegistrationLoaded[FDisplayedSharedConnectionSettings] :=
+      TDAISettings.Instance.ReadManualClientRegistration(FDisplayedSharedConnectionSettings);
+    FManualRegistrationDraft[FDisplayedSharedConnectionSettings] := FManualRegistrationLoaded[FDisplayedSharedConnectionSettings];
+    FManualClientRegistrationCheckBox.Checked := FManualRegistrationDraft[FDisplayedSharedConnectionSettings];
   finally
     FLoadingConnectionSettings := False;
   end;
@@ -842,6 +959,7 @@ begin
     Exit;
   FConnectionPortDraft[FDisplayedSharedConnectionSettings] := FPortEdit.Text;
   FConnectionTokenDraft[FDisplayedSharedConnectionSettings] := FTokenEdit.Text;
+  FManualRegistrationDraft[FDisplayedSharedConnectionSettings] := FManualClientRegistrationCheckBox.Checked;
   FConnectionDraftAvailable[FDisplayedSharedConnectionSettings] := True;
   try
     if not FConnectionDraftAvailable[LShared] then
@@ -856,10 +974,13 @@ begin
         FConnectionPortDraft[LShared] := FPortEdit.Text;
         FConnectionTokenDraft[LShared] := FTokenEdit.Text;
       end;
+      FManualRegistrationLoaded[LShared] := TDAISettings.Instance.ReadManualClientRegistration(LShared);
+      FManualRegistrationDraft[LShared] := FManualRegistrationLoaded[LShared];
       FConnectionDraftAvailable[LShared] := True;
     end;
     FPortEdit.Text := FConnectionPortDraft[LShared];
     FTokenEdit.Text := FConnectionTokenDraft[LShared];
+    FManualClientRegistrationCheckBox.Checked := FManualRegistrationDraft[LShared];
     FDisplayedSharedConnectionSettings := LShared;
   except
     // Keep the scope and its displayed credentials together after a failed preview.
@@ -868,6 +989,7 @@ begin
       FUseSharedConnectionSettingsCheckBox.Checked := FDisplayedSharedConnectionSettings;
       FPortEdit.Text := FConnectionPortDraft[FDisplayedSharedConnectionSettings];
       FTokenEdit.Text := FConnectionTokenDraft[FDisplayedSharedConnectionSettings];
+      FManualClientRegistrationCheckBox.Checked := FManualRegistrationDraft[FDisplayedSharedConnectionSettings];
     finally
       FLoadingConnectionSettings := False;
     end;
@@ -891,7 +1013,9 @@ begin
       LContext := PermissionContext(LScope);
       for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
       begin
-        if (LScope = psProject) and (FPermissionProjectKey = '') then
+        if (LScope = psGlobal) and (LCategory = pcReferenceRead) then
+          SetPermissionComboLevel(FPermissionComboBoxes[LScope, LCategory], plAlways)
+        else if (LScope = psProject) and ((FPermissionProjectKey = '') or DAIPermissionCategoryIsGlobal(LCategory)) then
           FPermissionComboBoxes[LScope, LCategory].ItemIndex := 6
         else
         begin
@@ -919,10 +1043,14 @@ begin
   LAvailable := (FPermissionProjectKey <> '') and SameText(FPermissionProjectKey, TDAIOTA.ActiveProjectFileName);
   for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
   begin
-    FPermissionComboBoxes[psProject, LCategory].Enabled := LAvailable;
-    FPermissionButtons[LCategory].Enabled := True;
+    FPermissionComboBoxes[psGlobal, LCategory].Enabled := LCategory <> pcReferenceRead;
+    FPermissionComboBoxes[psProject, LCategory].Enabled := LAvailable and not DAIPermissionCategoryIsGlobal(LCategory);
+    FPermissionButtons[LCategory].Enabled := LCategory <> pcReferenceRead;
     FPermissionButtons[LCategory].Hint := DAIPermissionCategoryName(LCategory) + ' – ' +
-      IfThen(LAvailable, 'Berechtigung für das angezeigte Projekt auswählen', 'globale Berechtigung auswählen');
+      IfThen(LAvailable and not DAIPermissionCategoryIsGlobal(LCategory),
+        'Berechtigung für das angezeigte Projekt oder global auswählen', 'globale Berechtigung auswählen');
+    if LCategory = pcReferenceRead then
+      FPermissionComboBoxes[psGlobal, LCategory].Hint := 'Delphi-Sourcen, GetIt-Projekte und IDE-Optionen dürfen immer gelesen werden.';
   end;
   if LAvailable then
     FProjectLabel.Caption := 'Aktuelles Projekt: ' + FPermissionProjectKey + sLineBreak +
@@ -941,7 +1069,9 @@ begin
   for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
   begin
     LComboBox := FPermissionComboBoxes[psProject, LCategory];
-    if not LComboBox.Enabled then
+    if DAIPermissionCategoryIsGlobal(LCategory) then
+      LComboBox.Hint := 'Diese Berechtigung gilt ausschließlich global.'
+    else if not LComboBox.Enabled then
       LComboBox.Hint := 'Kein passendes aktives Projekt.'
     else if LComboBox.ItemIndex = 6 then
       LComboBox.Hint := 'Default: globalen Standard verwenden (' + FPermissionComboBoxes[psGlobal, LCategory].Text + '). ' +
@@ -1169,7 +1299,17 @@ begin
   if not LComboBox.Enabled then
     Exit;
   FPermissionModified[LScope, LCategory] := True;
+  if LScope = psGlobal then
+    ResetProjectPermissionDraft(LCategory);
   RefreshInheritedPermissionHints;
+end;
+
+procedure TDAIOptionsFrame.ResetProjectPermissionDraft(const ACategory: TDAIPermissionCategory);
+begin
+  if (FPermissionProjectKey = '') or DAIPermissionCategoryIsGlobal(ACategory) then
+    Exit;
+  FPermissionComboBoxes[psProject, ACategory].ItemIndex := 6;
+  FPermissionModified[psProject, ACategory] := True;
 end;
 
 procedure TDAIOptionsFrame.PermissionDialogClicked(Sender: TObject);
@@ -1179,8 +1319,6 @@ var
   LContext: TDAIRequestContext;
   LCurrentLevel: TDAIPermissionLevel;
   LDecision: TDAIPermissionPromptResult;
-  LOtherCategory: TDAIPermissionCategory;
-  LOtherLevel: TDAIPermissionLevel;
   LScope: TDAIPermissionScope;
 begin
   if not (Sender is TBitBtn) then
@@ -1200,22 +1338,12 @@ begin
     LCurrentLevel := PermissionLevelFromCombo(FPermissionComboBoxes[psGlobal, LCategory]);
   if not TDAIPermissionDialog.SelectForOptions(LCategory, LContext, LCurrentLevel, LDecision) then
     Exit;
+  if LDecision.ApplyGlobally or DAIPermissionCategoryIsGlobal(LCategory) then
+    LScope := psGlobal;
   SetPermissionComboLevel(FPermissionComboBoxes[LScope, LCategory], LDecision.Level);
   FPermissionModified[LScope, LCategory] := True;
-  if LDecision.ApplyToLowerLevels then
-    for LOtherCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
-    begin
-      if LOtherCategory = LCategory then
-        Continue;
-      LOtherLevel := PermissionLevelFromCombo(FPermissionComboBoxes[LScope, LOtherCategory]);
-      if (LScope = psProject) and (FPermissionComboBoxes[LScope, LOtherCategory].ItemIndex = 6) then
-        LOtherLevel := PermissionLevelFromCombo(FPermissionComboBoxes[psGlobal, LOtherCategory]);
-      if DAIPermissionLevelRank(LOtherLevel) < DAIPermissionLevelRank(LDecision.Level) then
-      begin
-        SetPermissionComboLevel(FPermissionComboBoxes[LScope, LOtherCategory], LDecision.Level);
-        FPermissionModified[LScope, LOtherCategory] := True;
-      end;
-    end;
+  if LScope = psGlobal then
+    ResetProjectPermissionDraft(LCategory);
   RefreshInheritedPermissionHints;
 end;
 
@@ -1234,7 +1362,7 @@ var
   LError: string;
 begin
   UpdateProjectPermissionState;
-  if (FPermissionProjectKey <> '') and not FPermissionComboBoxes[psProject, Low(TDAIPermissionCategory)].Enabled then
+  if (FPermissionProjectKey <> '') and not SameText(FPermissionProjectKey, TDAIOTA.ActiveProjectFileName) then
     for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
       if FPermissionModified[psProject, LCategory] then
         raise EInvalidOperation.Create('Das aktive Projekt hat gewechselt. Projektberechtigungen wurden nicht gespeichert; die Optionen erneut öffnen.');
@@ -1248,12 +1376,16 @@ begin
   TDAISettings.Instance.Port := LPort;
   TDAISettings.Instance.Token := LToken;
   TDAISettings.Instance.CustomReadDirectories.Assign(FDirectoriesMemo.Lines);
+  TDAISettings.Instance.CustomReadDirectoriesAlwaysAllowed := FDirectoriesAlwaysAllowedCheckBox.Checked;
   if FAllowIDEStartStopCheckBox.Checked <> FLoadedAllowIDEStartStop then
     TDAISettings.Instance.AllowIDEStartStop := FAllowIDEStartStopCheckBox.Checked;
+  if FManualClientRegistrationCheckBox.Checked <> FManualRegistrationLoaded[FUseSharedConnectionSettingsCheckBox.Checked] then
+    TDAISettings.Instance.ManualClientRegistration := FManualClientRegistrationCheckBox.Checked;
   try
     TDAISettings.Instance.Save;
   except
     TDAISettings.Instance.DiscardLifecycleChange;
+    TDAISettings.Instance.DiscardManualRegistrationChange;
     raise;
   end;
   FLoadedAllowIDEStartStop := TDAISettings.Instance.AllowIDEStartStop;
@@ -1266,7 +1398,8 @@ begin
       Continue;
     LContext := PermissionContext(LScope);
     for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
-      if FPermissionModified[LScope, LCategory] then
+      if FPermissionModified[LScope, LCategory] and (LCategory <> pcReferenceRead) and
+        ((LScope = psGlobal) or not DAIPermissionCategoryIsGlobal(LCategory)) then
       begin
         if (LScope = psProject) and (FPermissionComboBoxes[LScope, LCategory].ItemIndex = 6) then
           TDAIPermissionManager.Instance.UseGlobalLevelFromOptions(LCategory, LContext)

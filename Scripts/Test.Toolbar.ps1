@@ -3,7 +3,7 @@ param(
     [ValidateSet('Win32', 'Win64', 'Both')]
     [string]$Platform = 'Both',
     [string]$BdsRoot = $env:BDS,
-    [ValidateSet('All', 'LegacyDrag', 'Stream', 'LayoutGrow', 'Popup', 'Health', 'Update')]
+    [ValidateSet('All', 'LegacyDrag', 'Stream', 'LayoutGrow', 'Popup', 'Health', 'Update', 'Permissions')]
     [string]$Focus = 'All'
 )
 

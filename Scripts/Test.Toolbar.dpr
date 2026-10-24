@@ -25,6 +25,7 @@ uses
   h5u.DAI.IDE.Toolbar,
   h5u.DAI.Clients.Registration,
   h5u.DAI.Log,
+  h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
   h5u.DAI.Settings;
@@ -364,8 +365,11 @@ begin
   TDAIRuntime.Reset;
   TDAIClientRegistration.Reset;
   TDAISettings.Instance.Port := 7331;
+  TDAISettings.Instance.ManualClientRegistration := False;
+  TDAISettings.Instance.RaiseManualRead := False;
   TDAILog.Messages.Clear;
-  TDAIPermissionManager.ClearCount := 0;
+  TDAIPermissionManager.Reset;
+  TDAIOTA.ActiveProjectName := '';
 end;
 
 procedure PumpFor(AMilliseconds: Cardinal);
@@ -378,6 +382,51 @@ begin
     CheckSynchronize;
     Sleep(5);
   until GetTickCount64 >= LUntil;
+end;
+
+procedure TestPermissionSummary;
+var
+  LPopup: TPopupMenu;
+  LCount: Integer;
+begin
+  NewHost;
+  TDAIIDEToolbar.Install;
+  TDAIIDEToolbar.Refresh;
+  LPopup := GHost.DAIButton.DropdownMenu;
+  Check(LPopup.Items.Count = 6, 'The status dropdown includes two permission shortcuts after a native separator');
+  Check(LPopup.Items[3].Caption = '-', 'Permission shortcuts follow the requested native separator');
+  Check(LPopup.Items[4].Caption = 'IDE : lesen', 'The IDE shortcut shows the effective read access');
+  Check(LPopup.Items[5].Caption = 'Projekt : kein Projekt', 'An absent project never claims project access');
+  Check(Pos('IDE : lesen', GHost.DAIAction.Hint) > 0, 'The tooltip includes the effective IDE rights');
+  Check(Pos('Projekt : kein Projekt', GHost.DAIAction.Hint) > 0, 'The tooltip includes the absence of an active project');
+  LCount := TDAIPermissionManager.SummaryCount;
+  TDAIIDEToolbar.Refresh;
+  Check(TDAIPermissionManager.SummaryCount = LCount, 'Unchanged toolbar refreshes do not reread project permission files');
+  TDAIOTA.ActiveProjectName := 'C:\ToolbarFixture\First.dproj';
+  TDAIIDEToolbar.Refresh;
+  Check(TDAIPermissionManager.LastProjectKey = TDAIOTA.ActiveProjectName, 'Project summaries use the active project from the OTA');
+  Check(LPopup.Items[5].Caption = 'Projekt : lesen', 'Changing the active project refreshes its effective rights');
+  Check(TDAIPermissionManager.SummaryCount = LCount + 2, 'Changing project invalidates the permission summary cache');
+  TDAIPermissionManager.IDESummary := 'schreiben';
+  TDAIPermissionManager.ProjectSummary := 'Vollzugriff';
+  Inc(TDAIPermissionManager.Version);
+  TDAIIDEToolbar.Refresh;
+  Check(LPopup.Items[4].Caption = 'IDE : schreiben', 'The IDE shortcut follows changed effective write permission');
+  Check(LPopup.Items[5].Caption = 'Projekt : Vollzugriff', 'The project shortcut follows changed effective full access');
+  Check(Pos('Projekt : Vollzugriff', GHost.DAIAction.Hint) > 0, 'The tooltip follows changed project rights');
+  LPopup.Items[4].Click;
+  LPopup.Items[5].Click;
+  Check(GHost.OptionsCount = 2, 'Both permission summaries open the official DAI settings page');
+  Check(GHost.LastPage = 'DAI', 'The rights shortcuts open the existing DAI permissions page');
+  Check(TDAIPermissionManager.ClearCount = 0, 'Opening either rights shortcut preserves all permission decisions');
+  LPopup.Items[2].Click;
+  Check(LPopup.Items[4].Caption = 'IDE : lesen', 'Resetting session grants immediately updates the IDE summary');
+  Check(LPopup.Items[5].Caption = 'Projekt : nachfragen', 'A pending permission is never shown as an effective grant');
+  TDAIPermissionManager.ProjectSummary := 'gesperrt';
+  Inc(TDAIPermissionManager.Version);
+  TDAIIDEToolbar.Refresh;
+  Check(LPopup.Items[5].Caption = 'Projekt : gesperrt', 'A denied project read permission is clearly shown');
+  TDAIIDEToolbar.Shutdown;
 end;
 
 procedure TestReadinessAndStatus;
@@ -1163,6 +1212,11 @@ begin
       TestToolbarLayoutGrowth
     else if ParamStr(3) = 'Health' then
       TestToolbarRegistrationHealth
+    else if ParamStr(3) = 'Permissions' then
+    begin
+      TestPermissionSummary;
+      TestPopupTracking(False, False, False, False, True);
+    end
     else if ParamStr(3) = 'Update' then
     begin
       TestToolbarSoftwareUpdate;
@@ -1176,6 +1230,9 @@ begin
       Writeln('Toolbar checks: readiness and status');
       Flush(Output);
       TestReadinessAndStatus;
+      Writeln('Toolbar checks: effective permission summaries');
+      Flush(Output);
+      TestPermissionSummary;
       Writeln('Toolbar checks: registration health');
       Flush(Output);
       TestToolbarRegistrationHealth;

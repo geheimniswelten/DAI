@@ -61,7 +61,7 @@ begin
     end;
     Check(LDenied = not LExpectedAllowed, 'Freigabe entspricht den beiden Kategorien: ' + AInput);
     Check(Assigned(LResult) = LExpectedAllowed, 'kein Erfolgsobjekt bei Verweigerung');
-    CheckRequest(0, pcEditInsideIDE, 'Delphi-IDE-Fenster steuern: ' + ACanonical);
+    CheckRequest(0, pcIDEOptions, 'Delphi-IDE-Fenster steuern: ' + ACanonical);
     if AEditAllowed and (ACanonical = 'close') then
     begin
       Check(Length(TDAIPermissionManager.Instance.Requests) = 2, 'close fordert zusaetzlich execute an');
@@ -107,7 +107,7 @@ begin
     Check(LRejected, 'fehlender oder nicht als String angegebener Wert ist ungueltig');
     Check(not Assigned(LResult), 'kein Ergebnis fuer ungueltige Aktion');
     Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'ungueltige Aktion fordert kein execute an');
-    CheckRequest(0, pcEditInsideIDE, 'Delphi-IDE-Fenster steuern: ');
+    CheckRequest(0, pcIDEOptions, 'Delphi-IDE-Fenster steuern: ');
     Check(TDAIIDEControl.ControlCalls = 1, 'ungueltige Aktion wird vom Control-Vertrag abgewiesen');
     Check(TDAIIDEControl.LastAction = '', 'ArgumentString akzeptiert keine Zahl/Boolean/null');
     Check(TDAIIDEControl.DeferredCloseCalls = 0, 'ungueltige Aktion stellt kein Close bereit');

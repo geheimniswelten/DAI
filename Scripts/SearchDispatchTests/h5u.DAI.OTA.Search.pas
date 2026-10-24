@@ -17,7 +17,7 @@ type
     class var LastTimeoutMs: Integer;
     class var LastOptions: TDAISourceSearchOptions;
     class var LastPlan: TDAISourceSearchPlan;
-    class var PreparedProjectKeys: TArray<string>;
+    class var PreparedProjectKeys, PreparedRoots: TArray<string>;
     class procedure Reset; static;
     class function Prepare(const AScope, AProject, ADirectory: string; const ATimeoutMs: Integer): TDAISourceSearchPlan; static;
     class function SearchPrepared(const AQuery: string; const APlan: TDAISourceSearchPlan; const AOptions: TDAISourceSearchOptions): TJSONObject; static;
@@ -37,6 +37,7 @@ begin
   LastOptions := Default(TDAISourceSearchOptions);
   LastPlan := Default(TDAISourceSearchPlan);
   PreparedProjectKeys := nil;
+  PreparedRoots := nil;
 end;
 
 class function TDAISourceSearchService.Prepare(const AScope, AProject, ADirectory: string; const ATimeoutMs: Integer): TDAISourceSearchPlan;
@@ -49,7 +50,12 @@ begin
   Result := Default(TDAISourceSearchPlan);
   Result.Scope := AScope;
   Result.Directory := ADirectory;
+  Result.Roots := PreparedRoots;
+  if Length(Result.Roots) = 0 then
+    Result.Roots := ['C:\IsolatedSearchDispatch'];
   Result.ProjectKeys := PreparedProjectKeys;
+  if (Length(Result.ProjectKeys) = 0) and (AScope <> 'references') then
+    Result.ProjectKeys := ['C:\IsolatedSearchDispatch\CapturedActive.dproj'];
   Result.PreparationMs := 7;
 end;
 

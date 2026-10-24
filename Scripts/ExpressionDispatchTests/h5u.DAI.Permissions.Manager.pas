@@ -12,7 +12,7 @@ type
     class var FInstance: TDAIPermissionManager;
   public
     DeniedRequestIndex: Integer;
-    RejectGlobalRead, RejectGlobalExecute: Boolean;
+    RejectGlobalExecute: Boolean;
     Requests: TArray<TPermissionRequest>;
     class function Instance: TDAIPermissionManager; static;
     procedure Reset;
@@ -24,7 +24,7 @@ uses DAI.ExpressionDispatch.TestState;
 class function TDAIPermissionManager.Instance: TDAIPermissionManager;
 begin if FInstance = nil then FInstance := TDAIPermissionManager.Create; Result := FInstance; end;
 procedure TDAIPermissionManager.Reset;
-begin DeniedRequestIndex := -1; RejectGlobalRead := False; RejectGlobalExecute := False; Requests := nil; end;
+begin DeniedRequestIndex := -1; RejectGlobalExecute := False; Requests := nil; end;
 function TDAIPermissionManager.Authorize(const ACategory: TDAIPermissionCategory; const AOperation, AResource: string;
   const AContext: TDAIRequestContext): Boolean;
 var LIndex: Integer;
@@ -38,7 +38,6 @@ begin
   Result := LIndex <> DeniedRequestIndex;
   if AContext.ProjectKey = '' then
   begin
-    if RejectGlobalRead and (ACategory = pcReadAccess) then Result := False;
     if RejectGlobalExecute and (ACategory = pcExecute) then Result := False;
   end;
 end;

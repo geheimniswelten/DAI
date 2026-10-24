@@ -134,6 +134,14 @@ begin
       RaiseLastOSError;
     LCustomRoot := TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'virtual-custom-readonly');
     TDAISettings.Instance.CustomReadDirectories.Add(LCustomRoot);
+    TDAISettings.Instance.CustomReadDirectoriesAlwaysAllowed := False;
+    Check(TDAIOTA.IsAlwaysReadableReference('%BDS%\source\Never.pas') = False, 'classification accepts expanded paths only');
+    Check(TDAIOTA.IsAlwaysReadableReference(TDAISettings.Instance.ExpandPath('%BDS%\source\Never.pas')), 'SDK read is always allowed');
+    Check(not TDAIOTA.IsAlwaysReadableReference(TPath.Combine(LCustomRoot, 'Test.pas')), 'custom read follows project permission by default');
+    TDAISettings.Instance.CustomReadDirectoriesAlwaysAllowed := True;
+    Check(TDAIOTA.IsAlwaysReadableReference(TPath.Combine(LCustomRoot, 'Test.pas')), 'custom always-read flag grants only reading');
+    Check(not TDAIOTA.IsWorkspaceFile(TPath.Combine(LCustomRoot, 'Test.pas')), 'custom always-read flag never grants workspace writes');
+    TDAISettings.Instance.CustomReadDirectoriesAlwaysAllowed := False;
     DeniedCreator('%BDS%\source\NewConsole', 'console', True);
     DeniedCreator('%BDS%\source\NewConsoleUnsaved', 'console', False);
     DeniedCreator('%BDS%/source/NewVCL', 'vcl', True);

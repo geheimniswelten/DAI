@@ -35,7 +35,7 @@ function Extract-One([string]$pattern, [string]$description) {
 # inference is outside this scope; each branch receives a fixed request context.
 $helpers = @()
 foreach ($helperName in @('JsonObjectFromText', 'AddTool', 'ArgumentString', 'StrictArgumentString', 'ArgumentBoolean',
-        'StrictArgumentBoolean', 'ArgumentInteger', 'ArgumentStringArray', 'RequirePermission', 'DirectoryFilesResult', 'DirectoryFilesSchema')) {
+        'StrictArgumentBoolean', 'ArgumentInteger', 'ArgumentStringArray', 'RequirePermission', 'RequireFileReadPermission', 'DirectoryFilesResult', 'DirectoryFilesSchema')) {
     $helpers += Extract-One "(?<body>^(?:function|procedure) $helperName\(.*?^end;\r\n)" $helperName
 }
 $branches = @()
@@ -57,7 +57,7 @@ foreach ($toolName in $toolNames) {
     }
 }
 if (-not $branchText.Contains('TDAISourceSearchService.') -or -not $branchText.Contains('DirectoryFilesResult(') -or
-    -not $branchText.Contains('RequirePermission(pcReadAccess')) {
+    -not $branchText.Contains('RequirePermission(pcProjectRead')) {
     throw 'Expected read permissions and final search/directory service calls are missing.'
 }
 $callHeader = Extract-One '(?<body>^class function TDAIMCPTools\.CallTool\(.*?\r\nvar\r\n.*?)(?=\r\nbegin\r\n)' 'CallTool declarations'
@@ -105,6 +105,7 @@ uses
   h5u.DAI.OTA.Helpers,
   h5u.DAI.OTA.Search,
   h5u.DAI.Source.Search,
+  h5u.DAI.Settings,
   h5u.DAI.Permissions.Manager;
 
 '@

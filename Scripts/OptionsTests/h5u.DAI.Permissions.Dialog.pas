@@ -8,7 +8,7 @@ uses
 type
   TDAIPermissionPromptResult = record
     Level: TDAIPermissionLevel;
-    ApplyToLowerLevels: Boolean;
+    ApplyGlobally: Boolean;
   end;
 
   // Options tests stage synthetic answers without displaying a permission dialog.
@@ -16,7 +16,7 @@ type
   public
     class var NextAccepted: Boolean;
     class var NextLevel: TDAIPermissionLevel;
-    class var NextApplyToLowerLevels: Boolean;
+    class var NextApplyGlobally: Boolean;
     class var CallCount: Integer;
     class var LastCategory: TDAIPermissionCategory;
     class var LastProjectKey: string;
@@ -32,7 +32,7 @@ class procedure TDAIPermissionDialog.Reset;
 begin
   NextAccepted := False;
   NextLevel := plAsk;
-  NextApplyToLowerLevels := False;
+  NextApplyGlobally := False;
   CallCount := 0;
   LastProjectKey := '';
   LastCurrentLevel := plAsk;
@@ -46,7 +46,7 @@ begin
   LastProjectKey := AContext.ProjectKey;
   LastCurrentLevel := ACurrentLevel;
   APrompt.Level := NextLevel;
-  APrompt.ApplyToLowerLevels := NextApplyToLowerLevels;
+  APrompt.ApplyGlobally := NextApplyGlobally;
   Result := NextAccepted;
 end;
 

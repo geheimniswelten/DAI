@@ -13,6 +13,9 @@ type
     FEnabled: Boolean;
     FAllowIDEStartStop: Boolean;
     FLifecycleChangePending: Boolean;
+    FManualClientRegistration: Boolean;
+    FManualRegistrationChangePending: Boolean;
+    FManualRegistrationChangeShared: Boolean;
     FLogAccessPoints: Boolean;
     FPort: Integer;
     FToken: string;
@@ -24,8 +27,11 @@ type
     FLoadedConnectionPort: Integer;
     FLoadedConnectionToken: string;
     FCustomReadDirectories: TStringList;
+    FCustomReadDirectoriesAlwaysAllowed: Boolean;
     FRegistryRoot: string;
     function GetAllowIDEStartStop: Boolean;
+    function GetManualClientRegistration: Boolean;
+    procedure SetManualClientRegistration(const ARegistered: Boolean);
     procedure SetAllowIDEStartStop(const AAllowed: Boolean);
     function ReadRootDirectory: string;
     function StudioVersion: string;
@@ -40,6 +46,8 @@ type
     function ReadConnectionSettings(const AShared: Boolean; out APort: Integer; out AToken: string): Boolean;
     procedure RefreshConnectionSettings;
     procedure DiscardLifecycleChange;
+    procedure DiscardManualRegistrationChange;
+    function ReadManualClientRegistration(const AShared: Boolean): Boolean;
     function ExpandPath(const APath: string): string;
     function LocalizedProjectsDirectoryHint: string;
     function DelphiSourceDirectory: string;
@@ -50,11 +58,13 @@ type
     function ReadOnlyRootDirectories: TArray<string>;
     property Enabled: Boolean read FEnabled write FEnabled;
     property AllowIDEStartStop: Boolean read GetAllowIDEStartStop write SetAllowIDEStartStop;
+    property ManualClientRegistration: Boolean read GetManualClientRegistration write SetManualClientRegistration;
     property LogAccessPoints: Boolean read FLogAccessPoints write FLogAccessPoints;
     property Port: Integer read FPort write FPort;
     property Token: string read FToken write FToken;
     property UseSharedConnectionSettings: Boolean read FUseSharedConnectionSettings write FUseSharedConnectionSettings;
     property CustomReadDirectories: TStringList read FCustomReadDirectories;
+    property CustomReadDirectoriesAlwaysAllowed: Boolean read FCustomReadDirectoriesAlwaysAllowed write FCustomReadDirectoriesAlwaysAllowed;
     property RegistryRoot: string read FRegistryRoot;
   end;
 
@@ -222,9 +232,11 @@ begin
   inherited Create;
   FCustomReadDirectories := TStringList.Create;
   FCustomReadDirectories.LineBreak := sLineBreak;
+  FCustomReadDirectoriesAlwaysAllowed := False;
   FEnabled := True;
   FAllowIDEStartStop := True;
   FLifecycleChangePending := False;
+  FManualRegistrationChangePending := False;
   FLogAccessPoints := False;
   FPort := CDAIDefaultPort;
   FToken := GenerateToken;
@@ -317,6 +329,52 @@ begin
   FLifecycleChangePending := False;
 end;
 
+procedure TDAISettings.DiscardManualRegistrationChange;
+begin
+  FManualRegistrationChangePending := False;
+end;
+
+function TDAISettings.ReadManualClientRegistration(const AShared: Boolean): Boolean;
+var
+  LRegistry: TRegistry;
+  LRegistryRoot: string;
+  LAccess: Cardinal;
+begin
+  Result := False;
+  LAccess := KEY_READ;
+  if AShared then
+  begin
+    LRegistryRoot := CSharedConnectionRegistryRoot;
+    LAccess := LAccess or KEY_WOW64_64KEY;
+  end
+  else
+    LRegistryRoot := FRegistryRoot;
+  LRegistry := TRegistry.Create(LAccess);
+  try
+    LRegistry.RootKey := HKEY_CURRENT_USER;
+    if LRegistry.OpenKeyReadOnly(LRegistryRoot) and LRegistry.ValueExists('ManualClientRegistration') and
+      (LRegistry.GetDataType('ManualClientRegistration') = rdInteger) then
+      Result := LRegistry.ReadBool('ManualClientRegistration');
+  finally
+    LRegistry.Free;
+  end;
+end;
+
+function TDAISettings.GetManualClientRegistration: Boolean;
+begin
+  if FManualRegistrationChangePending and (FManualRegistrationChangeShared = FUseSharedConnectionSettings) then
+    Exit(FManualClientRegistration);
+  // Read the current destination so another IDE's confirmation is observed.
+  Result := ReadManualClientRegistration(FUseSharedConnectionSettings);
+end;
+
+procedure TDAISettings.SetManualClientRegistration(const ARegistered: Boolean);
+begin
+  FManualClientRegistration := ARegistered;
+  FManualRegistrationChangeShared := FUseSharedConnectionSettings;
+  FManualRegistrationChangePending := True;
+end;
+
 function TDAISettings.GetAllowIDEStartStop: Boolean;
 var
   LReason: string;
@@ -343,6 +401,8 @@ var
   LHasLegacyPair: Boolean;
 begin
   DiscardLifecycleChange;
+  DiscardManualRegistrationChange;
+  FCustomReadDirectoriesAlwaysAllowed := False;
   FUseSharedConnectionSettings := True;
   FConnectionBaselineKnown[False] := False;
   FConnectionBaselineKnown[True] := False;
@@ -375,6 +435,8 @@ begin
           FLogAccessPoints := LRegistry.ReadBool('LogAccessPoints');
         if LRegistry.ValueExists('CustomReadDirectories') then
           FCustomReadDirectories.Text := LRegistry.ReadString('CustomReadDirectories');
+        if LRegistry.ValueExists('CustomReadDirectoriesAlwaysAllowed') then
+          FCustomReadDirectoriesAlwaysAllowed := LRegistry.ReadBool('CustomReadDirectoriesAlwaysAllowed');
         if not FUseSharedConnectionSettings then
         begin
           if LRegistry.ValueExists('Port') then
@@ -595,6 +657,7 @@ var
   LStoredToken: string;
   LConnectionChanged: Boolean;
   LConnectionClean: Boolean;
+  LManualAccess: Cardinal;
 begin
   if not InRange(FPort, 1024, 65535) then
     raise EArgumentOutOfRangeException.Create('Der Port muss zwischen 1024 und 65535 liegen.');
@@ -643,8 +706,30 @@ begin
       LRegistry.WriteBool('Enabled', FEnabled);
       LRegistry.WriteBool('LogAccessPoints', FLogAccessPoints);
       LRegistry.WriteString('CustomReadDirectories', FCustomReadDirectories.Text);
+      LRegistry.WriteBool('CustomReadDirectoriesAlwaysAllowed', FCustomReadDirectoriesAlwaysAllowed);
     finally
       LRegistry.Free;
+    end;
+    if FManualRegistrationChangePending then
+    begin
+      LManualAccess := KEY_READ or KEY_WRITE;
+      if FManualRegistrationChangeShared then
+      begin
+        LRegistryRoot := CSharedConnectionRegistryRoot;
+        LManualAccess := LManualAccess or KEY_WOW64_64KEY;
+      end
+      else
+        LRegistryRoot := FRegistryRoot;
+      LRegistry := TRegistry.Create(LManualAccess);
+      try
+        LRegistry.RootKey := HKEY_CURRENT_USER;
+        if not LRegistry.OpenKey(LRegistryRoot, True) then
+          RaiseLastOSError;
+        LRegistry.WriteBool('ManualClientRegistration', FManualClientRegistration);
+        FManualRegistrationChangePending := False;
+      finally
+        LRegistry.Free;
+      end;
     end;
     FConnectionBaselineKnown[FUseSharedConnectionSettings] := True;
     FConnectionBaselinePort[FUseSharedConnectionSettings] := FPort;

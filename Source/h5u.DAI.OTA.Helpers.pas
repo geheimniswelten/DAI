@@ -37,6 +37,7 @@ type
     class function SameFile(const ALeft: string; const ARight: string): Boolean; static;
     class function IsPathWithin(const AFileName: string; const ARootDirectory: string): Boolean; static;
     class function IsReadOnlyReferenceFile(const AFileName: string): Boolean; static;
+    class function IsAlwaysReadableReference(const AFileName: string): Boolean; static;
     class procedure RequireNoReparseWritePath(const APath: string); static;
     class function IsWorkspaceFile(const AFileName: string): Boolean; static;
     class function WorkspaceRoots: TArray<string>; static;
@@ -674,6 +675,23 @@ begin
       Exit(True);
 end;
 
+class function TDAIOTA.IsAlwaysReadableReference(const AFileName: string): Boolean;
+var
+  LRoot: string;
+  LRoots: TArray<string>;
+begin
+  if TDAISettings.Instance.CustomReadDirectoriesAlwaysAllowed then
+    LRoots := TDAISettings.Instance.ReadOnlyRootDirectories
+  else
+    LRoots := [TDAISettings.Instance.DelphiSourceDirectory, TDAISettings.Instance.ToolsAPIDirectory,
+      TDAISettings.Instance.CatalogRepositoryDirectory, TDAISettings.Instance.CatalogRepositoryAllUsersDirectory,
+      TDAISettings.Instance.SamplesDirectory];
+  for LRoot in LRoots do
+    if (Trim(LRoot) <> '') and (IsPathWithin(AFileName, LRoot) or SameFile(AFileName, LRoot)) then
+      Exit(True);
+  Result := False;
+end;
+
 class procedure TDAIOTA.RequireNoReparseWritePath(const APath: string);
 var
   LAttributes, LError: DWORD;
@@ -720,6 +738,7 @@ begin
     if IsPathWithin(AFileName, LRoot) then
       Exit(True);
 
+  // Open editors use project permissions; reference roots remain read-only above.
   Result := IsFileOpenInEditor(AFileName);
 end;
 

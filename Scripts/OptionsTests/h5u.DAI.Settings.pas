@@ -11,6 +11,11 @@ type
     class var FInstance: TDAISettings;
     FAllowIDEStartStop: Boolean;
     FLifecycleChangePending: Boolean;
+    FManualClientRegistration: Boolean;
+    FManualRegistrationPending: Boolean;
+    FManualRegistrationShared: Boolean;
+    function GetManualClientRegistration: Boolean;
+    procedure SetManualClientRegistration(const ARegistered: Boolean);
     function GetAllowIDEStartStop: Boolean;
     procedure SetAllowIDEStartStop(const AAllowed: Boolean);
   public
@@ -26,11 +31,17 @@ type
     Port: Integer;
     Token: string;
     CustomReadDirectories: TStringList;
+    CustomReadDirectoriesAlwaysAllowed: Boolean;
     SaveCount: Integer;
     PersistedAllowIDEStartStop: Boolean;
     PolicyWriteCount: Integer;
     DiscardCount: Integer;
     FailSave: Boolean;
+    SavedManualClientRegistration: array[Boolean] of Boolean;
+    ManualRegistrationReadCount: Integer;
+    ManualRegistrationWriteCount: Integer;
+    ManualRegistrationDiscardCount: Integer;
+    FailManualRegistrationRead: Boolean;
     constructor Create;
     destructor Destroy; override;
     class function Instance: TDAISettings; static;
@@ -41,6 +52,9 @@ type
     function ReadConnectionSettings(const AShared: Boolean; out APort: Integer; out AToken: string): Boolean;
     procedure Save;
     procedure DiscardLifecycleChange;
+    procedure DiscardManualRegistrationChange;
+    function ReadManualClientRegistration(const AShared: Boolean): Boolean;
+    property ManualClientRegistration: Boolean read GetManualClientRegistration write SetManualClientRegistration;
     property AllowIDEStartStop: Boolean read GetAllowIDEStartStop write SetAllowIDEStartStop;
   end;
 
@@ -75,6 +89,34 @@ procedure TDAISettings.DiscardLifecycleChange;
 begin
   Inc(DiscardCount);
   FLifecycleChangePending := False;
+end;
+
+procedure TDAISettings.DiscardManualRegistrationChange;
+begin
+  Inc(ManualRegistrationDiscardCount);
+  FManualRegistrationPending := False;
+end;
+
+function TDAISettings.ReadManualClientRegistration(const AShared: Boolean): Boolean;
+begin
+  Inc(ManualRegistrationReadCount);
+  if FailManualRegistrationRead then
+    raise Exception.Create('Synthetic manual-registration-preview failure');
+  Result := SavedManualClientRegistration[AShared];
+end;
+
+function TDAISettings.GetManualClientRegistration: Boolean;
+begin
+  if FManualRegistrationPending and (FManualRegistrationShared = UseSharedConnectionSettings) then
+    Exit(FManualClientRegistration);
+  Result := SavedManualClientRegistration[UseSharedConnectionSettings];
+end;
+
+procedure TDAISettings.SetManualClientRegistration(const ARegistered: Boolean);
+begin
+  FManualClientRegistration := ARegistered;
+  FManualRegistrationShared := UseSharedConnectionSettings;
+  FManualRegistrationPending := True;
 end;
 
 function TDAISettings.GetAllowIDEStartStop: Boolean;
@@ -112,6 +154,7 @@ begin
   FInstance.Port := 7101;
   FInstance.Token := 'synthetic-stored-options-token';
   FInstance.CustomReadDirectories.Clear;
+  FInstance.CustomReadDirectoriesAlwaysAllowed := False;
   FInstance.SaveCount := 0;
   FInstance.FAllowIDEStartStop := True;
   FInstance.FLifecycleChangePending := False;
@@ -119,6 +162,15 @@ begin
   FInstance.PolicyWriteCount := 0;
   FInstance.DiscardCount := 0;
   FInstance.FailSave := False;
+  FInstance.FManualClientRegistration := False;
+  FInstance.FManualRegistrationPending := False;
+  FInstance.FManualRegistrationShared := True;
+  FInstance.SavedManualClientRegistration[False] := False;
+  FInstance.SavedManualClientRegistration[True] := False;
+  FInstance.ManualRegistrationReadCount := 0;
+  FInstance.ManualRegistrationWriteCount := 0;
+  FInstance.ManualRegistrationDiscardCount := 0;
+  FInstance.FailManualRegistrationRead := False;
 end;
 
 procedure TDAISettings.RefreshConnectionSettings;
@@ -149,6 +201,12 @@ begin
   Inc(SaveCount);
   if FailSave then
     raise Exception.Create('Synthetic settings-save failure');
+  if FManualRegistrationPending then
+  begin
+    SavedManualClientRegistration[FManualRegistrationShared] := FManualClientRegistration;
+    Inc(ManualRegistrationWriteCount);
+    FManualRegistrationPending := False;
+  end;
   SavedConnectionAvailable[UseSharedConnectionSettings] := True;
   SavedConnectionPort[UseSharedConnectionSettings] := Port;
   SavedConnectionToken[UseSharedConnectionSettings] := Token;

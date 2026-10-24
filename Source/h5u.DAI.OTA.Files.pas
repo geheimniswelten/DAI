@@ -44,6 +44,49 @@ uses
   h5u.DAI.Text.Encoding,
   h5u.DAI.Types;
 
+function IsPermissionPolicyFile(const AFileName: string): Boolean;
+var
+  LBaseName: string;
+  LStreamSeparator: Integer;
+begin
+  LBaseName := Copy(AFileName, LastDelimiter('\/', AFileName) + 1, MaxInt);
+  LStreamSeparator := Pos(':', LBaseName);
+  if LStreamSeparator > 0 then
+    SetLength(LBaseName, LStreamSeparator - 1);
+  Result := EndsText('.dai.permissions.json', LBaseName.TrimRight([' ', '.']));
+end;
+
+procedure RequireNoPermissionPolicyWrite(const AFileName: string);
+var
+  LBaseName: string;
+  LPath: string;
+  LResolvedPath: string;
+  LRequired: DWORD;
+  LStreamSeparator: Integer;
+  LWritten: DWORD;
+begin
+  // Project write access must not grant itself compilation or execution rights.
+  if IsPermissionPolicyFile(AFileName) then
+    raise EDAIAccessDenied.Create('DAI-Projektberechtigungen dürfen nur über die DAI-Berechtigungsabfrage oder die DAI-Optionen geändert werden.');
+  LPath := AFileName;
+  LBaseName := Copy(LPath, LastDelimiter('\/', LPath) + 1, MaxInt);
+  LStreamSeparator := Pos(':', LBaseName);
+  if LStreamSeparator > 0 then
+    SetLength(LPath, Length(LPath) - Length(LBaseName) + LStreamSeparator - 1);
+  // Existing 8.3 aliases must resolve before comparing the protected basename.
+  // Nonexistent targets are covered by the lexical check above.
+  LRequired := GetLongPathNameW(PWideChar(LPath), nil, 0);
+  if LRequired = 0 then
+    Exit;
+  SetLength(LResolvedPath, LRequired);
+  LWritten := GetLongPathNameW(PWideChar(LPath), PWideChar(LResolvedPath), LRequired);
+  if (LWritten = 0) or (LWritten >= LRequired) then
+    Exit;
+  SetLength(LResolvedPath, LWritten);
+  if IsPermissionPolicyFile(LResolvedPath) then
+    raise EDAIAccessDenied.Create('DAI-Projektberechtigungen dürfen nur über die DAI-Berechtigungsabfrage oder die DAI-Optionen geändert werden.');
+end;
+
 function PrepareFormEditorText(const AFileName, AText: string): string;
 var
   LBinary: TMemoryStream;
@@ -656,6 +699,7 @@ begin
   LOriginalEncoding := '';
   LOriginalLineEnding := '';
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
+  RequireNoPermissionPolicyWrite(LFileName);
   TDAIOTA.RequireNoReparseWritePath(LFileName);
   if SameText(TPath.GetExtension(LFileName), '.dpr') or SameText(TPath.GetExtension(LFileName), '.dpk') then
     LProjectSidecar := ChangeFileExt(LFileName, '.dproj')

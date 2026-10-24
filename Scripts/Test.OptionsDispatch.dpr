@@ -93,7 +93,7 @@ begin
     end;
     LResult := DispatchOptions('OPTIONS_SEARCH', LArguments, GContext);
     Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'search only requests read access');
-    CheckPermission(0, pcReadAccess, LProject, 'Optionsnamen und IDE-Insight-Metadaten durchsuchen');
+    CheckPermission(0, pcReferenceRead, LProject, 'Optionsnamen und IDE-Insight-Metadaten durchsuchen');
     Check(TDAIOptionsSearchService.Calls = 1, 'one final search');
     Check(TDAIOptionsSearchService.PermissionCount = 1, 'read permission precedes search');
     Check(TDAIOptionsSearchService.Query = 'Ausgabepfad', 'query forwarded exactly');
@@ -130,12 +130,10 @@ begin
       LProject := 'Exact Project';
     end;
     LResult := DispatchOptions('OPTIONS_OPEN', LArguments, GContext);
-    Check(Length(TDAIPermissionManager.Instance.Requests) = 3, 'opening checks read/edit/execute');
-    CheckPermission(0, pcReadAccess, LProject, 'Ziel der Optionsnavigation lesen');
-    CheckPermission(1, pcEditInsideIDE, LProject, 'Optionsdialog öffnen und Option auswählen');
-    CheckPermission(2, pcExecute, LProject, 'Optionsnavigation über die IDE ausführen');
+    Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'project options use project write only');
+    CheckPermission(0, pcProjectWrite, LProject, 'Projektoptionsdialog öffnen und Option auswählen');
     Check(TDAIOptionsNavigationService.OpenCalls = 1, 'one final open');
-    Check(TDAIOptionsNavigationService.OpenPermissionCount = 3, 'all permissions precede opening');
+    Check(TDAIOptionsNavigationService.OpenPermissionCount = 1, 'all permissions precede opening');
     Check(TDAIOptionsNavigationService.StatusCalls = 0, 'opening does not dispatch poll');
     Check(TDAIOptionsSearchService.Calls = 0, 'opening is separate from catalog search');
     LRequest := TDAIOptionsNavigationService.LastRequest;
@@ -182,10 +180,8 @@ begin
     LArguments.AddPair('scope', AScope);
     LArguments.AddPair('query', 'Ausgabepfad');
     LResult := DispatchOptions('options_open', LArguments, GContext);
-    Check(Length(TDAIPermissionManager.Instance.Requests) = 3, 'IDE/Insight opening also requires all permissions');
-    CheckPermission(0, pcReadAccess, '', 'Ziel der Optionsnavigation lesen');
-    CheckPermission(1, pcEditInsideIDE, '', 'Optionsdialog öffnen und Option auswählen');
-    CheckPermission(2, pcExecute, '', 'Optionsnavigation über die IDE ausführen');
+    Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'IDE/Insight use global IDE option access');
+    CheckPermission(0, pcIDEOptions, '', 'IDE-Optionsdialog öffnen und Option auswählen');
     Check(TDAIOptionsNavigationService.LastRequest.Project = '', 'IDE/Insight do not bind active project selector');
     Check(TDAIOptionsNavigationService.LastRequest.Scope = AScope, 'IDE/Insight exact scope');
     Check(TDAIOptionsNavigationService.LastRequest.Query = 'Ausgabepfad', 'IDE/Insight exact query');
@@ -228,7 +224,7 @@ begin
     LArguments.AddPair('request_id', CRequestId);
     LResult := DispatchOptions('options_open', LArguments, GContext);
     Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'status only checks read');
-    CheckPermission(0, pcReadAccess, CRequestId, 'Status der Optionsnavigation lesen');
+    CheckPermission(0, pcReferenceRead, CRequestId, 'Status der Optionsnavigation lesen');
     Check(TDAIOptionsNavigationService.LastRequestId = CRequestId, 'request ID forwarded exactly');
     Check(TDAIOptionsNavigationService.StatusCalls = 1, 'one final status');
     Check(TDAIOptionsNavigationService.StatusPermissionCount = 1, 'read precedes status');
@@ -457,8 +453,6 @@ begin
     TestStatus;
     TestDenied(0, 0);
     TestDenied(1, 0);
-    TestDenied(1, 1);
-    TestDenied(1, 2);
     TestDenied(2, 0);
     TestInvalidArguments;
     TestSchemas;

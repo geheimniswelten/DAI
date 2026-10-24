@@ -26,7 +26,7 @@ function Extract-One([string]$pattern, [string]$description) {
 # Replace only final SDK services, permission authority and transport context inference.
 $helpers = @()
 foreach ($helperName in @('JsonObjectFromText', 'AddTool', 'StrictArgumentString', 'RequiredArgumentString',
-    'StrictArgumentInteger', 'StrictArgumentBoolean', 'ArgumentUInt32', 'RequirePermission', 'CursorFileContext', 'EvaluationArguments')) {
+    'StrictArgumentInteger', 'StrictArgumentBoolean', 'ArgumentUInt32', 'RequirePermission', 'RequireFileReadPermission', 'CursorFileContext', 'EvaluationArguments')) {
     $helpers += Extract-One "(?<body>^(?:function|procedure) $helperName\(.*?^end;\r?\n)" $helperName
 }
 $branches = @()
@@ -57,7 +57,7 @@ function DispatchExpression(const AName: string; const AArguments: TJSONObject; 
 function ListExpressionSchemas: TJSONArray;
 implementation
 uses System.Classes, System.SysUtils, h5u.DAI.OTA.CursorExpression, h5u.DAI.OTA.Evaluation, h5u.DAI.OTA.ExpressionUI,
-  h5u.DAI.Permissions.Manager, DAI.ExpressionDispatch.TestState;
+  h5u.DAI.Permissions.Manager, h5u.DAI.OTA.Helpers, h5u.DAI.Settings, DAI.ExpressionDispatch.TestState;
 function ContextForArguments(const AArguments: TJSONObject; const AContext: TDAIRequestContext): TDAIRequestContext;
 begin Result := ResolveArgumentsContext(AArguments, AContext); end;
 '@

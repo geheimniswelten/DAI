@@ -39,6 +39,14 @@ type
     procedure InspectDialog(Sender: TObject);
   end;
 
+  TManualRegistrationProbe = class
+  public
+    Failure: string;
+    Seen: Boolean;
+    Timer: TTimer;
+    procedure InspectDialog(Sender: TObject);
+  end;
+
   TCleanupProbe = class
   public
     Failure: string;
@@ -457,6 +465,244 @@ begin
     TDAIClientRegistration.RemoveJSON := '';
     LProbe.Timer.Free;
     LProbe.Free;
+  end;
+end;
+
+function ManualRegistrationControl(const AFrame: TDAIOptionsFrame): TCheckBox;
+var
+  LComponent: TComponent;
+begin
+  LComponent := AFrame.FindComponent('DAIManualClientRegistrationCheckBox');
+  Check(LComponent is TCheckBox, 'Manual registration has a named checkbox');
+  Result := TCheckBox(LComponent);
+end;
+
+procedure TManualRegistrationProbe.InspectDialog(Sender: TObject);
+var
+  LDialog: TCustomForm;
+  LMemo: TMemo;
+  LCopy: TButton;
+  LClose: TButton;
+  LComponent: TComponent;
+begin
+  Timer.Enabled := False;
+  LDialog := Screen.ActiveCustomForm;
+  try
+    Check(Assigned(LDialog), 'Manual registration opens a native modal form');
+    Check(LDialog.Name = 'DAIManualRegistrationDialog', 'Manual registration opens its intended isolated dialog');
+    Seen := True;
+    LMemo := LDialog.FindComponent('DAIManualRegistrationMemo') as TMemo;
+    LCopy := LDialog.FindComponent('DAIManualRegistrationCopyButton') as TButton;
+    Check(Assigned(LMemo) and Assigned(LCopy), 'Manual registration memo and explicit copy button are named');
+    Check(LMemo.ReadOnly, 'Registration preview cannot edit connection details');
+    Check(LMemo.ScrollBars = ssBoth, 'Manual registration text supports both scrollbars');
+    Check(not LMemo.WordWrap, 'Manual registration preserves configuration formatting');
+    Check(LMemo.Anchors = [akLeft, akTop, akRight, akBottom], 'Manual registration text grows with its dialog');
+    Check(Pos('Synthetic manual registration for ' + TDAIClientRegistration.LastManualClient, LMemo.Text) > 0,
+      'Manual dialog displays the exact selected client backend result');
+    Check(Pos(TDAIClientRegistration.LastManualToken, LMemo.Text) > 0, 'Manual registration displays the current synthetic draft token');
+    Check(Assigned(LCopy.OnClick) and LCopy.Enabled, 'Copying is available through an explicit button');
+    LClose := nil;
+    for LComponent in LDialog do
+      if LComponent is TButton then
+        if TButton(LComponent).Cancel then
+          LClose := TButton(LComponent);
+    Check(Assigned(LClose), 'Manual registration dialog offers an Escape-enabled close button');
+    Check(LClose.ModalResult <> mrNone, 'Manual registration close button has a modal result');
+    LClose.Click;
+    Check(LDialog.ModalResult <> mrNone, 'Close button exits the actual modal loop');
+  except
+    on E: Exception do
+    begin
+      Failure := E.Message;
+      if Assigned(LDialog) then
+        if LDialog.Name = 'DAIManualRegistrationDialog' then
+          LDialog.ModalResult := mrCancel;
+    end;
+  end;
+end;
+
+procedure CheckManualRegistrationOptions;
+const
+  CClientIndices: array[0..2] of Integer = (0, 1, 3);
+  CClients: array[0..2] of string = ('all', 'codex', 'claude-desktop');
+var
+  LHost: TForm;
+  LFrame: TDAIOptionsFrame;
+  LApplicationHandle: HWND;
+  LManual: TCheckBox;
+  LScope: TCheckBox;
+  LButton: TButton;
+  LClient: TComboBox;
+  LProbe: TManualRegistrationProbe;
+  LIndex: Integer;
+  LHealthCount: Integer;
+  LReadCount: Integer;
+  LWriteCount: Integer;
+  LFailed: Boolean;
+
+  procedure CreateFrame;
+  begin
+    LFrame := TDAIOptionsFrame.Create(nil);
+    LFrame.Visible := False;
+    LFrame.Parent := LHost;
+    LFrame.LoadFromSettings;
+    LManual := ManualRegistrationControl(LFrame);
+    LScope := SharedConnectionControl(LFrame);
+  end;
+
+begin
+  TestStage := 'ManualRegistrationOptions';
+  TDAIRuntime.Reset;
+  TDAISettings.Reset;
+  TDAIPermissionManager.Reset;
+  TDAIIDEToolbar.Reset;
+  TDAIClientRegistration.RegisterCount := 0;
+  TDAIClientRegistration.UnregisterCount := 0;
+  TDAIClientRegistration.ManualInfoCount := 0;
+  TDAISettings.Instance.SavedManualClientRegistration[False] := True;
+  LHost := TForm.CreateNew(nil);
+  LFrame := nil;
+  LProbe := nil;
+  LApplicationHandle := Application.Handle;
+  try
+    LHost.Visible := False;
+    Application.Handle := LHost.Handle;
+    CreateFrame;
+    Check(not LManual.Checked and not TDAISettings.Instance.ManualClientRegistration,
+      'Manual registration defaults to false in the active shared connection scope');
+    Check(LManual.Caption = 'Manuell registriert', 'Manual registration checkbox has the requested caption');
+    LManual.Checked := True;
+    Check(not TDAISettings.Instance.ManualClientRegistration, 'Checkbox changes remain an options draft');
+    TDAISettings.Instance.FailConnectionRead := True;
+    LFailed := False;
+    try
+      LScope.Checked := False;
+    except
+      on E: Exception do
+        LFailed := E.Message = 'Synthetic connection-preview failure';
+    end;
+    TDAISettings.Instance.FailConnectionRead := False;
+    Check(LFailed and LScope.Checked and LManual.Checked, 'Failed connection preview restores its original scope and manual flag draft');
+    Check(TDAISettings.Instance.UseSharedConnectionSettings, 'Failed preview leaves the effective saved scope unchanged');
+    TDAISettings.Instance.FailManualRegistrationRead := True;
+    LFailed := False;
+    try
+      LScope.Checked := False;
+    except
+      on E: Exception do
+        LFailed := E.Message = 'Synthetic manual-registration-preview failure';
+    end;
+    TDAISettings.Instance.FailManualRegistrationRead := False;
+    Check(LFailed and LScope.Checked and LManual.Checked, 'Failed flag preview restores the previous scope and unsaved acknowledgement');
+    Check(EditControl(LFrame, True).Text = IntToStr(TDAISettings.Instance.Port), 'Failed flag preview restores its matching port');
+    Check(EditControl(LFrame, False).Text = TDAISettings.Instance.Token, 'Failed flag preview restores its matching token');
+    LScope.Checked := False;
+    Check(LManual.Checked, 'Switching connection scope loads its separately saved manual flag');
+    LManual.Checked := False;
+    Check(TDAISettings.Instance.SavedManualClientRegistration[False], 'Editing local manual flag does not persist it');
+    LScope.Checked := True;
+    Check(LManual.Checked, 'Returning to the shared scope restores its unsaved manual registration draft');
+    LScope.Checked := False;
+    Check(not LManual.Checked, 'Returning to the local scope restores its separate unsaved draft');
+    FreeAndNil(LFrame);
+    Check((TDAISettings.Instance.SaveCount = 0) and (TDAISettings.Instance.ManualRegistrationWriteCount = 0),
+      'Cancelling manual registration drafts saves neither settings nor flags');
+    Check(not TDAISettings.Instance.ManualClientRegistration and TDAISettings.Instance.UseSharedConnectionSettings,
+      'Cancellation preserves the effective shared scope and its saved false flag');
+    CreateFrame;
+    Check(not LManual.Checked, 'Reopening options discards the cancelled shared manual flag');
+    LScope.Checked := False;
+    Check(LManual.Checked, 'Reopening also preserves the saved local manual flag');
+
+    LClient := LFrame.FindComponent('DAIClientComboBox') as TComboBox;
+    LButton := LFrame.FindComponent('DAIManualRegistrationButton') as TButton;
+    Check(Assigned(LClient) and Assigned(LButton), 'Manual registration button and client selector have stable names');
+    Check(LButton.Caption = 'Manuell registrieren…', 'Manual registration button has the requested caption');
+    LProbe := TManualRegistrationProbe.Create;
+    LProbe.Timer := TTimer.Create(nil);
+    LProbe.Timer.Enabled := False;
+    LProbe.Timer.Interval := 25;
+    LProbe.Timer.OnTimer := LProbe.InspectDialog;
+    EditControl(LFrame, True).Text := ' 7457 ';
+    EditControl(LFrame, False).Text := ' synthetic-manual-preview-draft ';
+    LHealthCount := TDAIIDEToolbar.CheckCount;
+    LReadCount := TDAISettings.Instance.ConnectionRefreshCount;
+    LManual.Checked := False;
+    for LIndex := Low(CClientIndices) to High(CClientIndices) do
+    begin
+      LClient.ItemIndex := CClientIndices[LIndex];
+      LClient.OnChange(LClient);
+      LProbe.Seen := False;
+      LProbe.Failure := '';
+      LProbe.Timer.Enabled := True;
+      LButton.Click;
+      LProbe.Timer.Enabled := False;
+      Check(LProbe.Seen and (LProbe.Failure = ''), 'Manual registration inspection: ' + LProbe.Failure);
+      Check(TDAIClientRegistration.ManualInfoCount = LIndex + 1, 'Each manual preview obtains its contents exactly once');
+      Check(TDAIClientRegistration.LastManualClient = CClients[LIndex], 'Manual preview uses the selected client');
+      Check(TDAIClientRegistration.LastManualPort = 7457, 'Manual preview uses the current trimmed draft port');
+      Check(TDAIClientRegistration.LastManualToken = 'synthetic-manual-preview-draft', 'Manual preview uses the current trimmed draft token');
+      Check(not TDAIClientRegistration.LastManualShared, 'Manual preview uses the current unsaved destination scope');
+      Check(EditControl(LFrame, True).Text = ' 7457 ', 'Closing manual preview preserves the port draft');
+      Check(EditControl(LFrame, False).Text = ' synthetic-manual-preview-draft ', 'Closing manual preview preserves the token draft');
+      Check(not LManual.Checked, 'Opening manual instructions never marks the client as manually registered');
+      CheckNoPersistence;
+    end;
+    Check(TDAISettings.Instance.ConnectionRefreshCount = LReadCount, 'Manual preview does not reload effective connection settings');
+    Check(TDAIIDEToolbar.CheckCount = LHealthCount, 'Manual preview does not change effective toolbar health');
+    Check((TDAIRuntime.StartCount = 0) and (TDAIRuntime.StopCount = 0), 'Manual preview does not start or stop the server');
+    LProbe.Timer.Free;
+    FreeAndNil(LProbe);
+
+    LScope.Checked := True;
+    LManual.Checked := True;
+    LFrame.StoreToSettings;
+    Check(TDAISettings.Instance.SavedManualClientRegistration[True], 'Accepting shared settings saves the manual registration acknowledgement');
+    Check(TDAISettings.Instance.ManualRegistrationWriteCount = 1, 'A changed acknowledgement is persisted once');
+    Check(TDAIIDEToolbar.LastManualClientRegistration, 'Toolbar health refresh sees the newly saved acknowledgement');
+    Check(TDAIIDEToolbar.CheckCount = LHealthCount + 1, 'Saving the manual registration acknowledgement refreshes toolbar health once');
+    LScope.Checked := False;
+    LManual.Checked := False;
+    LFrame.StoreToSettings;
+    Check(not TDAISettings.Instance.SavedManualClientRegistration[False], 'Accepting local settings changes only the local acknowledgement');
+    Check(TDAISettings.Instance.SavedManualClientRegistration[True], 'Local save preserves the shared acknowledgement');
+    Check(not TDAIIDEToolbar.LastManualClientRegistration, 'Toolbar health sees the saved local acknowledgement removal');
+    LWriteCount := TDAISettings.Instance.ManualRegistrationWriteCount;
+    LHealthCount := TDAIIDEToolbar.CheckCount;
+    LManual.Checked := True;
+    TDAISettings.Instance.FailSave := True;
+    LFailed := False;
+    try
+      LFrame.StoreToSettings;
+    except
+      on E: Exception do
+        LFailed := E.Message = 'Synthetic settings-save failure';
+    end;
+    Check(LFailed, 'Failed settings save is reported without accepting the manual registration draft');
+    Check(not TDAISettings.Instance.ManualClientRegistration, 'Failed save discards the staged effective manual registration flag');
+    Check(TDAISettings.Instance.ManualRegistrationWriteCount = LWriteCount, 'Failed save persists no manual registration flag');
+    Check(TDAISettings.Instance.ManualRegistrationDiscardCount = 1, 'Failure clears the pending manual flag through its explicit API');
+    Check(TDAIIDEToolbar.CheckCount = LHealthCount, 'Failed save does not refresh toolbar health with an unaccepted flag');
+    TDAISettings.Instance.FailSave := False;
+    LFrame.StoreToSettings;
+    Check(TDAISettings.Instance.ManualClientRegistration, 'Retry accepts the preserved checkbox draft');
+    Check(TDAISettings.Instance.ManualRegistrationWriteCount = LWriteCount + 1, 'Retry persists the changed manual flag once');
+    Check(TDAIIDEToolbar.LastManualClientRegistration, 'Retry refreshes toolbar health after successful persistence');
+    LWriteCount := TDAISettings.Instance.ManualRegistrationWriteCount;
+    TDAISettings.Instance.SavedManualClientRegistration[False] := False;
+    LFrame.StoreToSettings;
+    Check(TDAISettings.Instance.ManualRegistrationWriteCount = LWriteCount, 'Unchanged save does not overwrite a separately changed acknowledgement');
+    Check(not TDAISettings.Instance.ManualClientRegistration, 'Unchanged save preserves an external acknowledgement removal');
+  finally
+    if Assigned(LProbe) then
+    begin
+      LProbe.Timer.Free;
+      LProbe.Free;
+    end;
+    LFrame.Free;
+    Application.Handle := LApplicationHandle;
+    LHost.Free;
   end;
 end;
 
@@ -981,12 +1227,12 @@ var
   LFrame: TDAIOptionsFrame;
   LHost: TForm;
   LApplicationHandle: HWND;
-  LOriginalProject: string;
-  LLoadedProject: string;
+  LOriginalProject, LLoadedProject: string;
   LManager: TDAIPermissionManager;
   LCategory: TDAIPermissionCategory;
   LGlobal, LProject: TComboBox;
   LDialogButton: TControl;
+  LDirectoriesCheckBox: TCheckBox;
   LWriteCount, LCallCount, LSettingsSaveCount: Integer;
   LWrite: TPermissionWrite;
   LFailed: Boolean;
@@ -1017,10 +1263,10 @@ begin
     LManager.ProjectLevels[LCategory] := plNever;
     LManager.ProjectInherits[LCategory] := False;
   end;
-  LManager.GlobalLevels[pcReadAccess] := plAlways;
+  LManager.GlobalLevels[pcProjectRead] := plAlways;
   LManager.GlobalLevels[pcCompile] := plAsk;
-  LManager.ProjectLevels[pcReadAccess] := plSession;
-  LManager.ProjectInherits[pcEditOutsideIDE] := True;
+  LManager.ProjectLevels[pcProjectRead] := plSession;
+  LManager.ProjectInherits[pcProjectWrite] := True;
   LHost := TForm.CreateNew(nil);
   LFrame := nil;
   LApplicationHandle := Application.Handle;
@@ -1032,59 +1278,60 @@ begin
     begin
       LGlobal := PermissionCombo(LFrame, 'Global', LCategory);
       LProject := PermissionCombo(LFrame, 'Project', LCategory);
-      Check(LGlobal.Enabled and LProject.Enabled, 'Both permission columns enabled with active project');
+      Check(LGlobal.Enabled = (LCategory <> pcReferenceRead), 'Reference read is fixed; other global permissions are editable');
+      Check(LProject.Enabled = not DAIPermissionCategoryIsGlobal(LCategory), 'Only project permissions have editable overrides');
       Check((LGlobal.Width = 190) and (LProject.Width = 190), 'Permission combos use requested 190-pixel width');
       Check((LGlobal.Top = LProject.Top) and (LGlobal.Left + LGlobal.Width < LProject.Left), 'Permission choices share a row side by side');
       LDialogButton := PermissionDialogButton(LFrame, LCategory);
-      Check(LDialogButton.Enabled, 'Permission row dialog button enabled');
+      Check(LDialogButton.Enabled = (LCategory <> pcReferenceRead), 'Fixed reference reading cannot open a permission selector');
       Check((LDialogButton.Left > LProject.Left + LProject.Width) and
-        (Abs(LDialogButton.Top - LProject.Top) <= 2), 'Single permission dialog button sits to the right of both choices');
-      Check((LFrame.FindComponent(Format('DAIPermissionGlobal%dDialogButton', [Ord(LCategory)])) = nil) and
-        (LFrame.FindComponent(Format('DAIPermissionProject%dDialogButton', [Ord(LCategory)])) = nil), 'No per-column permission dialog buttons remain');
-      Check(Pos('projekt', LowerCase(LDialogButton.Hint)) > 0, 'Row button hint identifies active project scope');
-      Check((LGlobal.Items.Count = 6) and (LProject.Items.Count = 7), 'Only project choices include inheritance');
-      Check(LProject.Items[6] = 'Default', 'Project inheritance label stays concise');
+        (Abs(LDialogButton.Top - LProject.Top) <= 2), 'Single selector sits to the right of both choices');
+      Check((LGlobal.Items.Count = 6) and (LProject.Items.Count = 7), 'Global/project choices retain their expected sizes');
+      if DAIPermissionCategoryIsGlobal(LCategory) then
+        Check(LProject.Items[6] = 'Nur global', 'Global-only rows explain the unavailable project override')
+      else
+        Check(LProject.Items[6] = 'Default', 'Project inheritance label stays concise');
     end;
-    Check(PermissionCombo(LFrame, 'Global', pcReadAccess).ItemIndex = 5, 'Global column loads its independent level');
-    Check(PermissionCombo(LFrame, 'Project', pcReadAccess).ItemIndex = 4, 'Project column loads its independent override');
-    Check(PermissionCombo(LFrame, 'Project', pcEditOutsideIDE).ItemIndex = 6, 'Inherited project value is visibly Default');
+    Check(PermissionCombo(LFrame, 'Global', pcReferenceRead).ItemIndex = 5, 'Reference reading always displays Always despite synthetic saved deny');
+    Check(PermissionCombo(LFrame, 'Project', pcReferenceRead).ItemIndex = 6, 'Fixed reference reading has no project override');
+    Check(PermissionCombo(LFrame, 'Global', pcProjectRead).ItemIndex = 5, 'Project reading loads its global setting');
+    Check(PermissionCombo(LFrame, 'Project', pcProjectRead).ItemIndex = 4, 'Project reading loads an independent project override');
+    Check(PermissionCombo(LFrame, 'Project', pcProjectWrite).ItemIndex = 6, 'Inherited project writing is visibly Default');
+    LDirectoriesCheckBox := TCheckBox(LFrame.FindComponent('DAICustomReadDirectoriesAlwaysAllowedCheckBox'));
+    Check(Assigned(LDirectoriesCheckBox), 'Additional directories have a named global reading checkbox');
+    Check((LDirectoriesCheckBox.Caption = 'Lesen immer erlaubt') and not LDirectoriesCheckBox.Checked,
+      'Additional directory reading defaults to the project permission');
+    Check(Pos('Schreibzugriffe bleiben gesperrt', LDirectoriesCheckBox.Hint) > 0, 'Directory checkbox explains immutable write protection');
     LFrame.StoreToSettings;
-    Check(LManager.WriteCount = 0, 'Unchanged save does not materialize inherited or explicit permission values');
+    Check(LManager.WriteCount = 0, 'Unchanged save does not materialize any permission value');
 
     EditControl(LFrame, True).Text := '7123';
     EditControl(LFrame, False).Text := ' synthetic-permission-column-token ';
     ChoosePermission(LFrame, 'Global', pcCompile, 4);
-    ChoosePermission(LFrame, 'Global', pcEditInsideIDE, 4);
-    ChoosePermission(LFrame, 'Global', pcEditOutsideIDE, 4);
-    ChoosePermission(LFrame, 'Global', pcExecute, 4);
-    TDAIPermissionDialog.NextLevel := plSession;
-    TDAIPermissionDialog.NextApplyToLowerLevels := True;
-    ClickPermissionDialog(LFrame, pcCompile);
-    Check(TDAIPermissionDialog.LastProjectKey = LLoadedProject, 'Row dialog defaults to captured active project');
-    Check(TDAIPermissionDialog.LastCurrentLevel = plNever, 'Dialog sees current project draft');
-    Check(PermissionCombo(LFrame, 'Project', pcCompile).ItemIndex = 1, 'Cancelled permission dialog preserves current project choice');
+    ChoosePermission(LFrame, 'Global', pcIDEOptions, 4);
+    Check(PermissionCombo(LFrame, 'Project', pcCompile).ItemIndex = 6, 'Global combo change resets the corresponding project draft to Default');
+    Check(PermissionCombo(LFrame, 'Project', pcProjectRead).ItemIndex = 4, 'Global change preserves other project categories');
+    TDAIPermissionDialog.NextLevel := plAlways;
+    TDAIPermissionDialog.NextApplyGlobally := True;
+    ClickPermissionDialog(LFrame, pcProjectRead);
+    Check(TDAIPermissionDialog.LastProjectKey = LLoadedProject, 'Row dialog starts with the captured active project');
+    Check(TDAIPermissionDialog.LastCurrentLevel = plSession, 'Dialog sees the selected project draft');
+    Check(PermissionCombo(LFrame, 'Project', pcProjectRead).ItemIndex = 4, 'Cancelled global selection preserves the project override');
     Check(LManager.WriteCount = 0, 'Cancelled dialog writes no permission');
-
     TDAIPermissionDialog.NextAccepted := True;
-    ClickPermissionDialog(LFrame, pcCompile);
-    Check(PermissionCombo(LFrame, 'Project', pcCompile).ItemIndex = 4, 'Accepted row dialog stages project level');
-    Check(PermissionCombo(LFrame, 'Project', pcEditInsideIDE).ItemIndex = 4, 'Lower project grant is raised in same draft');
-    Check(PermissionCombo(LFrame, 'Project', pcExecute).ItemIndex = 4, 'Apply-to-lower also raises another project category');
-    Check(PermissionCombo(LFrame, 'Project', pcReadAccess).ItemIndex = 4, 'Apply-to-lower preserves an equal existing project grant');
-    Check(PermissionCombo(LFrame, 'Project', pcEditOutsideIDE).ItemIndex = 6, 'Equal effective inherited grant stays Default');
-    Check(PermissionCombo(LFrame, 'Global', pcReadAccess).ItemIndex = 5, 'Project row dialog preserves stronger global grant');
-    Check(PermissionCombo(LFrame, 'Global', pcCompile).ItemIndex = 4, 'Project row dialog preserves independently staged global choice');
-    Check(LManager.WriteCount = 0, 'Accepted permission dialog stages without immediate persistence');
-    Check(EditControl(LFrame, True).Text = '7123', 'Permission dialog preserves draft port');
-    Check(EditControl(LFrame, False).Text = ' synthetic-permission-column-token ', 'Permission dialog preserves draft bearer token');
+    ClickPermissionDialog(LFrame, pcProjectRead);
+    Check(PermissionCombo(LFrame, 'Global', pcProjectRead).ItemIndex = 5, 'Global dialog selection stages the global level');
+    Check(PermissionCombo(LFrame, 'Project', pcProjectRead).ItemIndex = 6, 'Global dialog selection resets only its project override');
+    Check(PermissionCombo(LFrame, 'Project', pcExecute).ItemIndex = 1, 'Global selection never raises other permissions');
+    Check(LManager.WriteCount = 0, 'Accepted dialog stages without immediate persistence');
+    Check(EditControl(LFrame, True).Text = '7123', 'Permission selector preserves draft port');
+    Check(EditControl(LFrame, False).Text = ' synthetic-permission-column-token ', 'Permission selector preserves draft token');
 
     TDAIPermissionDialog.NextLevel := plOnce;
-    TDAIPermissionDialog.NextApplyToLowerLevels := False;
+    TDAIPermissionDialog.NextApplyGlobally := False;
     ClickPermissionDialog(LFrame, pcExecute);
-    Check(TDAIPermissionDialog.LastProjectKey = LLoadedProject, 'Project dialog uses captured active project');
-    Check(PermissionCombo(LFrame, 'Project', pcExecute).ItemIndex = 3, 'Project selection is staged independently');
-    Check(PermissionCombo(LFrame, 'Global', pcExecute).ItemIndex = 4, 'Project dialog leaves global selection unchanged');
-    Check(LManager.WriteCount = 0, 'Both columns remain drafts until options are saved');
+    Check(PermissionCombo(LFrame, 'Project', pcExecute).ItemIndex = 3, 'Unchecked scope checkbox stages an explicit project selection');
+    Check(PermissionCombo(LFrame, 'Global', pcExecute).ItemIndex = 1, 'Project selection preserves the global level');
     SyntheticProjectFileName := 'C:\SyntheticDAITest\OtherProject.dproj';
     LSettingsSaveCount := TDAISettings.Instance.SaveCount;
     LFailed := False;
@@ -1094,43 +1341,35 @@ begin
       on E: EInvalidOperation do
         LFailed := Pos('aktive Projekt hat gewechselt', E.Message) > 0;
     end;
-    Check(LFailed, 'Project switch rejects a captured permission draft');
-    Check((LManager.WriteCount = 0) and (TDAISettings.Instance.SaveCount = LSettingsSaveCount), 'Project guard runs before any persistence');
-    Check(not PermissionCombo(LFrame, 'Project', pcExecute).Enabled, 'Project switch disables captured project controls');
+    Check(LFailed, 'Project switch rejects captured permission drafts');
+    Check((LManager.WriteCount = 0) and (TDAISettings.Instance.SaveCount = LSettingsSaveCount), 'Project guard runs before all persistence');
     SyntheticProjectFileName := LLoadedProject;
     LFrame.StoreToSettings;
-    Check((LManager.GlobalWriteCount = 4) and (LManager.ProjectWriteCount = 3), 'Only changed fields in each scope are persisted');
+    Check((LManager.GlobalWriteCount = 3) and (LManager.ProjectWriteCount = 3), 'Save writes global drafts, their resets and the explicit project choice');
+    Check((LManager.ResetCount = 2) and LManager.ProjectInherits[pcProjectRead] and LManager.ProjectInherits[pcCompile],
+      'Global changes persist Default for each corresponding current project permission');
+    Check(not LManager.ProjectInherits[pcExecute], 'Independent explicit project selection is saved');
     for LWrite in LManager.Writes do
-      Check((LWrite.ProjectKey = '') or (LWrite.ProjectKey = LLoadedProject), 'Project switch cannot redirect a captured permission draft');
-    Check(LManager.ProjectInherits[pcEditOutsideIDE], 'Saving other edits does not materialize inherited project values');
+    begin
+      Check(LWrite.Category <> pcReferenceRead, 'Fixed reference reading is never persisted');
+      Check((LWrite.ProjectKey = '') or (LWrite.ProjectKey = LLoadedProject), 'Save cannot redirect captured project changes');
+      Check((LWrite.ProjectKey = '') or not DAIPermissionCategoryIsGlobal(LWrite.Category), 'Global-only rights never create project records');
+    end;
     LWriteCount := LManager.WriteCount;
-    LManager.GlobalLevels[pcReadAccess] := plNever;
+    LManager.GlobalLevels[pcProjectRead] := plNever;
     LFrame.StoreToSettings;
-    Check(LManager.WriteCount = LWriteCount, 'Repeated unchanged save does not replay permission grants');
-    Check(LManager.GlobalLevels[pcReadAccess] = plNever, 'Unchanged stale field preserves an external permission update');
+    Check((LManager.WriteCount = LWriteCount) and (LManager.GlobalLevels[pcProjectRead] = plNever),
+      'Repeated unchanged save preserves external permission updates');
 
     ChoosePermission(LFrame, 'Project', pcExecute, 6);
-    Check(LManager.ResetCount = 0, 'Selecting Default only stages an override reset');
     LFrame.StoreToSettings;
-    Check((LManager.ResetCount = 1) and LManager.ProjectInherits[pcExecute], 'Accepted options reset project override to global inheritance');
-    Check(LManager.Writes[High(LManager.Writes)].ProjectKey = LLoadedProject, 'Reset targets captured project');
-    Check(LManager.Writes[High(LManager.Writes)].UseGlobal, 'Reset uses dedicated inheritance operation');
-    LWriteCount := LManager.WriteCount;
-    LFrame.StoreToSettings;
-    Check(LManager.WriteCount = LWriteCount, 'Unchanged Default is not reset repeatedly');
-
+    Check((LManager.ResetCount = 3) and LManager.ProjectInherits[pcExecute], 'Selecting Default removes only the explicit project override');
     TDAIPermissionDialog.NextLevel := plSession;
     ClickPermissionDialog(LFrame, pcExecute);
-    Check(TDAIPermissionDialog.LastCurrentLevel = plSession, 'Inherited dialog starts from the effective global value');
-    Check(PermissionCombo(LFrame, 'Project', pcExecute).ItemIndex = 4, 'Accepting equal effective level stages an explicit override');
-    Check(LManager.WriteCount = LWriteCount, 'Equal-level override remains a draft until saved');
+    Check(TDAIPermissionDialog.LastCurrentLevel = plNever, 'Inherited selector starts with the effective global draft');
     LFrame.StoreToSettings;
-    Check((LManager.WriteCount = LWriteCount + 1) and not LManager.ProjectInherits[pcExecute], 'Explicit equal-level choice stops inheritance');
-    ChoosePermission(LFrame, 'Project', pcExecute, 6);
-    LFrame.StoreToSettings;
-    Check((LManager.ResetCount = 2) and LManager.ProjectInherits[pcExecute], 'Explicit override can be returned to Default');
+    Check(not LManager.ProjectInherits[pcExecute] and (LManager.ProjectLevels[pcExecute] = plSession), 'Project session choice stops inheritance');
     LWriteCount := LManager.WriteCount;
-
     ChoosePermission(LFrame, 'Global', pcExecute, 3);
     TDAISettings.Instance.FailSave := True;
     LFailed := False;
@@ -1140,38 +1379,46 @@ begin
       on E: Exception do
         LFailed := E.Message = 'Synthetic settings-save failure';
     end;
-    Check(LFailed and (LManager.WriteCount = LWriteCount), 'Failed settings save does not persist staged permission changes');
+    Check(LFailed and (LManager.WriteCount = LWriteCount), 'Settings failure does not persist permission drafts');
     TDAISettings.Instance.FailSave := False;
     LFrame.StoreToSettings;
-    Check((LManager.WriteCount = LWriteCount + 1) and (LManager.GlobalLevels[pcExecute] = plOnce), 'Permission draft survives a failed save for retry');
-    ChoosePermission(LFrame, 'Project', pcExecute, 5);
+    Check((LManager.WriteCount = LWriteCount + 2) and (LManager.GlobalLevels[pcExecute] = plOnce) and LManager.ProjectInherits[pcExecute],
+      'Retry retains both the global selection and its project reset');
     LWriteCount := LManager.WriteCount;
+    ChoosePermission(LFrame, 'Project', pcProjectWrite, 5);
+    LDirectoriesCheckBox.Checked := True;
     FreeAndNil(LFrame);
-    Check((LManager.WriteCount = LWriteCount) and LManager.ProjectInherits[pcExecute], 'Cancelling options discards explicit project draft');
+    Check((LManager.WriteCount = LWriteCount) and LManager.ProjectInherits[pcProjectWrite], 'Cancel discards explicit permission drafts');
+    Check(not TDAISettings.Instance.CustomReadDirectoriesAlwaysAllowed, 'Cancel discards the additional directory checkbox draft');
+    CreateFrame;
+    LDirectoriesCheckBox := TCheckBox(LFrame.FindComponent('DAICustomReadDirectoriesAlwaysAllowedCheckBox'));
+    Check(not LDirectoriesCheckBox.Checked, 'Reopening reloads the saved directory permission');
+    LDirectoriesCheckBox.Checked := True;
+    LFrame.StoreToSettings;
+    Check(TDAISettings.Instance.CustomReadDirectoriesAlwaysAllowed, 'Accepted settings save the global directory reading flag');
+    FreeAndNil(LFrame);
 
     SyntheticProjectFileName := '';
     CreateFrame;
     for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
     begin
-      Check(PermissionCombo(LFrame, 'Global', LCategory).Enabled, 'Global permissions remain editable without active project');
-      Check(not PermissionCombo(LFrame, 'Project', LCategory).Enabled, 'Project permissions disabled without active project');
-      LDialogButton := PermissionDialogButton(LFrame, LCategory);
-      Check(LDialogButton.Enabled, 'Row permission dialog remains available without active project');
-      Check(Pos('global', LowerCase(LDialogButton.Hint)) > 0, 'No-project row button hint identifies global scope');
+      Check(PermissionCombo(LFrame, 'Global', LCategory).Enabled = (LCategory <> pcReferenceRead), 'Global rights remain editable without a project');
+      Check(not PermissionCombo(LFrame, 'Project', LCategory).Enabled, 'All project choices are disabled without a project');
+      Check(PermissionDialogButton(LFrame, LCategory).Enabled = (LCategory <> pcReferenceRead), 'Only configurable rights expose a selector');
     end;
     LCallCount := TDAIPermissionDialog.CallCount;
+    ClickPermissionDialog(LFrame, pcReferenceRead);
+    Check(TDAIPermissionDialog.CallCount = LCallCount, 'Disabled fixed-read selector does not prompt');
     TDAIPermissionDialog.NextLevel := plAlways;
-    ClickPermissionDialog(LFrame, pcReadAccess);
-    Check(TDAIPermissionDialog.CallCount = LCallCount + 1, 'No-project row button opens its permission selector');
-    Check(TDAIPermissionDialog.LastProjectKey = '', 'No-project row dialog explicitly targets global scope');
-    Check(PermissionCombo(LFrame, 'Global', pcReadAccess).ItemIndex = 5, 'No-project row dialog stages global permission choice');
-    Check(LManager.WriteCount = LWriteCount, 'No-project dialog also waits for accepted options before persistence');
-    ChoosePermission(LFrame, 'Project', pcReadAccess, 5);
-    ChoosePermission(LFrame, 'Global', pcReadAccess, 5);
+    ClickPermissionDialog(LFrame, pcIDEOptions);
+    Check(TDAIPermissionDialog.LastProjectKey = '', 'Global-only selector targets the global scope');
+    Check(PermissionCombo(LFrame, 'Global', pcIDEOptions).ItemIndex = 5, 'No-project selector stages the global choice');
+    ChoosePermission(LFrame, 'Project', pcIDEOptions, 5);
+    ChoosePermission(LFrame, 'Global', pcReferenceRead, 1);
     LFrame.StoreToSettings;
-    Check(LManager.WriteCount = LWriteCount + 1, 'No-project save persists only changed global field');
-    Check((LManager.Writes[High(LManager.Writes)].ProjectKey = '') and not LManager.Writes[High(LManager.Writes)].UseGlobal,
-      'Disabled project drafts never fall back to global writes');
+    Check(LManager.WriteCount = LWriteCount + 1, 'Disabled controls cannot persist reference or project changes');
+    Check((LManager.Writes[High(LManager.Writes)].ProjectKey = '') and (LManager.Writes[High(LManager.Writes)].Category = pcIDEOptions),
+      'No-project save persists only the intended global IDE setting');
   finally
     LFrame.Free;
     Application.Handle := LApplicationHandle;
@@ -1189,6 +1436,7 @@ begin
     CheckConnectionScopeOptions;
     CheckPermissionColumns;
     CheckRegistrationHealthRefresh;
+    CheckManualRegistrationOptions;
     Writeln('PASS: ', CheckCount, ' native options-frame UI checks');
   except
     on E: Exception do

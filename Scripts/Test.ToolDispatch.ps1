@@ -31,7 +31,7 @@ function Extract-One([string]$pattern, [string]$description) {
 # services. Their original source bytes are inserted without rewriting logic.
 # Only the permission authority and final window action are isolated doubles.
 $argumentString = Extract-One '(?<body>function ArgumentString\(.*?\r\nend;\r\n)(?=\r\nfunction ArgumentBoolean\()' 'ArgumentString'
-$requirePermission = Extract-One '(?<body>procedure RequirePermission\(.*?\r\nend;\r\n)(?=\r\nprocedure EnsureDebuggerIdle;)' 'RequirePermission'
+$requirePermission = Extract-One '(?<body>procedure RequirePermission\(.*?\r\nend;\r\n)(?=\r\nprocedure RequireFileReadPermission\()' 'RequirePermission'
 $branch = Extract-One "(?<body>  if SameText\(AName, 'ide_window_control'\) then\r\n.*?)(?=  if SameText\(AName, 'ide_logs_read'\) then)" 'window branch'
 $callHeader = Extract-One '(?<body>class function TDAIMCPTools\.CallTool\(.*?\r\nvar\r\n.*?)(?=\r\nbegin\r\n)' 'CallTool declarations'
 $actionDeclaration = [regex]::Match($callHeader, '(?m)^  LAction: string;\r?$').Value.TrimEnd("`r")

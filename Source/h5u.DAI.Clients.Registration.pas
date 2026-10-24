@@ -15,6 +15,7 @@ type
   TDAIClientRegistration = class sealed
   public
     class function Status(const AClient: string = ''): TJSONObject; static;
+    class function ManualRegistrationInfo(const AClient: string; const APort: Integer; const AToken: string; const AShared: Boolean): string; static;
     class function Health(out ADetails: string): TDAIRegistrationHealth; static;
     class function ChangeVersion: Integer; static;
     class function RegisterFiles(const AClient: string = ''): TJSONObject; static;
@@ -74,9 +75,14 @@ var
   GRegistrationLock: TObject;
   GChangeVersion: Integer;
 
-function Endpoint: string;
+function Endpoint(const APort: Integer): string; overload;
 begin
-  Result := 'http://' + CDAIDefaultBindAddress + ':' + IntToStr(TDAISettings.Instance.Port) + CDAIMcpPath;
+  Result := 'http://' + CDAIDefaultBindAddress + ':' + IntToStr(APort) + CDAIMcpPath;
+end;
+
+function Endpoint: string; overload;
+begin
+  Result := Endpoint(TDAISettings.Instance.Port);
 end;
 
 function OwnershipFile(const AClient: TClientDefinition): string;
@@ -150,7 +156,7 @@ begin
   Result := TDAICodexRegistration.BridgeFileName;
 end;
 
-function BuildDefinition(AIndex: Integer): TClientDefinition;
+function BuildDefinition(AIndex: Integer; const AShared: Boolean): TClientDefinition; overload;
 var
   LHome: string;
   LAppData: string;
@@ -162,9 +168,9 @@ begin
   Result.Supported := True;
   Result.Format := 'json';
   Result.Transport := 'streamable-http';
-  Result.ServerName := TDAICodexRegistration.ServerName;
-  Result.LauncherServerName := TDAICodexRegistration.LauncherServerName;
-  if TDAISettings.Instance.UseSharedConnectionSettings then
+  Result.ServerName := DAIRegistrationServerName(AShared, TDAISettings.Instance.RegistryRoot);
+  Result.LauncherServerName := Result.ServerName + '_start';
+  if AShared then
     Result.ConnectionScope := 'shared'
   else
   begin
@@ -291,20 +297,31 @@ begin
   end;
 end;
 
-function BuildEntry(const AClient: TClientDefinition): string;
+function BuildDefinition(AIndex: Integer): TClientDefinition; overload;
+begin
+  Result := BuildDefinition(AIndex, TDAISettings.Instance.UseSharedConnectionSettings);
+end;
+
+procedure ValidateConnection(const APort: Integer; const AToken: string);
+var
+  LCharacter: Char;
+begin
+  if (APort < 1024) or (APort > 65535) then
+    raise EDAIClientConfigConflict.Create('Der MCP-Port muss zwischen 1024 und 65535 liegen.');
+  if Trim(AToken) = '' then
+    raise EDAIClientConfigConflict.Create('Ein leerer Bearer-Token kann nicht registriert werden.');
+  for LCharacter in AToken do
+    if (Ord(LCharacter) < 32) or (Ord(LCharacter) = 127) then
+      raise EDAIClientConfigConflict.Create('Steuerzeichen im Bearer-Token werden nicht registriert.');
+end;
+
+function BuildEntry(const AClient: TClientDefinition; const APort: Integer; const AToken: string): string; overload;
 var
   LEntry: TJSONObject;
   LHeaders: TJSONObject;
   LEnvironment: TJSONObject;
-  LCharacter: Char;
 begin
-  if (TDAISettings.Instance.Port < 1024) or (TDAISettings.Instance.Port > 65535) then
-    raise EDAIClientConfigConflict.Create('Der MCP-Port muss zwischen 1024 und 65535 liegen.');
-  if Trim(TDAISettings.Instance.Token) = '' then
-    raise EDAIClientConfigConflict.Create('Ein leerer Bearer-Token kann nicht registriert werden.');
-  for LCharacter in TDAISettings.Instance.Token do
-    if (Ord(LCharacter) < 32) or (Ord(LCharacter) = 127) then
-      raise EDAIClientConfigConflict.Create('Steuerzeichen im Bearer-Token werden nicht registriert.');
+  ValidateConnection(APort, AToken);
   if AClient.Format = 'yaml' then
     Exit(Format(
       {$IF CompilerVersion >= 36.0}  // Delphi 12+
@@ -323,15 +340,15 @@ begin
       '  timeout: 180'
       ,
       {$IFEND}
-      [AClient.ServerName, JsonString(Endpoint), JsonString('Bearer ' + TDAISettings.Instance.Token)]));
+      [AClient.ServerName, JsonString(Endpoint(APort)), JsonString('Bearer ' + AToken)]));
   LEntry := TJSONObject.Create;
   try
     if AClient.Id = 'claude-desktop' then
     begin
       LEntry.AddPair('command', BridgeFileName);
-      LEntry.AddPair('args', TJSONArray.Create('--url', Endpoint));
+      LEntry.AddPair('args', TJSONArray.Create('--url', Endpoint(APort)));
       LEnvironment := TJSONObject.Create;
-      LEnvironment.AddPair('DAI_MCP_TOKEN', TDAISettings.Instance.Token);
+      LEnvironment.AddPair('DAI_MCP_TOKEN', AToken);
       LEntry.AddPair('env', LEnvironment);
     end
     else
@@ -339,9 +356,9 @@ begin
       if AClient.Id = 'claude-code' then
         LEntry.AddPair('type', 'http');
       if AClient.Id = 'gemini' then
-        LEntry.AddPair('httpUrl', Endpoint)
+        LEntry.AddPair('httpUrl', Endpoint(APort))
       else
-        LEntry.AddPair('url', Endpoint);
+        LEntry.AddPair('url', Endpoint(APort));
       if AClient.Id = 'openclaw' then
       begin
         LEntry.AddPair('transport', 'streamable-http');
@@ -351,7 +368,7 @@ begin
       if AClient.Id = 'gemini' then
         LEntry.AddPair('timeout', TJSONNumber.Create(180000));
       LHeaders := TJSONObject.Create;
-      LHeaders.AddPair('Authorization', 'Bearer ' + TDAISettings.Instance.Token);
+      LHeaders.AddPair('Authorization', 'Bearer ' + AToken);
       LEntry.AddPair('headers', LHeaders);
     end;
     Result := LEntry.ToJSON;
@@ -360,7 +377,26 @@ begin
   end;
 end;
 
-function BuildLauncherEntry(const AClient: TClientDefinition): string;
+function BuildEntry(const AClient: TClientDefinition): string; overload;
+begin
+  Result := BuildEntry(AClient, TDAISettings.Instance.Port, TDAISettings.Instance.Token);
+end;
+
+function LauncherArguments(const APort: Integer): TArray<string>;
+var
+  LIndex: Integer;
+begin
+  Result := TDAICodexRegistration.LauncherArguments;
+  for LIndex := 0 to High(Result) - 1 do
+    if Result[LIndex] = '--url' then
+    begin
+      Result[LIndex + 1] := Endpoint(APort);
+      Exit;
+    end;
+  raise EDAIClientConfigConflict.Create('Der Starthelfer enthält keine HTTP-Verbindungsadresse.');
+end;
+
+function BuildLauncherEntry(const AClient: TClientDefinition; const APort: Integer; const AToken: string): string; overload;
 var
   LEntry: TJSONObject;
   LArguments: TJSONArray;
@@ -371,17 +407,17 @@ begin
   try
     LArguments := TJSONArray.Create;
     LEntry.AddPair('args', LArguments);
-    for LArgument in TDAICodexRegistration.LauncherArguments do
+    for LArgument in LauncherArguments(APort) do
       LArguments.Add(LArgument);
     LEnvironment := TJSONObject.Create;
-    LEnvironment.AddPair('DAI_MCP_TOKEN', TDAISettings.Instance.Token);
+    LEnvironment.AddPair('DAI_MCP_TOKEN', AToken);
     LEntry.AddPair('env', LEnvironment);
     if AClient.Format = 'yaml' then
       Exit(AClient.LauncherServerName + ':' + sLineBreak +
         '  command: ' + JsonString(BridgeFileName) + sLineBreak +
         '  args: ' + LArguments.ToJSON + sLineBreak +
         '  env:' + sLineBreak +
-        '    DAI_MCP_TOKEN: ' + JsonString(TDAISettings.Instance.Token) + sLineBreak +
+        '    DAI_MCP_TOKEN: ' + JsonString(AToken) + sLineBreak +
         '  timeout: 180');
     LEntry.AddPair('command', BridgeFileName);
     if AClient.Id = 'claude-code' then
@@ -398,6 +434,11 @@ begin
   finally
     LEntry.Free;
   end;
+end;
+
+function BuildLauncherEntry(const AClient: TClientDefinition): string; overload;
+begin
+  Result := BuildLauncherEntry(AClient, TDAISettings.Instance.Port, TDAISettings.Instance.Token);
 end;
 
 function OwnershipText(const AClient: TClientDefinition; const AHash, APendingHash: TArray<string>; const AState: string): string;
@@ -964,6 +1005,129 @@ begin
     end;
   finally
     System.TMonitor.Exit(GRegistrationLock);
+  end;
+end;
+
+function ManualCodexConfig(const AClient: TClientDefinition; const APort: Integer; const AToken: string): string;
+var
+  LArguments: TJSONArray;
+  LArgument: string;
+begin
+  LArguments := TJSONArray.Create;
+  try
+    for LArgument in LauncherArguments(APort) do
+      LArguments.Add(LArgument);
+    Result := '[mcp_servers.' + AClient.ServerName + ']' + sLineBreak +
+      'url = ' + JsonString(Endpoint(APort)) + sLineBreak +
+      'enabled = true' + sLineBreak +
+      'http_headers = { Authorization = ' + JsonString('Bearer ' + AToken) + ' }' + sLineBreak +
+      '[mcp_servers.' + AClient.LauncherServerName + ']' + sLineBreak +
+      'command = ' + JsonString(BridgeFileName) + sLineBreak +
+      'args = ' + LArguments.ToJSON + sLineBreak +
+      'env = { DAI_MCP_TOKEN = ' + JsonString(AToken) + ' }' + sLineBreak +
+      'enabled = true';
+  finally
+    LArguments.Free;
+  end;
+end;
+
+function ManualClientConfig(const AClient: TClientDefinition; const APort: Integer; const AToken: string): string;
+var
+  LKeys: TArray<string>;
+begin
+  if AClient.Id = 'codex' then
+    Exit(ManualCodexConfig(AClient, APort, AToken));
+  Result := TDAIClientConfigText.Merge('', AClient.Format, AClient.Keys, BuildEntry(AClient, APort, AToken), False);
+  if AClient.LauncherSupported then
+  begin
+    LKeys := Copy(AClient.Keys);
+    LKeys[High(LKeys)] := AClient.LauncherServerName;
+    Result := TDAIClientConfigText.Merge(Result, AClient.Format, LKeys, BuildLauncherEntry(AClient, APort, AToken), False);
+  end;
+end;
+
+class function TDAIClientRegistration.ManualRegistrationInfo(const AClient: string; const APort: Integer; const AToken: string; const AShared: Boolean): string;
+var
+  LClient, LGeneric: TClientDefinition;
+  LIndex: Integer;
+  LFilter, LArguments, LConfig: string;
+  LArgument: string;
+  LText: TStringList;
+begin
+  ValidateConnection(APort, AToken);
+  LFilter := NormalizeClient(AClient);
+  LClient := Default(TClientDefinition);
+  for LIndex := 0 to 8 do
+  begin
+    LGeneric := BuildDefinition(LIndex, AShared);
+    if LGeneric.Id = LFilter then
+    begin
+      LClient := LGeneric;
+      Break;
+    end;
+  end;
+  LGeneric := BuildDefinition(2, AShared);
+  LArguments := '';
+  for LArgument in LauncherArguments(APort) do
+  begin
+    if LArguments <> '' then
+      LArguments := LArguments + ', ';
+    LArguments := LArguments + JsonString(LArgument);
+  end;
+  LText := TStringList.Create;
+  try
+    LText.Add('Manuelle MCP-Registrierung');
+    if LClient.Id <> '' then
+      LText.Add('Client: ' + LClient.LabelText);
+    if AShared then
+      LText.Add('Verbindung: gemeinsam für alle Delphi-Versionen')
+    else
+      LText.Add('Verbindung: dieses IDE-Profil (' + TDAISettings.Instance.RegistryRoot + ')');
+    LText.Add('Servername: ' + LGeneric.ServerName);
+    LText.Add('Transport: Streamable HTTP, nur lokaler Rechner');
+    LText.Add('URL: ' + Endpoint(APort));
+    LText.Add('HTTP-Header: Authorization: Bearer ' + AToken);
+    LText.Add('');
+    LText.Add('Alternativ MCP über STDIO:');
+    LText.Add('Programm: ' + BridgeFileName);
+    LText.Add('Argumente (JSON-Liste): ["--url", ' + JsonString(Endpoint(APort)) + ']');
+    LText.Add('Umgebungsvariable: DAI_MCP_TOKEN=' + AToken);
+    LText.Add('');
+    LText.Add('Zusätzlicher Starthelfer (MCP über STDIO): ' + LGeneric.LauncherServerName);
+    LText.Add('Programm: ' + BridgeFileName);
+    LText.Add('Delphi-IDE: ' + TDAICodexRegistration.HostIDEExecutable);
+    LText.Add('Argumente (JSON-Liste): [' + LArguments + ']');
+    LText.Add('Umgebungsvariable: DAI_MCP_TOKEN=' + AToken);
+    LText.Add('Der Starthelfer startet oder beendet Delphi nur auf ausdrücklichen Auftrag und entsprechend der DAI-Option.');
+    LText.Add('');
+    if (LClient.Id <> '') and LClient.Supported then
+    begin
+      LText.Add('Konfigurationsdatei: ' + LClient.FileName);
+      LText.Add('Format: ' + LClient.Format);
+      LConfig := ManualClientConfig(LClient, APort, AToken);
+    end
+    else
+    begin
+      LText.Add('In den MCP-Einstellungen des Clients URL und HTTP-Header oder Programm, Argumente und Umgebung eintragen.');
+      LText.Add('Allgemeines STDIO-Beispiel im mcpServers-Schema; Unterstützung im Client prüfen.');
+      LConfig := ManualClientConfig(LGeneric, APort, AToken);
+    end;
+    if LClient.BlockReason <> '' then
+      LText.Add('Pfadhinweis: ' + LClient.BlockReason);
+    if LClient.Note <> '' then
+      LText.Add(LClient.Note);
+    if LClient.Documentation <> '' then
+      LText.Add('Dokumentation: ' + LClient.Documentation);
+    LText.Add('');
+    LText.Add('Die Werte entsprechen der aktuellen Auswahl im Einstellungsfenster. Geänderte Werte zuerst in DAI speichern.');
+    LText.Add('Vorhandene andere MCP-Einträge erhalten; Client danach neu laden oder neu starten.');
+    LText.Add('Es werden keine Konfigurationsdateien geschrieben und keine Registrierungen verändert.');
+    LText.Add('');
+    LText.Add('Konfiguration zum Übernehmen:');
+    LText.Add(LConfig);
+    Result := LText.Text;
+  finally
+    LText.Free;
   end;
 end;
 

@@ -875,10 +875,11 @@ def check_encoding_policy(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.OTA.Files.pas: Dateiinhalt darf nicht pauschal als UTF-8 geschrieben werden")
     if "Formulardateien werden ausschließlich über einen verfügbaren IDE-Textpuffer geändert" not in files_content:
         fail(errors, "h5u.DAI.OTA.Files.pas: DFM-Direktschreibschutz fehlt")
-    if "SameText(TPath.GetExtension(LExpandedFileName), '.dfm')" not in tools_content:
-        fail(errors, "h5u.DAI.MCP.Tools.pas: DFM-Schreibzugriffe müssen als IDE-Bearbeitung autorisiert werden")
-    if "SameText(TPath.GetExtension(LExpandedFileName), '.fmx')" not in tools_content:
-        fail(errors, "h5u.DAI.MCP.Tools.pas: FMX-Schreibzugriffe müssen als IDE-Bearbeitung autorisiert werden")
+    write_branch = re.search(r"(?s)if SameText\(AName, 'file_write'\) then(.*?)if SameText\(AName, 'project_create'\)", tools_content)
+    if not write_branch or "RequirePermission(pcProjectWrite," not in write_branch.group(1):
+        fail(errors, "h5u.DAI.MCP.Tools.pas: alle Dateischreibwege benötigen das gemeinsame Projektschreibrecht")
+    if write_branch and re.search(r"pcEditInsideIDE|pcEditOutsideIDE|IsFileOpenInEditor", write_branch.group(1)):
+        fail(errors, "h5u.DAI.MCP.Tools.pas: Schreibberechtigung darf nicht vom Editorstatus abhängen")
     for required in (
         "tekANSI",
         "tekUTF8BOM",
@@ -1004,7 +1005,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.31"
+    expected = "1.2.33"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")

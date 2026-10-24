@@ -1,3 +1,37 @@
+﻿# DAI 1.2.33 – Manuelle Clientregistrierung, 24. Oktober 2026
+
+Die Optionsseite zeigt Verbindungsdaten und clientgerechte Beispiele in einem kopierbaren Dialog.
+Port, Token und gemeinsame/IDE-eigene Verbindung stammen aus den Eingabefeldern; das Anzeigen speichert und registriert nichts.
+Die Bestätigung „Manuell registriert“ wird nur beim Speichern/Registrieren übernommen und getrennt pro Verbindungsebene gespeichert.
+Die Toolbar unterdrückt damit ausschließlich „Nicht registriert“; Aktualisierungs-, Prüf-, Aktivitäts- und Fehlerzustände bleiben erhalten.
+
+Delphi 13 Win32 und Win64 bestanden jeweils: Optionsframe 850, Clientregistrierung 2.411 (146 neue Fälle),
+Toolbar-Registrierungszustände 276 sowie isolierte ConnectionSettings-Tests mit 21 neuen Prüfungen und gemeinsamem Architekturtest.
+Die 27 Python-Verifierregressionen und die statische Vollprüfung bestehen (62 Pascal-Units, 81 MCP-Werkzeuge).
+Release-Package und Bridge wurden über Build.ps1 für beide Architekturen erfolgreich gebaut und nach PE-Architektur geprüft.
+Delphi 11/12 wurden nicht binär getestet. Keine tatsächliche Clientregistrierung, keine manuelle Bestätigung und keine IDE-Neustarts ausgelöst.
+Bisherige Änderungen und der Index-Stash bleiben erhalten.
+
+# DAI 1.2.32 – Projektberechtigungen und Toolbarstatus, 24. Oktober 2026
+
+Sechs Kategorien (eine feste, fünf einstellbare), globale IDE-Änderungsrechte, getrennte Projekt-Lese-/Schreibrechte,
+Kompilieren sowie Ausführen/Debuggen. Zusätzliche Referenzverzeichnisse bieten eine globale Immer-lesen-Checkbox.
+Geöffnete Dateien dürfen die Projektrechte verwenden. SDK/GetIt und freigegebene zusätzliche Referenzen werden vor Projektleserechten geprüft.
+Globale Änderungen setzen die Ausnahme des aktuellen Projekts auf Default; explizite Projektvorgaben haben Vorrang vor globalen Laufzeitfreigaben.
+Berechtigungsdateien sind vor MCP-Dateischreibzugriffen geschützt. Nicht deklarierte Argumente werden vor der Projektzuordnung abgewiesen.
+Die Toolbar zeigt IDE-/Projektrechte im Hint und in zwei Einstellungsmenüeinträgen; offene Menüs bleiben stabil.
+
+Delphi 13 Win32 und Win64 bestanden jeweils: PermissionOptions 106, Options 707, PermissionRouting 1.117,
+SearchDispatch 785, ProjectOptionsDispatch 953, ToolDispatch 691, OptionsDispatch 727, PackageDispatch 1.788,
+DesignerDispatch 569, ExpressionDispatch 2.074, EditorWrite 235, ReadOnlyPolicy 56, Runtime 94, HTTP-Protokoll 148
+und vollständige Toolbar-Suite 12.964 Prüfungen. Isolierte Registrytests prüfen außerdem die neue Checkbox-Persistenz.
+Python-Verifierregressionen: 27 Tests bestanden. Statische Vollprüfung: 62 Pascal-Units und 81 MCP-Werkzeuge.
+
+Das echte Build.ps1 baut Release-Package und Bridge für Win32 und Win64 mit Delphi 13; PE-Architekturen werden geprüft.
+Delphi 11/12 wurden nicht binär getestet. Keine Installation, Registrierung oder IDE-Neustart vorgenommen.
+Der Index-Stash bleibt unangetastet. Alte Berechtigungen werden über PermissionsV2/Projektdateischema 2 ignoriert;
+die automatische Freigabeprüfung blockierte ihre angefragte Löschung (nur „blocked by policy“ als Begründung).
+
 # DAI 1.2.31 – Nutzungszähler und Aktivitätsanzeige, 24. Oktober 2026
 
 Bekannte Toolaufrufe werden je lokalem Kalendermonat als REG_QWORD unter dem gemeinsamen HKCU-UsageLog gespeichert.

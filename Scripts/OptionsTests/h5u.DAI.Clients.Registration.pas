@@ -18,6 +18,12 @@ type
     class var RemoveJSON: string;
     class var LastRemovedServer: string;
     class var LastFindClient: string;
+    class var ManualInfoCount: Integer;
+    class var LastManualClient: string;
+    class var LastManualPort: Integer;
+    class var LastManualToken: string;
+    class var LastManualShared: Boolean;
+    class function ManualRegistrationInfo(const AClient: string; const APort: Integer; const AToken: string; const AShared: Boolean): string; static;
     class function Status(const AClient: string): TJSONObject; static;
     class function RegisterFiles(const AClient: string): TJSONObject; static;
     class function UnregisterFiles(const AClient: string): TJSONObject; static;
@@ -26,6 +32,16 @@ type
   end;
 
 implementation
+
+class function TDAIClientRegistration.ManualRegistrationInfo(const AClient: string; const APort: Integer; const AToken: string; const AShared: Boolean): string;
+begin
+  Inc(ManualInfoCount);
+  LastManualClient := AClient;
+  LastManualPort := APort;
+  LastManualToken := AToken;
+  LastManualShared := AShared;
+  Result := 'Synthetic manual registration for ' + AClient + #13#10 + AToken;
+end;
 
 class function TDAIClientRegistration.FindRegistrations(const AClient: string): TJSONObject;
 begin

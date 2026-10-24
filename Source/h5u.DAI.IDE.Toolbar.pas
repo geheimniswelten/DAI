@@ -38,6 +38,7 @@ uses
   Vcl.Menus,
   h5u.DAI.Clients.Registration,
   h5u.DAI.Log,
+  h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
   h5u.DAI.Settings;
@@ -119,6 +120,8 @@ type
     FToggleItem: TMenuItem;
     FOptionsItem: TMenuItem;
     FResetItem: TMenuItem;
+    FIDEPermissionItem: TMenuItem;
+    FProjectPermissionItem: TMenuItem;
     FImages: array[TDAIServerGlyphState] of Integer;
     FCallbackDepth: Integer;
     FBusy: Boolean;
@@ -130,8 +133,14 @@ type
     FRegistrationDirty: Boolean;
     FRegistrationVersion: Integer;
     FRegistrationServerActive: Boolean;
+    FRegistrationManual: Boolean;
     FRegistrationHealth: TDAIRegistrationHealth;
     FRegistrationDetails: string;
+    FPermissionChecked: Boolean;
+    FPermissionVersion: Integer;
+    FPermissionProjectKey: string;
+    FIDEPermissionSummary: string;
+    FProjectPermissionSummary: string;
     procedure LeaveCallback;
     procedure RemoveUI;
     procedure RemoveActionButtons;
@@ -147,6 +156,7 @@ type
     procedure EnsureOwnButtonFitsHorizontally;
     procedure EnsureInstalled;
     procedure UpdateRegistrationStatus;
+    procedure UpdatePermissionStatus;
     procedure UpdateStatus;
     procedure TimerTick(Sender: TObject);
     procedure ToggleServer(Sender: TObject);
@@ -554,6 +564,10 @@ begin
     FOptionsItem := nil;
   if AComponent = FResetItem then
     FResetItem := nil;
+  if AComponent = FIDEPermissionItem then
+    FIDEPermissionItem := nil;
+  if AComponent = FProjectPermissionItem then
+    FProjectPermissionItem := nil;
 end;
 
 procedure TDAIToolbarController.RemoveUI;
@@ -730,6 +744,10 @@ begin
     FOptionsItem.OnClick := nil;
   if Assigned(FResetItem) then
     FResetItem.OnClick := nil;
+  if Assigned(FIDEPermissionItem) then
+    FIDEPermissionItem.OnClick := nil;
+  if Assigned(FProjectPermissionItem) then
+    FProjectPermissionItem.OnClick := nil;
   // StopServer may pump synchronized workers. A reentrant IDE shutdown must
   // not destroy this receiver while one of its UI callbacks is still running.
   if FCallbackDepth = 0 then
@@ -918,6 +936,8 @@ begin
 end;
 
 procedure TDAIToolbarController.CreatePopup;
+var
+  LSeparator: TMenuItem;
 begin
   // AddToolButton requires dropdown ownership to match its returned button.
   FPopup := TPopupMenu.Create(FButton.Owner);
@@ -939,6 +959,17 @@ begin
   FResetItem.Caption := 'Sitzungsfreigaben &zurücksetzen';
   FResetItem.OnClick := ResetSessionPermissions;
   FPopup.Items.Add(FResetItem);
+  LSeparator := TMenuItem.Create(FPopup);
+  LSeparator.Caption := '-';
+  FPopup.Items.Add(LSeparator);
+  FIDEPermissionItem := TMenuItem.Create(FPopup);
+  FIDEPermissionItem.FreeNotification(Self);
+  FIDEPermissionItem.OnClick := OpenOptions;
+  FPopup.Items.Add(FIDEPermissionItem);
+  FProjectPermissionItem := TMenuItem.Create(FPopup);
+  FProjectPermissionItem.FreeNotification(Self);
+  FProjectPermissionItem.OnClick := OpenOptions;
+  FPopup.Items.Add(FProjectPermissionItem);
   FButton.DropdownMenu := FPopup;
 end;
 
@@ -1158,21 +1189,38 @@ procedure TDAIToolbarController.UpdateRegistrationStatus;
 var
   LVersion: Integer;
   LActive: Boolean;
+  LManual: Boolean;
 begin
   if FShuttingDown or not Assigned(FAction) or IDEMenuTracking then
     Exit;
   LVersion := TDAIClientRegistration.ChangeVersion;
   LActive := TDAIRuntime.ServerActive;
+  try
+    LManual := TDAISettings.Instance.ManualClientRegistration;
+  except
+    FRegistrationChecked := True;
+    FRegistrationDirty := True;
+    FRegistrationHealth := rhCheckRecommended;
+    FRegistrationDetails := 'Die manuelle KI-Registrierung konnte nicht geprüft werden. Bitte die DAI-Optionen öffnen.';
+    Exit;
+  end;
   if FRegistrationChecked and not FRegistrationDirty and (FRegistrationVersion = LVersion) and
-    (FRegistrationServerActive = LActive) then
+    (FRegistrationServerActive = LActive) and (FRegistrationManual = LManual) then
     Exit;
   // Registration files are read only on invalidation, never on each status tick.
   FRegistrationDirty := False;
   FRegistrationChecked := True;
   FRegistrationVersion := LVersion;
   FRegistrationServerActive := LActive;
+  FRegistrationManual := LManual;
   try
     FRegistrationHealth := TDAIClientRegistration.Health(FRegistrationDetails);
+    if (FRegistrationHealth = rhNotRegistered) and LManual then
+    begin
+      // This suppresses only a missing-registration notice, not update/read errors.
+      FRegistrationHealth := rhCurrent;
+      FRegistrationDetails := 'Manuell registriert (vom Benutzer bestätigt).';
+    end;
   except
     on E: Exception do
     begin
@@ -1180,6 +1228,31 @@ begin
       // Client-file parse errors may contain credentials; expose no raw exception.
       FRegistrationDetails := 'Die KI-Registrierungen konnten nicht vollständig geprüft werden. Bitte die DAI-Optionen öffnen.';
     end;
+  end;
+end;
+
+procedure TDAIToolbarController.UpdatePermissionStatus;
+var
+  LVersion: Integer;
+  LProjectKey: string;
+begin
+  if FShuttingDown or IDEMenuTracking then
+    Exit;
+  LVersion := TDAIPermissionManager.ChangeVersion;
+  LProjectKey := TDAIOTA.ActiveProjectFileName;
+  if FPermissionChecked and (FPermissionVersion = LVersion) and SameText(FPermissionProjectKey, LProjectKey) then
+    Exit;
+  FPermissionChecked := True;
+  FPermissionVersion := LVersion;
+  FPermissionProjectKey := LProjectKey;
+  // Project policies are read only after permission or project changes.
+  try
+    FIDEPermissionSummary := TDAIPermissionManager.Instance.GetAccessSummary('', True);
+    FProjectPermissionSummary := TDAIPermissionManager.Instance.GetAccessSummary(LProjectKey, False);
+  except
+    // A malformed policy must never be presented as an effective grant.
+    FIDEPermissionSummary := 'Status unbekannt';
+    FProjectPermissionSummary := 'Status unbekannt';
   end;
 end;
 
@@ -1196,6 +1269,7 @@ var
 begin
   if not Assigned(FAction) or IDEMenuTracking then
     Exit;
+  UpdatePermissionStatus;
   LActive := TDAIRuntime.ServerActive;
   LAccessShown := False;
   LError := TDAIRuntime.LastServerError;
@@ -1277,6 +1351,7 @@ begin
     LCaption := 'DAI …';
     LHint := 'DAI: Serverzustand wird geändert.';
   end;
+  LHint := LHint + sLineBreak + 'IDE : ' + FIDEPermissionSummary + sLineBreak + 'Projekt : ' + FProjectPermissionSummary;
   if FAction.Caption <> LCaption then
     FAction.Caption := LCaption;
   if FAction.Hint <> LHint then
@@ -1291,6 +1366,10 @@ begin
     if FToggleItem.Enabled <> not FBusy then
       FToggleItem.Enabled := not FBusy;
   end;
+  if Assigned(FIDEPermissionItem) and (FIDEPermissionItem.Caption <> 'IDE : ' + FIDEPermissionSummary) then
+    FIDEPermissionItem.Caption := 'IDE : ' + FIDEPermissionSummary;
+  if Assigned(FProjectPermissionItem) and (FProjectPermissionItem.Caption <> 'Projekt : ' + FProjectPermissionSummary) then
+    FProjectPermissionItem.Caption := 'Projekt : ' + FProjectPermissionSummary;
 end;
 
 procedure TDAIToolbarController.Refresh;
@@ -1379,6 +1458,8 @@ begin
       LServices := nil;
     end;
   finally
+    if not FShuttingDown then
+      UpdateStatus;
     LeaveCallback;
   end;
 end;
@@ -1390,6 +1471,7 @@ begin
   Inc(FCallbackDepth);
   try
     TDAIPermissionManager.Instance.ClearAllSessions;
+    UpdateStatus;
   finally
     LeaveCallback;
   end;

@@ -209,7 +209,9 @@ begin
         Break;
       end;
       LKey := TDAIOTA.ProjectFileName(LProject);
-      LMatches := LSelectedKeys.ContainsKey(LKey);
+      LMatches := LSelectedKeys.ContainsKey(LKey) and ((Result.Directory = '') or
+        TDAIOTA.SameFile(Result.Directory, TPath.GetDirectoryName(LKey)) or
+        TDAIOTA.IsPathWithin(Result.Directory, TPath.GetDirectoryName(LKey)));
       if LCache.TryGetValue(LKey, LFiles) then
         for LFile in LFiles do
           if InsideRoots(LFile, LRoots) or LExplicit.ContainsKey(LFile) then

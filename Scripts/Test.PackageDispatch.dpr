@@ -101,12 +101,12 @@ begin
     end;
     if LIndex < AReadCount then
     begin
-      Check(LRequest.Category = pcReadAccess, 'target lookup and status require read');
+      Check(LRequest.Category = pcReferenceRead, 'target lookup and status require read');
       Check(LRequest.Operation = 'Package-Ziel und Installationsstatus lesen', 'read operation identifies package lookup');
     end
     else if LIndex = AReadCount then
     begin
-      Check(LRequest.Category = pcEditInsideIDE, 'mutation requires IDE edit');
+      Check(LRequest.Category = pcIDEOptions, 'mutation requires IDE edit');
       if ATool = 0 then
         Check(LRequest.Operation = 'Package in dieser IDE installieren', 'install edit operation')
       else

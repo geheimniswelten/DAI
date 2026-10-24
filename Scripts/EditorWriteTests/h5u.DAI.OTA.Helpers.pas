@@ -10,10 +10,15 @@ type
   TDAIOTA = class
   public
     class var Buffer: string;
+    class var WorkspaceAllowed: Boolean;
+    class var ReadOnlyReference: Boolean;
     class var AppendOnWrite: string;
     class var AppendOnSave: string;
     class var WriteCount: Integer;
     class var SaveCount: Integer;
+    class var ReadCount: Integer;
+    class var FindCount: Integer;
+    class var OpenEditor: Boolean;
     class var SourceEditor: IOTASourceEditor;
     class procedure Reset(const AText: string); static;
     class procedure RunOnMainThread(const AAction: TThreadProcedure); static;
@@ -82,10 +87,15 @@ end;
 class procedure TDAIOTA.Reset(const AText: string);
 begin
   Buffer := AText;
+  WorkspaceAllowed := True;
+  ReadOnlyReference := False;
   AppendOnWrite := '';
   AppendOnSave := '';
   WriteCount := 0;
   SaveCount := 0;
+  ReadCount := 0;
+  FindCount := 0;
+  OpenEditor := True;
 end;
 
 class procedure TDAIOTA.RunOnMainThread(const AAction: TThreadProcedure);
@@ -107,12 +117,12 @@ end;
 
 class function TDAIOTA.IsWorkspaceFile(const AFileName: string): Boolean;
 begin
-  Result := True;
+  Result := WorkspaceAllowed;
 end;
 
 class function TDAIOTA.IsReadOnlyReferenceFile(const AFileName: string): Boolean;
 begin
-  Result := False;
+  Result := ReadOnlyReference;
 end;
 
 class function TDAIOTA.IsPathWithin(const AFileName, ARoot: string): Boolean;
@@ -157,7 +167,11 @@ end;
 
 class function TDAIOTA.FindSourceEditor(const AFileName: string): IOTASourceEditor;
 begin
-  Result := SourceEditor;
+  Inc(FindCount);
+  if OpenEditor then
+    Result := SourceEditor
+  else
+    Result := nil;
 end;
 
 class function TDAIOTA.EnsureFormTextEditor(const AFileName: string): IOTASourceEditor;
@@ -167,7 +181,7 @@ end;
 
 class function TDAIOTA.IsFileOpenInEditor(const AFileName: string): Boolean;
 begin
-  Result := True;
+  Result := OpenEditor;
 end;
 
 class function TDAIOTA.IsFormLoadedForFile(const AFileName: string): Boolean;
@@ -183,6 +197,7 @@ end;
 
 class function TDAIOTA.ReadEditorText(const ASource: IOTASourceEditor): string;
 begin
+  Inc(ReadCount);
   Result := Buffer;
 end;
 

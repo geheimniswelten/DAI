@@ -76,7 +76,7 @@ var
   LTool, LExpression, LFile: string;
   LArgs, LResult: TJSONObject;
   LRequest: TDAIEvaluationRequest;
-  LPermissions, LExecuteIndex: Integer;
+  LPermissions: Integer;
 begin
   Reset; LTool := 'debugger_evaluate'; if AModify then LTool := 'debugger_modify';
   LArgs := Arguments(LTool, AUseCursor); LResult := nil;
@@ -112,7 +112,7 @@ begin
     begin
       LExpression := CursorExpression; LFile := CSourceFile;
       Check(TDAICursorExpressionService.ReadCalls = 1, 'cursor read once');
-      Check(TDAICursorExpressionService.ReadPermissionCount = 2, 'cursor source read after global and source permissions');
+      Check(TDAICursorExpressionService.ReadPermissionCount = 2, 'cursor source read after global execution and source read permissions');
       Check(LastExpectedFile = CSourceFile, 'cursor file authorization bound to reader');
       Check(LRequest.Line = 71, 'cursor lexical line forwarded');
       Check(LResult.GetValue('cursor') = TDAICursorExpressionService.LastResponse, 'actual cursor provenance object attached');
@@ -125,23 +125,18 @@ begin
     Check(LRequest.Expression = LExpression, 'exact expression forwarded'); Check(LRequest.SourceFile = LFile, 'source scope forwarded');
     Check(LRequest.SideEffects = LowerCase(Trim(AEffects)), 'effects normalized');
     LPermissions := 1; if AUseCursor then Inc(LPermissions);
-    LExecuteIndex := LPermissions;
-    if AModify or (LRequest.SideEffects <> 'none') then Inc(LPermissions);
     Check(Length(TDAIPermissionManager.Instance.Requests) = LPermissions, 'only required permissions');
-    Permission(0, pcReadAccess, Format('Prozess %u / Thread %u', [LRequest.ProcessId, LRequest.ThreadId]), '',
+    Permission(0, pcExecute, Format('Prozess %u / Thread %u', [LRequest.ProcessId, LRequest.ThreadId]), '',
       'Debuggerausdruck und seinen Wert lesen');
-    if AUseCursor then Permission(1, pcReadAccess, CSourceFile, COwnerProject, 'Ausdruck im aktiven Quelleditor lesen');
+    if AUseCursor then Permission(1, pcProjectRead, CSourceFile, COwnerProject, 'Ausdruck im aktiven Quelleditor lesen');
     if AModify then
     begin
-      Permission(LExecuteIndex, pcExecute, LExpression, '', 'Wert im angehaltenen Debuggerprozess zuweisen');
       Check(TDAIEvaluationService.ModifyCalls = 1, 'one modify'); Check(TDAIEvaluationService.EvaluateCalls = 0, 'no separate evaluation');
       Check(TDAIEvaluationService.LastValue = 'Counter + 1', 'new value forwarded exactly');
     end
     else
     begin
       Check(TDAIEvaluationService.EvaluateCalls = 1, 'one evaluation'); Check(TDAIEvaluationService.ModifyCalls = 0, 'no modification');
-      if LRequest.SideEffects <> 'none' then
-        Permission(LExecuteIndex, pcExecute, LExpression, '', 'Debuggerausdruck mit möglichen Seiteneffekten auswerten');
     end;
     Check(TDAIEvaluationService.FinalPermissionCount = LPermissions, 'all required permissions precede SDK call');
     Check(LResult = TDAIEvaluationService.LastResponse, 'SDK response returned unchanged');
@@ -157,8 +152,8 @@ begin
   Reset; LResult := DispatchExpression('debugger_cursor_expression', nil, Context);
   try
     Check(LResult = TDAICursorExpressionService.LastResponse, 'cursor response returned unchanged');
-    EventsEqual(['cursor:metadata', 'permission:read', 'cursor:read']);
-    Permission(0, pcReadAccess, CSourceFile, COwnerProject, 'Ausdruck im aktiven Quelleditor lesen');
+    EventsEqual(['cursor:metadata', 'permission:project_read', 'cursor:read']);
+    Permission(0, pcProjectRead, CSourceFile, COwnerProject, 'Ausdruck im aktiven Quelleditor lesen');
     Check((Length(ContextFiles) = 1) and (ContextFiles[0] = CSourceFile), 'actual cursor owner lookup');
     Check(LastExpectedFile = CSourceFile, 'authorized file supplied to cursor reader'); NoMutations;
   finally LResult.Free; end;
@@ -177,18 +172,16 @@ begin
   try
     Replace(LArgs, 'action', TJSONString.Create('  ' + UpperCase(AAction) + '  '));
     LResult := DispatchExpression('debugger_expression_ui', LArgs, Context);
-    EventsEqual(['ui:metadata', 'permission:read', 'ui:prepare', 'permission:read', 'permission:edit_inside_ide', 'permission:execute', 'ui:invoke']);
+    EventsEqual(['ui:metadata', 'permission:project_read', 'ui:prepare', 'permission:execute', 'ui:invoke']);
     Check(TDAIExpressionUIService.PreparePermissionCount = 1, 'prepare reads source only after read permission');
-    Check(TDAIExpressionUIService.FinalPermissionCount = 4, 'source/global read, IDE edit and global execution precede native action');
+    Check(TDAIExpressionUIService.FinalPermissionCount = 2, 'source read and one global execution grant precede native action');
     Check(TDAIExpressionUIService.LastAction = AAction, 'native action normalized');
     Check(TDAIExpressionUIService.LastRequest.FileName = CSourceFile, 'exact native source target');
     Check(TDAIExpressionUIService.LastRequest.SourceSha256 = 'exact-source-hash', 'prepared source hash retained');
     Check(TDAIExpressionUIService.LastRequest.Cursor.Line = 12, 'prepared cursor retained');
     Check(LastExpectedFile = CSourceFile, 'authorized file bound before prepare source read');
-    Permission(0, pcReadAccess, CSourceFile, COwnerProject, 'Ziel der nativen Debuggeraktion lesen');
-    Permission(1, pcReadAccess, CSourceFile, '', 'Globalen Debuggerzugriff für native Ausdrucksaktion lesen');
-    Permission(2, pcEditInsideIDE, CSourceFile, COwnerProject, 'Native Debuggeraktion im Editor aufrufen: ' + AAction);
-    Permission(3, pcExecute, CSourceFile, '', 'Native Debuggeraktion ausführen: ' + AAction);
+    Permission(0, pcProjectRead, CSourceFile, COwnerProject, 'Ziel der nativen Debuggeraktion lesen');
+    Permission(1, pcExecute, CSourceFile, '', 'Native Debuggeraktion ausführen: ' + AAction);
     Check(LResult = TDAIExpressionUIService.LastResponse, 'native final JSON returned unchanged');
     Check(not LResult.GetValue<Boolean>('action_invoked'), 'pending native result preserved');
   finally LResult.Free; LArgs.Free; end;
@@ -202,15 +195,15 @@ begin
     LArgs.AddPair('request_id', 'exact-status-id'); LResult := DispatchExpression(LTool, LArgs, Context);
     if AUI then
     begin
-      EventsEqual(['permission:read', 'ui:status']); Check(LResult = TDAIExpressionUIService.LastResponse, 'UI status response');
+      EventsEqual(['permission:execute', 'ui:status']); Check(LResult = TDAIExpressionUIService.LastResponse, 'UI status response');
       Check(TDAIExpressionUIService.LastRequestId = 'exact-status-id', 'UI exact id');
-      Permission(0, pcReadAccess, 'exact-status-id', '', 'Status der nativen Debuggeraktion lesen');
+      Permission(0, pcExecute, 'exact-status-id', '', 'Status der nativen Debuggeraktion lesen');
     end
     else
     begin
-      EventsEqual(['permission:read', 'evaluation:status']); Check(LResult = TDAIEvaluationService.LastResponse, 'evaluation status response');
+      EventsEqual(['permission:execute', 'evaluation:status']); Check(LResult = TDAIEvaluationService.LastResponse, 'evaluation status response');
       Check(TDAIEvaluationService.LastRequestId = 'exact-status-id', 'evaluation exact id');
-      Permission(0, pcReadAccess, 'exact-status-id', '', 'Status und Ergebnis einer Debuggerauswertung lesen');
+      Permission(0, pcExecute, 'exact-status-id', '', 'Status und Ergebnis einer Debuggerauswertung lesen');
     end;
     Check(TDAIEvaluationService.PrepareCalls = 0, 'status does not capture debugger target');
     Check(TDAICursorExpressionService.MetadataCalls = 0, 'status does not query editor'); NoMutations;
@@ -221,8 +214,8 @@ var LTool: string; LArgs, LResult: TJSONObject; I, LCount: Integer; LRejected: B
 begin
   for LTool in CToolNames do
   begin
-    LCount := 1; if (LTool = 'debugger_evaluate') or (LTool = 'debugger_modify') then LCount := 2;
-    if LTool = 'debugger_expression_ui' then LCount := 4;
+    LCount := 1;
+    if LTool = 'debugger_expression_ui' then LCount := 2;
     for I := 0 to LCount - 1 do
     begin
       Reset; LArgs := Arguments(LTool); LResult := nil;
@@ -239,13 +232,13 @@ begin
         if LTool = 'debugger_expression_ui' then
         begin
           if I = 0 then Check(TDAIExpressionUIService.PrepareCalls = 0, 'UI not prepared before read grant')
-          else Check(TDAIExpressionUIService.PrepareCalls = 1, 'authorized preparation precedes edit grant');
+          else Check(TDAIExpressionUIService.PrepareCalls = 1, 'authorized source preparation precedes execution grant');
         end;
       finally LResult.Free; LArgs.Free; end;
     end;
   end;
   for LTool in TArray<string>.Create('debugger_evaluate', 'debugger_modify') do
-    for I := 0 to 2 do
+    for I := 0 to 1 do
     begin
       Reset; LArgs := Arguments(LTool, True); LResult := nil;
       try
@@ -253,14 +246,13 @@ begin
         TDAIPermissionManager.Instance.DeniedRequestIndex := I; LRejected := False;
         try LResult := DispatchExpression(LTool, LArgs, Context);
         except on E: EAbort do LRejected := True; end;
-        Check(LRejected, 'cursor global/source/execute denial propagated'); NoMutations;
+        Check(LRejected, 'cursor execution/source denial propagated'); NoMutations;
         Check(Length(TDAIPermissionManager.Instance.Requests) = I + 1, 'cursor stops after denied grant');
-        if I < 2 then Check(TDAICursorExpressionService.ReadCalls = 0, 'cursor source not read before both read grants')
-        else Check(TDAICursorExpressionService.ReadCalls = 1, 'authorized cursor source read before execute denial');
+        Check(TDAICursorExpressionService.ReadCalls = 0, 'cursor source not read before global execution and project source grants');
       finally LResult.Free; LArgs.Free; end;
     end;
   for LTool in TArray<string>.Create('add_watch', 'watch_at_cursor', 'evaluate_modify', 'inspect_at_cursor') do
-    for I := 0 to 3 do
+    for I := 0 to 1 do
     begin
       Reset; LArgs := Arguments('debugger_expression_ui'); LResult := nil;
       try
@@ -268,7 +260,7 @@ begin
         TDAIPermissionManager.Instance.DeniedRequestIndex := I; LRejected := False;
         try LResult := DispatchExpression('debugger_expression_ui', LArgs, Context);
         except on E: EAbort do LRejected := True; end;
-        Check(LRejected, 'native source/global read/edit/global execute denial propagated'); NoMutations;
+        Check(LRejected, 'native source read/global execution denial propagated'); NoMutations;
         Check(Length(TDAIPermissionManager.Instance.Requests) = I + 1, 'native debugger action stops after denied grant');
       finally LResult.Free; LArgs.Free; end;
     end;
@@ -282,7 +274,7 @@ begin
     try
       LResult := DispatchExpression(LTool, LArgs, Context); Check(not LResult.GetValue<Boolean>('available'), 'cursor unavailable');
       Check(LResult = TDAICursorExpressionService.LastResponse, 'unavailable cursor response forwarded');
-      Check(Length(TDAIPermissionManager.Instance.Requests) = 2, 'unavailable cursor does not request execution'); NoMutations;
+      Check(Length(TDAIPermissionManager.Instance.Requests) = 2, 'unavailable cursor needs no additional permission or evaluator call'); NoMutations;
     finally LResult.Free; LArgs.Free; end;
     Reset; CurrentFile := ''; LArgs := Arguments(LTool, True);
     try Invalid(LTool, LArgs, False); Check(Length(TDAIPermissionManager.Instance.Requests) = 0, 'no empty cursor authorization');
@@ -299,69 +291,80 @@ begin
   Reset; SwitchFileDuringPermission := True; LArgs := Arguments('debugger_expression_ui');
   try
     Invalid('debugger_expression_ui', LArgs, False); Check(LastExpectedFile = CSourceFile, 'UI source bound through permission race');
-    Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'UI prepare mismatch precedes edit/execute grants');
+    Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'UI prepare mismatch precedes the execution grant');
   finally LArgs.Free; end;
 end;
 procedure TestProjectCannotAuthorizeDebugger;
-var LTool: string; LArgs, LResult: TJSONObject; LRead, LCursor, LRejected: Boolean; I: Integer; LLast: TPermissionRequest;
+var LTool: string; LArgs, LResult: TJSONObject; LCursor, LRejected: Boolean; LLast: TPermissionRequest;
 begin
-  for LRead in TArray<Boolean>.Create(True, False) do
-    for LCursor in TArray<Boolean>.Create(False, True) do
-      for LTool in TArray<string>.Create('debugger_evaluate', 'debugger_modify') do
-      begin
-        Reset; LArgs := Arguments(LTool, LCursor); LResult := nil;
-        try
-          if LTool = 'debugger_evaluate' then LArgs.AddPair('side_effects', 'properties');
-          if not LCursor then
-          begin LArgs.AddPair('source_file', CSourceFile); LArgs.AddPair('line', TJSONNumber.Create(71)); end;
-          TDAIPermissionManager.Instance.RejectGlobalRead := LRead;
-          TDAIPermissionManager.Instance.RejectGlobalExecute := not LRead;
-          LRejected := False;
-          try LResult := DispatchExpression(LTool, LArgs, Context);
-          except on E: EAbort do LRejected := True; end;
-          Check(LRejected, 'project grants must not authorize debuggee read/execute'); NoMutations;
-          LLast := TDAIPermissionManager.Instance.Requests[High(TDAIPermissionManager.Instance.Requests)];
-          Check(LLast.Context.ProjectKey = '', 'rejected debuggee permission must be explicitly global');
-          if LRead then Check(LLast.Category = pcReadAccess, 'global value read rejected')
-          else Check(LLast.Category = pcExecute, 'global debuggee execution rejected');
-          if LCursor and not LRead then
-          begin
-            Check(TDAICursorExpressionService.ReadCalls = 1, 'owning-project source grant permits cursor source read');
-            Check(TDAIPermissionManager.Instance.Requests[1].Context.ProjectKey = COwnerProject, 'cursor source own project');
-          end
-          else Check(TDAICursorExpressionService.ReadCalls = 0, 'lexical scope does not imply source reads');
-        finally LResult.Free; LArgs.Free; end;
-      end;
+  for LCursor in TArray<Boolean>.Create(False, True) do
+    for LTool in TArray<string>.Create('debugger_evaluate', 'debugger_modify') do
+    begin
+      Reset; LArgs := Arguments(LTool, LCursor); LResult := nil;
+      try
+        if not LCursor then
+        begin LArgs.AddPair('source_file', CSourceFile); LArgs.AddPair('line', TJSONNumber.Create(71)); end;
+        TDAIPermissionManager.Instance.RejectGlobalExecute := True;
+        LRejected := False;
+        try LResult := DispatchExpression(LTool, LArgs, Context);
+        except on E: EAbort do LRejected := True; end;
+        Check(LRejected, 'project grants must not authorize debuggee reads, including side_effects none'); NoMutations;
+        LLast := TDAIPermissionManager.Instance.Requests[High(TDAIPermissionManager.Instance.Requests)];
+        Check(LLast.Context.ProjectKey = '', 'rejected debuggee permission must be explicitly global');
+        Check(LLast.Category = pcExecute, 'global debuggee execution rejected');
+        Check(TDAICursorExpressionService.ReadCalls = 0, 'lexical scope does not imply source reads before global debugger grant');
+      finally LResult.Free; LArgs.Free; end;
+    end;
   for LTool in TArray<string>.Create('debugger_evaluation_status', 'debugger_expression_ui') do
   begin
     Reset; LArgs := TJSONObject.Create; LResult := nil;
     try
-      LArgs.AddPair('request_id', 'other-debugger-request'); TDAIPermissionManager.Instance.RejectGlobalRead := True;
+      LArgs.AddPair('request_id', 'other-debugger-request'); TDAIPermissionManager.Instance.RejectGlobalExecute := True;
       LRejected := False;
       try LResult := DispatchExpression(LTool, LArgs, Context);
       except on E: EAbort do LRejected := True; end;
       Check(LRejected, 'active project grant must not disclose another debuggee result/status');
-      Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'status has only global read request');
+      Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'status has only global execution request');
       Check(TDAIPermissionManager.Instance.Requests[0].Context.ProjectKey = '', 'status explicitly global');
       Check(TDAIEvaluationService.StatusCalls = 0, 'global-denied evaluator result not read');
       Check(TDAIExpressionUIService.StatusCalls = 0, 'global-denied UI result not read'); NoMutations;
     finally LResult.Free; LArgs.Free; end;
   end;
   for LTool in TArray<string>.Create('add_watch', 'watch_at_cursor', 'evaluate_modify', 'inspect_at_cursor') do
-    for I := 0 to 1 do
     begin
       Reset; LArgs := Arguments('debugger_expression_ui'); LResult := nil;
       try
         Replace(LArgs, 'action', TJSONString.Create(LTool));
-        TDAIPermissionManager.Instance.RejectGlobalRead := I = 0;
-        TDAIPermissionManager.Instance.RejectGlobalExecute := I = 1; LRejected := False;
+        TDAIPermissionManager.Instance.RejectGlobalExecute := True; LRejected := False;
         try LResult := DispatchExpression('debugger_expression_ui', LArgs, Context);
         except on E: EAbort do LRejected := True; end;
         Check(LRejected, 'editor project grant must not open native debugger evaluator/inspector'); NoMutations;
         LLast := TDAIPermissionManager.Instance.Requests[High(TDAIPermissionManager.Instance.Requests)];
-        Check(LLast.Context.ProjectKey = '', 'native evaluator execution/read must be global');
+        Check(LLast.Context.ProjectKey = '', 'native evaluator execution must be global');
+        Check(TDAIExpressionUIService.PrepareCalls = 1, 'project source read can prepare native action before global execution denial');
       finally LResult.Free; LArgs.Free; end;
     end;
+end;
+
+procedure TestAlwaysReadableReference;
+var LArgs, LResult: TJSONObject;
+begin
+  Reset; ReferenceAlwaysReadable := True;
+  LResult := DispatchExpression('debugger_cursor_expression', nil, Context);
+  try
+    EventsEqual(['cursor:metadata', 'permission:reference_read', 'cursor:read']);
+    Permission(0, pcReferenceRead, CSourceFile, COwnerProject, 'Ausdruck im aktiven Quelleditor lesen');
+    Check(TDAICursorExpressionService.ReadCalls = 1, 'trusted reference source uses always-readable source category');
+    NoMutations;
+  finally LResult.Free; end;
+  Reset; ReferenceAlwaysReadable := True; TDAIPermissionManager.Instance.RejectGlobalExecute := True;
+  LArgs := Arguments('debugger_evaluate', True);
+  try
+    Invalid('debugger_evaluate', LArgs, False);
+    Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'trusted source cannot bypass global debugging permission');
+    Check(TDAIPermissionManager.Instance.Requests[0].Category = pcExecute, 'reference evaluation still requires execution permission');
+    Check(TDAICursorExpressionService.ReadCalls = 0, 'reference cursor contents are not read after debugging denial');
+  finally LArgs.Free; end;
 end;
 procedure TestParsing;
 const
@@ -522,7 +525,8 @@ begin
     TestEvaluation(False, True, 'all', False); TestEvaluation(False, True, 'none', True);
     TestEvaluation(True, False, 'none', True); TestEvaluation(True, True, 'none', False);
     TestUI('add_watch'); TestUI('watch_at_cursor'); TestUI('evaluate_modify'); TestUI('inspect_at_cursor');
-    TestStatus(False); TestStatus(True); TestDenials; TestUnavailableAndRaces; TestProjectCannotAuthorizeDebugger; TestParsing; TestSchemas;
+    TestStatus(False); TestStatus(True); TestDenials; TestUnavailableAndRaces; TestProjectCannotAuthorizeDebugger;
+    TestAlwaysReadableReference; TestParsing; TestSchemas;
     Writeln('PASS ExpressionDispatch: ', Checks, ' checks against actual production helpers, branches, schemas and request records.');
   except on E: Exception do begin Writeln(E.ClassName, ': ', E.Message); Halt(1); end; end;
 end.

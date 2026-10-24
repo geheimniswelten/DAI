@@ -1,4 +1,4 @@
-# DAI – Delphi AI
+﻿# DAI – Delphi AI
 
 DAI ist ein Design-Time-Package für Delphi 13 / RAD Studio 13 (`BDS 37.0`). Es stellt lokal laufenden KI-Clients einen MCP-Server zur Verfügung und
 vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
@@ -45,7 +45,7 @@ Die Optionsseite zeigt über „Skill und MCP-Werkzeuge“ den aktuellen dynamis
 
 `ide_window_control(action)` bietet `minimize`, `restore`, `foreground`, `background` und `close`. Windows kann eine Vordergrundanforderung ablehnen;
 die Antwort meldet den tatsächlichen Fensterzustand. `close` bestätigt vor `WM_CLOSE` den normalen Schließauftrag, keine abgeschlossene Beendigung.
-Delphi behält seine Speicherrückfragen und kann das Schließen abbrechen. Das Werkzeug benötigt IDE-Bearbeitungsrechte, `close` zusätzlich Ausführungsrechte.
+Delphi behält seine Speicherrückfragen und kann das Schließen abbrechen. Das Werkzeug benötigt Rechte zum Ändern der IDE-/DAI-Einstellungen, `close` zusätzlich Ausführungsrechte.
 
 Die Debugger-ToolsAPI liefert die Windows-Prozess-ID, Threads, Debuggerzustand und Speicherzugriff. Fenster und Dialoge des Debuggees werden mit
 `debugger_windows_list` über diese PID und die WinAPI gelesen; direkte fremde VCL-Formobjekte werden nicht angeboten. `Screen.ActiveCustomForm` gehört
@@ -100,7 +100,7 @@ laufen; Status erneut prüfen. Auch ohne Token funktionieren die lokalen Prozess
 Manueller Aufruf (der Client kommuniziert anschließend über STDIN/STDOUT):
 
 ```text
-DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.31
+DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.33
 ```
 
 ## Gemeinsame Verbindungsdaten
@@ -251,38 +251,44 @@ Eine solche Grafik soll ohne zusätzliche installierte Komponenten wie TChart au
 
 ## Berechtigungen
 
-Vor geschützten Operationen erscheint in der Delphi-IDE ein `TTaskDialog` mit fünf Command-Link-Schaltflächen:
+Die Optionen zeigen sechs Funktionsgruppen. Fünf davon sind einstellbar:
 
-1. **Nie erlauben** – dauerhaft für das aktuelle Projekt beziehungsweise global sperren
-2. **Verweigern** – nur die aktuelle Anfrage ablehnen
-3. **Nur diesmal** – nur die aktuelle Anfrage zulassen
-4. **Für diese Session** – bis zum Schließen des Projekts oder der IDE für den erkannten KI-Chat zulassen
-5. **Immer erlauben** – dauerhaft für das aktuelle Projekt beziehungsweise global zulassen
+| Gruppe | Global | Pro Projekt |
+| --- | --- | --- |
+| Delphi-/GetIt-Referenzen und IDE-Informationen lesen | Immer erlaubt, deaktiviertes Auswahlfeld | – |
+| IDE-/DAI-Einstellungen ändern, einschließlich Clientregistrierung und IDE-Steuerung | Einstellbar | – |
+| Projektdateien und Projektoptionen lesen | Standard | Default oder Ausnahme |
+| Projektdateien und Projektoptionen schreiben | Standard | Default oder Ausnahme |
+| Kompilieren | Standard | Default oder Ausnahme |
+| Ausführen und Debuggen | Standard | Default oder Ausnahme |
 
-Die Verification-Checkbox übernimmt die Entscheidung für alle anderen Funktionsgruppen, deren aktuelle Erlaubnisstufe niedriger ist.
+Die erste Zeile umfasst Delphi-Sourcen, ToolsAPI, Samples und GetIt sowie IDE-Optionsnamen und Status-/Projektübersichten.
+Zusätzliche schreibgeschützte Verzeichnisse haben die globale Checkbox **Lesen immer erlaubt** (standardmäßig aus).
+Ohne diese Freigabe gilt dort das Leserecht des zugeordneten bzw. aktuellen Projekts. Alle Referenzverzeichnisse bleiben schreibgeschützt.
+Geöffnete Dateien dürfen die Projektrechte verwenden, auch außerhalb des Projektordners. Referenzfreigaben werden beim Lesen zuerst geprüft; Referenzen bleiben schreibgeschützt.
 
-Der automatisch ausgelöste Fragedialog verwendet den Berechtigungsbereich der konkreten Anfrage: bei zugeordnetem Projekt dieses Projekt, sonst global.
-„Immer“ und „Nie“ erzeugen auch bei geerbtem globalem „Nachfragen“ eine eigene Projektvorgabe. Explizite Projekt-/Dateiangaben können ein anderes
-geladenes Projekt zuordnen; Debuggerauswertungen verwenden ausdrücklich den globalen Bereich. Der Dialog zeigt das Projekt beziehungsweise „global“ an.
-„Nur diesmal“ und „Verweigern“ gelten nur für die Anfrage; „Für diese Session“ bleibt als Freigabe für den erkannten KI-Chat im jeweiligen Bereich im Speicher.
+Projektoptionen verwenden dieselben Rechte wie Projektdateien. Ein neues Projekt erstellen oder öffnen verwendet die globalen Projektschreibrechte.
+Geöffnete Dateien werden weiterhin im aktuellen IDE-Puffer bearbeitet; geschlossene Dateien werden bei `save: true` auf dem Datenträger geändert.
+Diese Wahl des Schreibwegs verändert die benötigte Berechtigung nicht. DAI-Berechtigungsdateien selbst sind über `file_write` schreibgeschützt, damit Projektschreibrechte keine zusätzlichen Freigaben erzeugen.
+Unbekannte Werkzeugargumente werden vor der Projektzuordnung zurückgewiesen. Compiler-Direktaufrufe verwenden globale Kompilierrechte.
+Debuggerauswertungen und ihre Ergebnisabfragen verwenden globale Ausführungsrechte, weil die aktive Projektauswahl den Debuggee nicht sicher zuordnet.
 
-Die Funktionsgruppen werden getrennt behandelt:
+Der Fragedialog bietet **Nie erlauben**, **Verweigern**, **Nur diesmal**, **Für diese Session** und **Immer erlauben**.
+Die Checkbox **Auswahl für globales Setting** wählt den globalen Standard statt einer Projektentscheidung.
+Globale Änderungen setzen die entsprechende Ausnahme des aktuellen Projekts auf **Default** und entfernen dessen bisherige Laufzeitentscheidung.
+IDE-Einstellungen haben ausschließlich einen globalen Bereich. Ohne Projekt ist der globale Bereich vorgegeben.
 
-- Lesezugriffe
-- Bearbeiten innerhalb der IDE
-- Dateien außerhalb der IDE bearbeiten
-- Kompilieren
-- Ausführen
+Dauerhafte Projektentscheidungen stehen neben dem Projekt in `<Projektname>.dai.permissions.json` (Schema 2).
+Globale Entscheidungen liegen unter dem DAI-Registryprofil im Unterschlüssel `PermissionsV2`; alte Einstellungen werden nicht übernommen.
+„Default“ erbt den globalen Standard. Eine explizite Projektvorgabe hat Vorrang vor globalen dauerhaften und Laufzeitfreigaben.
+„Verweigern“, „Nur einmal“ und „Session“ sind Laufzeitentscheidungen; „Nie“, „Nachfragen“ und „Immer“ werden gespeichert.
+Die Optionsseite zeigt globale Werte und Projekt-Ausnahmen nebeneinander. Änderungen bleiben bis zum Speichern ein Entwurf; Abbrechen verwirft sie.
 
-Dauerhafte Projektentscheidungen werden neben der Projektdatei in `<Projektname>.dai.permissions.json` gespeichert. Die Optionsseite zeigt den globalen
-Standard und das aktuelle Projekt nebeneinander mit jeweils 190 Pixel breiten ComboBoxen. Ohne aktives Projekt sind die Projektfelder deaktiviert.
-Rechts jeder Zeile öffnet ein einzelner Schild-Iconbutton den Berechtigungsdialog für das angezeigte aktive Projekt, sonst für den globalen Standard.
-Der Dialog nennt den Bereich ausdrücklich; seine Auswahl bleibt bis zum Speichern ein Entwurf. Globale Werte lassen sich jederzeit direkt in ihrer ComboBox ändern.
-
-„Default“ in der Projektspalte bedeutet, dass die Berechtigung vom globalen Standard geerbt wird. Der Hinweistext nennt den geerbten Wert.
-Die Auswahl „Default“ entfernt beim Speichern die eigene Projektvorgabe und ihre Laufzeitrechte; andere Projektberechtigungen bleiben erhalten.
-Es werden nur bearbeitete Berechtigungen übernommen, sodass unveränderte geerbte Werte keine eigenen Projektvorgaben erzeugen.
-„Verweigern“, „Nur einmal“ und „Session“ sind Laufzeitentscheidungen; „Nie“, „Nachfragen“ und „Immer“ werden persistent gespeichert.
+Tooltip und Dropdown des DAI-Buttons zeigen **IDE : ...** und **Projekt : ...**.
+„lesen“, „schreiben“ und „Vollzugriff“ fassen die verfügbaren Stufen zusammen; Vollzugriff benötigt zusätzlich Kompilieren und Ausführen.
+Bei fehlendem Leserecht steht „gesperrt“ bzw. „nachfragen“, ohne aktives Projekt „kein Projekt“.
+Chatgebundene Freigaben gelten weiterhin nur für den jeweiligen Chat; die Toolbar zeigt die allgemeine Freigabe des Bereichs.
+Beide Menüeinträge öffnen die DAI-Einstellungen.
 
 ## Projekt- und Chat-Sessions
 
@@ -447,7 +453,7 @@ VCL-Handles werden nur ausgelesen, wenn sie bereits angelegt sind; DAI erzeugt f
 Die Antwort enthält Formklasse/-name, Titel, Controls und Buttons sowie einen 30 Sekunden gültigen `snapshot_token`.
 Jedes neue Auslesen ersetzt die vorherige Momentaufnahme.
 `ide_dialog_click` betätigt einen sichtbaren aktivierten Button anhand seines tatsächlichen Namens; `ide_dialog_close` setzt `Form.ModalResult`.
-Beide Aktionen erfordern IDE-Bearbeitungs- und Ausführungsrechte. Zwischen Auslesen und Aktion muss derselbe Dialog aktiv bleiben.
+Beide Aktionen erfordern globale IDE-Änderungs- und Ausführungsrechte. Zwischen Auslesen und Aktion muss derselbe Dialog aktiv bleiben.
 Geschlossene/ersetzte Dialoge, verbrauchte Tokens und ungültige Buttons werden abgewiesen. Nach einem Buttonklick werden keine Formobjekte mehr ausgelesen.
 Texte aus Eingabefeldern werden ausgelassen; DAI-Berechtigungsdialoge sind von Auslesen und Aktionen ausgeschlossen. WinAPI-Dialoge sind hier nicht enthalten.
 
@@ -486,7 +492,7 @@ Die Übersicht aktiviert keine Projekte und verändert keine Optionen. `project_
 Die Abfrage benötigt Leserechte und funktioniert auch bei einer fehlenden BPL oder einem RuntimeOnly-Package.
 
 `package_install` und `package_uninstall` verwenden die öffentliche `IOTAPackageServices210` zum Installieren und Deinstallieren.
-Sie erfordern Lese-, IDE-Bearbeitungs- und Ausführungsrechte. Alle drei Werkzeuge wählen entweder ein geöffnetes Package über `project`
+Sie erfordern globale IDE-/DAI-Änderungsrechte und Ausführungsrechte. Alle drei Werkzeuge wählen entweder ein geöffnetes Package über `project`
 oder einen vollständigen `.bpl`-Pfad über `file`; beide Parameter zusammen werden abgewiesen. Ohne Parameter wird das aktive Package-Projekt verwendet.
 Beim Projekt gilt der ausgewertete SDK-Zielpfad der aktuellen Konfiguration und Plattform. Die Werkzeuge aktivieren kein anderes Projekt und führen keinen Build aus;
 zum Erstellen der BPL bei Bedarf zuvor `project_compile` verwenden.
@@ -534,8 +540,7 @@ Ein Insight-Aufruf nur mit `query` zeigt die Suche; die Ausführung einer Option
 Die modale Öffnung läuft asynchron. `options_open` gibt eine `request_id` zurück; denselben Aufruf anschließend nur mit dieser ID ausführen,
 um den Status zu lesen. Weitere Selektoren zusammen mit `request_id` werden abgewiesen. Die Zustände unterscheiden `queued`, `opened`,
 `focused`, `unsupported`, `error`, `closed` und `cancelled`; `page_selected` und `option_focused` bestätigen die einzelnen Schritte.
-Suche und Status benötigen Leserechte. Öffnen verlangt zusätzlich
-IDE-Bearbeitungs- und Ausführungsrechte, weil die native Navigation einen ausgewählten Options-Insight-Eintrag ausführen kann.
+Suche und Navigationsstatus sind frei lesbare Metadaten. Öffnen benötigt je nach Ziel globale IDE-Änderungsrechte oder Projektschreibrechte.
 
 Vor der ersten asynchronen Navigation wird das eigene Package im Prozess gehalten, damit ein modaler SDK-Aufruf bei einer
 reentranten Deinstallation nicht in entladenen Code zurückkehrt. Zum Austausch der geladenen BPL die IDE neu starten.
@@ -804,6 +809,22 @@ Dokumentation: [Codex](https://developers.openai.com/codex/mcp/), [Claude Code](
 [LM Studio](https://lmstudio.ai/docs/app/mcp), [Hermes](https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference),
 [OpenClaw](https://docs.openclaw.ai/gateway/config-extensions), [Eigent](https://www.eigent.ai/blog/eigent-how-to-setting-up-your-first-custom-mcp-server).
 
+### Manuelle Registrierung
+
+In den DAI-Optionen zeigt **Manuell registrieren…** die Angaben für den ausgewählten KI-Client:
+HTTP-URL mit Authorization-Header, Programm/Argumente/Umgebung für die STDIO-Brücke und den optionalen Starthelfer.
+Für unterstützte Clients enthält der Dialog zusätzlich den Konfigurationspfad und ein Beispiel im jeweiligen Format.
+Bei „Alle erkannten Clients“ oder einem nicht automatisch unterstützten Client gibt es allgemeine Verbindungsdaten und ein STDIO-Beispiel.
+**Angaben kopieren** übernimmt den Dialoginhalt einschließlich Token in die Zwischenablage. Beim Öffnen wird nichts gespeichert oder registriert.
+Die Beispiele verwenden die aktuellen Eingaben für Port und Token sowie die ausgewählte Verbindungsebene; geänderte Werte zuerst in DAI speichern.
+
+Mit **Manuell registriert** wird ausschließlich „Nicht registriert“ im DAI-Button unterdrückt.
+Diese Bestätigung prüft keine Verbindung und erklärt keine automatisch gefundenen Einträge für gültig.
+Hinweise auf veraltete Registrierungen, Konflikte, Lesefehler und Serverfehler bleiben sichtbar.
+Die Checkbox wird mit **Speichern** oder **Registrieren** übernommen; **Abbrechen** verwirft die Änderung.
+Gemeinsame Verbindungen speichern sie unter `HKCU\Software\DelphiAI\DAI\Connection`, IDE-eigene Verbindungen im jeweiligen DAI-Profil,
+jeweils als `ManualClientRegistration` (standardmäßig aus). Die gemeinsame Bestätigung gilt dadurch auch für andere Delphi-Versionen.
+
 ### Codex und vorhandener Skill
 
 Die Optionsseite zeigt den Status folgender Dateien über `FileExists` und die DAI-Verwaltungsmarker an:
@@ -881,7 +902,7 @@ Bei Umbenennungen und beim Erzeugen wird der tatsächliche Komponentenname zurü
 dass DAI die Pascal-Felddeklaration nicht unabhängig verifiziert; insbesondere wird bei selbst umbenennenden Komponenten keine Synchronisierung aus `ValidateRename` abgeleitet.
 Der Parentwechsel kann über die native Komponente erfolgen und meldet die Änderung dem Designer.
 Die Werkzeuge speichern weder Formular noch PAS-Unit automatisch. Ergebnisse melden den tatsächlichen Designerzustand;
-eine gemeinsame Undo-Transaktion für mehrere Änderungen wird nicht garantiert. Lesen benötigt Leserechte, Auswahl und Änderungen zusätzlich IDE-Bearbeitungsrechte.
+eine gemeinsame Undo-Transaktion für mehrere Änderungen wird nicht garantiert. Lesen benötigt Projektrechte oder die Referenzfreigabe, Auswahl und Änderungen zusätzlich Projektschreibrechte.
 Mutationen sind auf Workspace-Dateien beschränkt; schreibgeschützte Referenzformulare bleiben unverändert.
 DFM-/FMX-Inhalte können auch den ungespeicherten Zustand liefern (`source: designer_buffer`). Für direkte Formtextänderungen weiterhin den IDE-Textpuffer verwenden.
 
@@ -898,7 +919,7 @@ weil die verwendeten öffentlichen ToolsAPI-Getter diese Angaben nicht liefern.
 `breakpoint_remove(file, line)` entfernt passende Quellhaltepunkte. Änderungen sind auf Workspace-Dateien beschränkt.
 `debugger_control(action)` unterstützt `pause`, `continue`, `step_into`, `step_over` und `step_out` mit Prüfung des aktuellen Prozesszustands.
 Starten/Beenden erfolgt über `project_run` und `project_stop`. Ein bereits laufender Debugger wird durch `project_run` nicht unbeabsichtigt neu gestartet.
-Haltepunkte gehören zur IDE-Bearbeitung, Debugger-Steuerung zur Ausführungsberechtigung; Status und Auflistungen zur Leseberechtigung.
+Haltepunkte, Debugger-Steuerung, Status und Debugger-Auflistungen verwenden die Ausführungs-/Debuggerberechtigung.
 
 ### Ausdrücke auswerten und Werte ändern
 
@@ -936,7 +957,7 @@ Zum Zuweisen eines neuen Werts:
 Diese Argumente gehören zu `debugger_modify`. `value` ist ein Delphi-Wertausdruck; für eine Stringkonstante beispielsweise `"'Hallo'"`.
 DAI wertet den Zielausdruck unmittelbar vor Modify ohne Seiteneffekte aus und prüft `can_modify`. Eine erfolgreiche synchrone Vorprüfung
 und die Zuweisung laufen im selben IDE-Thread ohne dazwischenliegende Dialoge oder Nachrichtenverarbeitung. Reentranz, Zielwechsel oder
-eine verzögerte Vorprüfung verhindern die Zuweisung. Modify verlangt Lese- und Ausführungsrechte und ändert den Debuggee, keine Quelldatei.
+eine verzögerte Vorprüfung verhindern die Zuweisung. Modify verlangt Ausführungsrechte und ändert den Debuggee, keine Quelldatei.
 Debuggerwerte, Wertzuweisungen und Ergebnisabfragen verwenden ausdrücklich den globalen Berechtigungskontext; das aktive Projekt oder eine
 lexikalische Quelldatei beweisen keine Zugehörigkeit eines Debug-Prozesses. Bei `use_cursor` kommt die Leseberechtigung des tatsächlichen
 Dateiprojekts hinzu. Alle nativen Ausdrucksaktionen benötigen ebenfalls globale Debuggerrechte zusätzlich zum Zugriff auf den Editor;
@@ -963,7 +984,7 @@ Eine verzögerte Vorprüfung startet nach ihrem Callback niemals automatisch Mod
 | `evaluate_modify` | Auswerten/Ändern öffnen |
 | `inspect_at_cursor` | Debug-Inspektor am Cursor öffnen |
 
-Der Aufruf benötigt Lese-, IDE-Bearbeitungs- und Ausführungsrechte. Er verändert weder Cursor noch Auswahl und läuft asynchron:
+Der Aufruf benötigt Quelldatei-Leserechte und globale Ausführungsrechte. Er verändert weder Cursor noch Auswahl und läuft asynchron:
 `{"request_id":"..."}` fragt beim selben Werkzeug nur den Status ab. `queued`, `invoking`, `invoked`, `error` und `cancelled` beschreiben den Aufruf;
 `action_invoked` bestätigt die Rückkehr des nativen Befehls. Daraus lässt sich weder ein hinzugefügter Watch noch ein geschlossener Dialog ableiten.
 Auswerten/Ändern und Inspektor benötigen einen angehaltenen Debuggerthread. Native Dialoge bleiben durch den Benutzer bedienbar.
