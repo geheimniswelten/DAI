@@ -12,7 +12,8 @@ uses
 type
   TDAIProjectService = class sealed
   public
-    class function CreateProject(const AName: string; const ADirectory: string; const AKind: string; const ASave: Boolean = True; const ACloseOthers: Boolean = False): TJSONObject; static;
+    class function CreateProject(const AName: string; const ADirectory: string; const AKind: string; const ASave: Boolean = True;
+      const ACloseOthers: Boolean = False): TJSONObject; static;
     class function OpenProject(const AFileName: string; const ACloseOthers: Boolean = False): TJSONObject; static;
     class function SaveProject(const AProjectNameOrPath: string): TJSONObject; static;
     class function RemoveProject(const AProjectNameOrPath: string): TJSONObject; static;

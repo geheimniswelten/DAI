@@ -19,11 +19,11 @@ begin Result := TJSONArray.Create; end;
 class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
 begin
   InterlockedIncrement(CallCount);
-  if SameText(AName, 'deferred-close') or SameText(AName, 'failed-deferred-close') then
+  if SameText(AName, 'ide_window_control') or SameText(AName, 'file_write') then
     TDAIIDEControl.PrepareFixtureClose;
-  if SameText(AName, 'failed-deferred-close') then
+  if SameText(AName, 'file_write') then
     raise EInvalidOperation.Create('Isolated tool failure after preparation');
-  if SameText(AName, 'sync-stop') and Assigned(SynchronizeEntered) then
+  if SameText(AName, 'project_compile') and Assigned(SynchronizeEntered) then
   begin
     SynchronizeEntered.SetEvent;
     TThread.Synchronize(nil,

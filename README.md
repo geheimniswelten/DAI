@@ -100,7 +100,7 @@ laufen; Status erneut prüfen. Auch ohne Token funktionieren die lokalen Prozess
 Manueller Aufruf (der Client kommuniziert anschließend über STDIN/STDOUT):
 
 ```text
-DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.30
+DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.31
 ```
 
 ## Gemeinsame Verbindungsdaten
@@ -224,6 +224,30 @@ Laufzustand. Bei einem laufenden Server werden Port- und Tokenänderungen mit ei
 Win32 und Win64 verwenden bei gleichem BDS-Benutzerprofil weiterhin dieselben DAI-Einstellungen für Port und Token. Andere Delphi-Versionen bzw. eigene
 IDE-Profile können andere Einstellungen besitzen. Nach einem Wechsel müssen die Clientregistrierungen zum Port, Token und Bridge-Pfad der neuen aktiven IDE passen.
 `ide_status` zeigt dazu `active`, `ide_architecture`, `ide_process_id`, `ide_executable`, `package_file` und `package_registry_key`.
+
+## Lokale Nutzungszähler
+
+DAI zählt bekannte Toolaufrufe je lokalem Kalendermonat unter
+`HKCU\Software\DelphiAI\DAI\UsageLog\YYYY_MM`, beispielsweise `2026_10`.
+Jeder Toolname ist ein `REG_QWORD`-Wert mit der Anzahl seiner Aufrufversuche, einschließlich fehlgeschlagener oder verweigerter Aufrufe.
+Die Zähler gelten gemeinsam für alle Delphi-Versionen, Profile und Architekturen. Auch `dai_start` zählt seine drei Werkzeuge;
+die weiterleitende STDIO-Brücke zählt HTTP-Aufrufe nicht zusätzlich. Argumente, Dateiinhalte, Ergebnisse und Zugangsdaten werden nicht gespeichert.
+Technische MCP-Anfragen wie Initialisierung, Discovery, Ping, Werkzeuglisten, Notifications und Sitzungsende sowie unbekannte Toolnamen zählen nicht.
+Die Zählung ist unabhängig vom optionalen Zugriffsprotokoll in den IDE-Meldungen. Bei Statistikfehlern bleibt der Toolaufruf nutzbar;
+ein Zählschritt kann bei gesperrter oder nicht verfügbarer Registry ausfallen.
+
+Status- und Orientierungsaufrufe erhöhen ihren Zähler, verlängern aber nicht die gelbe/orange Aktivitätsanzeige:
+`ide_status`, `projects_list`, `open_files_list`, `project_files_list`, `reference_roots_list`, `code_insight_status`,
+`debugger_status`, `package_is_installed`, `project_options_configurations` und Registrierungsstatusabfragen.
+Verzeichnislisten ohne `content_query` bleiben ebenfalls still. Inhaltsfilter, Dateiinhalte, Quelltextsuchen, Debuggerwerte,
+Optionswerte und Änderungen lösen die Aktivitätsanzeige aus. `project_context` bleibt nur mit `include_compiler_options: false` still.
+Verbindungsaufbau und Sitzungsende beeinflussen das Symbol nicht mehr. Die Zeitfenster von 15 Sekunden und 15 Minuten bleiben erhalten.
+
+Unter den DAI-Optionen öffnet **Nutzungszähler in der Registry öffnen** den Registrierungs-Editor direkt am gemeinsamen Pfad.
+Dabei werden Einstellungsentwürfe weder geprüft noch gespeichert. Windows kann seine normale Benutzerkontenabfrage anzeigen.
+Die Zähler lassen sich dort zunächst direkt ansehen; eine Auswertung oder Übertragung findet nicht statt.
+Für später vorgesehen sind ein ausdrücklich ausgelöster Statistik-Upload an den Entwickler sowie eine kurze Liste und Grafik häufig genutzter Tools.
+Eine solche Grafik soll ohne zusätzliche installierte Komponenten wie TChart auskommen.
 
 ## Berechtigungen
 

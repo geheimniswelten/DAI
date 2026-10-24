@@ -960,7 +960,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
         if forbidden in stripped:
             fail(errors, f"h5u.DAI.Options.Frame.pas: eigene ScrollBox beziehungsweise alClient-Layout ist nicht erlaubt: {forbidden}")
 
-    if "vcl.extctrls" in direct_used_units(content):
+    if "vcl.extctrls" in direct_used_units(content) and "TLinkLabel" not in stripped:
         fail(errors, "h5u.DAI.Options.Frame.pas: Vcl.ExtCtrls darf nicht nur für eine eigene ScrollBox eingebunden werden")
 
     build_match = re.search(
@@ -1004,7 +1004,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.30"
+    expected = "1.2.31"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")
