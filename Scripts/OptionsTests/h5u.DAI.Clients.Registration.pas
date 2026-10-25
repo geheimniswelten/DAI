@@ -40,7 +40,8 @@ begin
   LastManualPort := APort;
   LastManualToken := AToken;
   LastManualShared := AShared;
-  Result := 'Synthetic manual registration for ' + AClient + #13#10 + AToken;
+  Result := 'Synthetic manual registration for ' + AClient + #13#10 + AToken + #13#10 +
+    '{"mcpServers":{"dai":{"type":"http"}}}' + #13#10 + 'C:\Synthetic\日本語\client.json';
 end;
 
 class function TDAIClientRegistration.FindRegistrations(const AClient: string): TJSONObject;

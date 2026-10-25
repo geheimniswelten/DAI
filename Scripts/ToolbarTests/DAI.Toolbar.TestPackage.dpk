@@ -8,6 +8,7 @@ requires
 contains
   DAI.Toolbar.PackageProbe in 'DAI.Toolbar.PackageProbe.pas',
   h5u.DAI.IDE.Toolbar in '..\..\Source\h5u.DAI.IDE.Toolbar.pas',
+  h5u.DAI.Localization in '..\..\Source\h5u.DAI.Localization.pas',
   h5u.DAI.Runtime in 'h5u.DAI.Runtime.pas',
   h5u.DAI.Clients.Registration in 'h5u.DAI.Clients.Registration.pas',
   h5u.DAI.Settings in 'h5u.DAI.Settings.pas',

@@ -104,10 +104,12 @@ uses
   Vcl.Clipbrd,
   Vcl.ComCtrls,
   Vcl.Graphics,
+  Winapi.Messages,
   h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
   h5u.DAI.Consts,
   h5u.DAI.IDE.Toolbar,
+  h5u.DAI.Localization,
   h5u.DAI.MCP.Tools,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Dialog,
@@ -150,7 +152,7 @@ var
 begin
   inherited CreateNew(nil);
   Name := 'DAIManualRegistrationDialog';
-  Caption := 'DAI – Manuelle Client-Registrierung';
+  Caption := DAIText('DAI – Manuelle Client-Registrierung', 'DAI – Manual client registration', 'DAI – Inscription manuelle du client', 'DAI – クライアントの手動登録');
   Position := poScreenCenter;
   BorderStyle := bsSizeable;
   ClientWidth := 920;
@@ -176,13 +178,13 @@ begin
   LCopyButton.Parent := Self;
   LCopyButton.SetBounds(16, ClientHeight - 44, 200, 28);
   LCopyButton.Anchors := [akLeft, akBottom];
-  LCopyButton.Caption := 'Angaben kopieren';
+  LCopyButton.Caption := DAIText('Angaben kopieren', 'Copy details', 'Copier les informations', '詳細をコピー');
   LCopyButton.OnClick := CopyClicked;
   LCloseButton := TButton.Create(Self);
   LCloseButton.Parent := Self;
   LCloseButton.SetBounds(ClientWidth - 128, ClientHeight - 44, 112, 28);
   LCloseButton.Anchors := [akRight, akBottom];
-  LCloseButton.Caption := 'Schließen';
+  LCloseButton.Caption := DAIText('Schließen', 'Close', 'Fermer', '閉じる');
   LCloseButton.Default := True;
   LCloseButton.Cancel := True;
   LCloseButton.ModalResult := mrClose;
@@ -199,7 +201,7 @@ var
 begin
   inherited CreateNew(nil);
   Name := 'DAIRegistrationCleanupDialog';
-  Caption := 'DAI – Registrierungen suchen und entfernen';
+  Caption := DAIText('DAI – Registrierungen suchen und entfernen', 'DAI – Find and remove registrations', 'DAI – Rechercher et supprimer des inscriptions', 'DAI – 登録の検索と削除');
   Position := poScreenCenter;
   ClientWidth := 960;
   ClientHeight := 560;
@@ -220,13 +222,13 @@ begin
   FList.ReadOnly := True;
   FList.RowSelect := True;
   FList.HideSelection := False;
-  FList.Columns.Add.Caption := 'KI-Client';
+  FList.Columns.Add.Caption := DAIText('KI-Client', 'AI client', 'Client IA', 'AIクライアント');
   FList.Columns[0].Width := 180;
-  FList.Columns.Add.Caption := 'MCP-Server / Starthelfer';
+  FList.Columns.Add.Caption := DAIText('MCP-Server / Starthelfer', 'MCP server / launcher', 'Serveur MCP / lanceur', 'MCPサーバー / ランチャー');
   FList.Columns[1].Width := 310;
-  FList.Columns.Add.Caption := 'Bereich';
+  FList.Columns.Add.Caption := DAIText('Bereich', 'Scope', 'Portée', '範囲');
   FList.Columns[2].Width := 160;
-  FList.Columns.Add.Caption := 'Status';
+  FList.Columns.Add.Caption := DAIText('Status', 'Status', 'État', '状態');
   FList.Columns[3].Width := 240;
   FList.OnSelectItem := SelectionChanged;
   FDetails := TMemo.Create(Self);
@@ -241,21 +243,21 @@ begin
   LButton.Parent := Self;
   LButton.SetBounds(16, 510, 160, 30);
   LButton.Anchors := [akLeft, akBottom];
-  LButton.Caption := 'Erneut suchen';
+  LButton.Caption := DAIText('Erneut suchen', 'Search again', 'Relancer la recherche', '再検索');
   LButton.OnClick := SearchClicked;
   FRemove := TButton.Create(Self);
   FRemove.Name := 'DAIRemoveRegistrationButton';
   FRemove.Parent := Self;
   FRemove.SetBounds(188, 510, 230, 30);
   FRemove.Anchors := [akLeft, akBottom];
-  FRemove.Caption := 'Ausgewählte entfernen';
+  FRemove.Caption := DAIText('Ausgewählte entfernen', 'Remove selected', 'Supprimer la sélection', '選択した登録を削除');
   FRemove.Enabled := False;
   FRemove.OnClick := RemoveClicked;
   LButton := TButton.Create(Self);
   LButton.Parent := Self;
   LButton.SetBounds(784, 510, 160, 30);
   LButton.Anchors := [akRight, akBottom];
-  LButton.Caption := 'Schließen';
+  LButton.Caption := DAIText('Schließen', 'Close', 'Fermer', '閉じる');
   LButton.Cancel := True;
   LButton.ModalResult := mrClose;
   Reload;
@@ -299,11 +301,11 @@ begin
   if not Assigned(LCandidate) then
     Exit;
   FRemove.Enabled := LCandidate.GetValue<Boolean>('removable', False);
-  FDetails.Lines.Add('Konfigurationsdatei: ' + LCandidate.GetValue<string>('path', ''));
-  FDetails.Lines.Add('MCP-Server: ' + LCandidate.GetValue<string>('server_name', ''));
-  FDetails.Lines.Add('Starthelfer: ' + LCandidate.GetValue<string>('launcher_server', ''));
+  FDetails.Lines.Add(DAIText('Konfigurationsdatei: ', 'Configuration file: ', 'Fichier de configuration : ', '設定ファイル: ') + LCandidate.GetValue<string>('path', ''));
+  FDetails.Lines.Add(DAIText('MCP-Server: ', 'MCP server: ', 'Serveur MCP : ', 'MCPサーバー: ') + LCandidate.GetValue<string>('server_name', ''));
+  FDetails.Lines.Add(DAIText('Starthelfer: ', 'Launcher: ', 'Lanceur : ', 'ランチャー: ') + LCandidate.GetValue<string>('launcher_server', ''));
   if LCandidate.GetValue<string>('registry_root', '') <> '' then
-    FDetails.Lines.Add('Einstellungsprofil: ' + LCandidate.GetValue<string>('registry_root'));
+    FDetails.Lines.Add(DAIText('Einstellungsprofil: ', 'Settings profile: ', 'Profil de paramètres : ', '設定プロファイル: ') + LCandidate.GetValue<string>('registry_root'));
   FDetails.Lines.Add(LCandidate.GetValue<string>('message', ''));
 end;
 
@@ -334,17 +336,26 @@ begin
             LItem.Caption := LCandidate.GetValue<string>('label', LCandidate.GetValue<string>('client', ''));
             LItem.SubItems.Add(LCandidate.GetValue<string>('server_name', '') + ' / ' + LCandidate.GetValue<string>('launcher_server', ''));
             if LCandidate.GetValue<Boolean>('current_scope', False) then
-              LItem.SubItems.Add('Aktueller Bereich')
+              LItem.SubItems.Add(DAIText('Aktueller Bereich', 'Current scope', 'Portée actuelle', '現在の範囲'))
             else
-              LItem.SubItems.Add('Anderer Bereich');
+              LItem.SubItems.Add(DAIText('Anderer Bereich', 'Other scope', 'Autre portée', '別の範囲'));
             if LCandidate.GetValue<Boolean>('removable', False) then
-              LItem.SubItems.Add('Entfernbar')
+              LItem.SubItems.Add(DAIText('Entfernbar', 'Removable', 'Suppression possible', '削除可能'))
             else
-              LItem.SubItems.Add('Prüfen: ' + LCandidate.GetValue<string>('message', 'nicht verwaltet'));
+              LItem.SubItems.Add(DAIText('Prüfen: ', 'Review: ', 'À vérifier : ', '確認: ') + LCandidate.GetValue<string>('message', DAIText('nicht verwaltet',
+                'unmanaged', 'non géré', '管理対象外')));
           end;
-      FStatus.Caption := Format('%d DAI-Registrierungen gefunden. Zum Entfernen einen Eintrag auswählen.', [FList.Items.Count]);
+      FStatus.Caption := Format(DAIText(
+        '%d DAI-Registrierungen gefunden. Zum Entfernen einen Eintrag auswählen.',
+        '%d DAI registrations found. Select an entry to remove.',
+        '%d inscriptions DAI trouvées. Sélectionnez une entrée à supprimer.',
+        'DAIの登録が%d件見つかりました。削除する項目を選択してください。'), [FList.Items.Count]);
     except
-      FStatus.Caption := 'Die Registrierungen konnten nicht gelesen werden. Konfigurationspfade und Zugriffsrechte prüfen.';
+      FStatus.Caption := DAIText(
+        'Die Registrierungen konnten nicht gelesen werden. Konfigurationspfade und Zugriffsrechte prüfen.',
+        'Could not read registrations. Check configuration paths and access permissions.',
+        'Impossible de lire les inscriptions. Vérifiez les chemins de configuration et les droits d’accès.',
+        '登録を読み取れませんでした。設定ファイルのパスとアクセス権を確認してください。');
     end;
   finally
     FList.Items.EndUpdate;
@@ -371,7 +382,7 @@ begin
   try
     LResult := TDAIClientRegistration.RemoveFoundRegistration(LCandidate);
     try
-      LMessage := LResult.GetValue<string>('message', 'Die Registrierung wurde geprüft.');
+      LMessage := LResult.GetValue<string>('message', DAIText('Die Registrierung wurde geprüft.', 'The registration was checked.', 'L’inscription a été vérifiée.', '登録を確認しました。'));
     finally
       LResult.Free;
     end;
@@ -379,7 +390,11 @@ begin
     FStatus.Caption := LMessage;
   except
     Reload;
-    FStatus.Caption := 'Die Registrierung konnte nicht entfernt werden. Erneut suchen und den aktuellen Zustand prüfen.';
+    FStatus.Caption := DAIText(
+      'Die Registrierung konnte nicht entfernt werden. Erneut suchen und den aktuellen Zustand prüfen.',
+      'Could not remove the registration. Search again and review its current state.',
+      'Impossible de supprimer l’inscription. Relancez la recherche et vérifiez son état actuel.',
+      '登録を削除できませんでした。再検索して現在の状態を確認してください。');
   end;
 end;
 
@@ -407,6 +422,38 @@ begin
   Result.Left := ALeft;
   Result.Top := ATop;
   Result.AutoSize := True;
+end;
+
+function NewWrappedLabel(const AParent: TWinControl; const ACaption: string; const ALeft, ATop, AWidth, AHeight: Integer): TLabel;
+begin
+  Result := NewLabel(AParent, ACaption, ALeft, ATop);
+  Result.AutoSize := False;
+  Result.WordWrap := True;
+  Result.SetBounds(ALeft, ATop, AWidth, AHeight);
+end;
+
+function PermissionCategoryCaption(const ACategory: TDAIPermissionCategory): string;
+begin
+  case ACategory of
+    pcReferenceRead:
+      Result := DAIText('Delphi-/GetIt-Sourcen und IDE-Optionen lesen', 'Read Delphi/GetIt sources and IDE settings',
+        'Lire les sources Delphi/GetIt et les paramètres IDE', 'Delphi/GetItソースとIDE設定の読み取り');
+    pcIDEOptions:
+      Result := DAIText('IDE-Optionen ändern', 'Change IDE settings', 'Modifier les paramètres IDE', 'IDE設定の変更');
+    pcProjectRead:
+      Result := DAIText('Projekt und Projektdateien lesen', 'Read project and project files',
+        'Lire le projet et ses fichiers', 'プロジェクトとプロジェクトファイルの読み取り');
+    pcProjectWrite:
+      Result := DAIText('Projekt und Projektdateien ändern', 'Change project and project files',
+        'Modifier le projet et ses fichiers', 'プロジェクトとプロジェクトファイルの変更');
+    pcCompile:
+      Result := DAIText('Kompilieren', 'Compile', 'Compiler', 'コンパイル');
+    pcExecute:
+      Result := DAIText('Projekt ausführen und debuggen', 'Run and debug project',
+        'Exécuter et déboguer le projet', 'プロジェクトの実行とデバッグ');
+  else
+    Result := DAIText('Unbekannte Funktionalität', 'Unknown functionality', 'Fonctionnalité inconnue', '不明な機能');
+  end;
 end;
 
 constructor TDAIOptionsFrame.Create(AOwner: TComponent);
@@ -446,7 +493,7 @@ var
   LName: string;
   LScope: TDAIPermissionScope;
 begin
-  NewLabel(AParent, DAIPermissionCategoryName(ACategory), 24, ATop + 4);
+  NewWrappedLabel(AParent, PermissionCategoryCaption(ACategory), 24, ATop + 2, 284, 44);
   for LScope := Low(TDAIPermissionScope) to High(TDAIPermissionScope) do
   begin
     if LScope = psGlobal then
@@ -461,9 +508,10 @@ begin
     LComboBox.Style := csDropDownList;
     PopulatePermissionCombo(LComboBox);
     if LScope = psProject then
-      LComboBox.Items.Add(IfThen(DAIPermissionCategoryIsGlobal(ACategory), 'Nur global', 'Default'))
+      LComboBox.Items.Add(IfThen(DAIPermissionCategoryIsGlobal(ACategory), DAIText('Nur global', 'Global only', 'Globale uniquement', 'グローバルのみ'), DAIText('Default',
+        'Default', 'Par défaut', '既定')))
     else
-      LComboBox.Items[4] := 'Für diese IDE-Sitzung';
+      LComboBox.Items[4] := DAIText('Für diese IDE-Sitzung', 'For this IDE session', 'Pour cette session IDE', 'このIDEセッション中');
     LComboBox.Tag := Ord(LScope) * (Ord(High(TDAIPermissionCategory)) + 1) + Ord(ACategory);
     LComboBox.ShowHint := True;
     LComboBox.OnChange := PermissionChanged;
@@ -475,12 +523,12 @@ begin
   LButton.Caption := ''; // SetName supplies a caption; keep only the shield glyph.
   LButton.SetBounds(744, ATop - 1, 24, 24);
   LButton.Tag := Ord(ACategory);
-  LButton.Hint := DAIPermissionCategoryName(ACategory) + ' – Berechtigung auswählen';
+  LButton.Hint := PermissionCategoryCaption(ACategory) + DAIText(' – Berechtigung auswählen', ' – Select permission', ' – Choisir une autorisation', ' – 権限を選択');
   LButton.ShowHint := True;
   DrawPermissionGlyph(LButton.Glyph);
   LButton.OnClick := PermissionDialogClicked;
   FPermissionButtons[ACategory] := LButton;
-  Inc(ATop, 34);
+  Inc(ATop, 50);
 end;
 
 procedure TDAIOptionsFrame.BuildControls;
@@ -490,7 +538,7 @@ var
   LTop: Integer;
 begin
   LTop := 18;
-  with NewLabel(Self, 'MCP-Server', 16, LTop) do
+  with NewLabel(Self, DAIText('MCP-Server', 'MCP server', 'Serveur MCP', 'MCPサーバー'), 16, LTop) do
     Font.Style := [fsBold];
   Inc(LTop, 30);
 
@@ -498,47 +546,77 @@ begin
   FServerEnabledCheckBox.Parent := Self;
   FServerEnabledCheckBox.Left := 24;
   FServerEnabledCheckBox.Top := LTop;
-  FServerEnabledCheckBox.Caption := 'MCP-Server beim IDE-Start automatisch starten';
-  FServerEnabledCheckBox.Width := 540;
-  Inc(LTop, 32);
+  FServerEnabledCheckBox.Caption := DAIText(
+    'MCP-Server beim IDE-Start automatisch starten',
+    'Start the MCP server automatically when the IDE starts',
+    'Démarrer automatiquement le serveur MCP au lancement de l’IDE',
+    'IDEの起動時にMCPサーバーを自動的に開始する');
+  FServerEnabledCheckBox.Width := 736;
+  FServerEnabledCheckBox.Height := 36;
+  FServerEnabledCheckBox.WordWrap := True;
+  Inc(LTop, 44);
 
   FAllowIDEStartStopCheckBox := TCheckBox.Create(Self);
   FAllowIDEStartStopCheckBox.Parent := Self;
   FAllowIDEStartStopCheckBox.Name := 'DAIAllowIDEStartStopCheckBox';
-  FAllowIDEStartStopCheckBox.SetBounds(24, LTop, 650, 24);
-  FAllowIDEStartStopCheckBox.Caption := 'KI darf die Delphi-IDE starten und beenden';
+  FAllowIDEStartStopCheckBox.SetBounds(24, LTop, 736, 36);
+  FAllowIDEStartStopCheckBox.WordWrap := True;
+  FAllowIDEStartStopCheckBox.Caption := DAIText(
+    'KI darf die Delphi-IDE starten und beenden',
+    'Allow AI to start and close the Delphi IDE',
+    'Autoriser l’IA à démarrer et à fermer l’IDE Delphi',
+    'AIによるDelphi IDEの起動と終了を許可する');
   FAllowIDEStartStopCheckBox.Checked := True;
-  FAllowIDEStartStopCheckBox.Hint := 'Gilt für alle Delphi-Versionen und Profile dieses Windows-Benutzers. ' +
-    'Wird beim Speichern oder Registrieren wirksam. dai_start bleibt für Statusabfragen registriert.';
+  FAllowIDEStartStopCheckBox.Hint := DAIText(
+    'Gilt für alle Delphi-Versionen und Profile dieses Windows-Benutzers. Wird beim Speichern oder Registrieren wirksam. dai_start ' +
+      'bleibt für Statusabfragen registriert.',
+    'Applies to all Delphi versions and profiles for this Windows user. Takes effect when saving or registering. dai_start remains ' +
+      'registered for status queries.',
+    'S’applique à toutes les versions et à tous les profils Delphi de cet utilisateur Windows. Prend effet lors de l’enregistrement ou ' +
+      'de l’inscription. dai_start reste inscrit pour consulter l’état.',
+    'このWindowsユーザーのすべてのDelphiバージョンとプロファイルに適用されます。保存時または登録時に反映されます。状態の照会用にdai_startの登録は維持されます。');
   FAllowIDEStartStopCheckBox.ShowHint := True;
-  Inc(LTop, 32);
+  Inc(LTop, 44);
 
   FUseSharedConnectionSettingsCheckBox := TCheckBox.Create(Self);
   FUseSharedConnectionSettingsCheckBox.Parent := Self;
   FUseSharedConnectionSettingsCheckBox.Name := 'DAIUseSharedConnectionSettingsCheckBox';
-  FUseSharedConnectionSettingsCheckBox.SetBounds(24, LTop, 744, 24);
-  FUseSharedConnectionSettingsCheckBox.Caption := 'Port und Bearer-Token für alle Delphi-Versionen und Profile gemeinsam verwenden';
+  FUseSharedConnectionSettingsCheckBox.SetBounds(24, LTop, 736, 36);
+  FUseSharedConnectionSettingsCheckBox.WordWrap := True;
+  FUseSharedConnectionSettingsCheckBox.Caption := DAIText(
+    'Port und Bearer-Token für alle Delphi-Versionen und Profile gemeinsam verwenden',
+    'Share the port and bearer token across all Delphi versions and profiles',
+    'Partager le port et le jeton Bearer entre toutes les versions et tous les profils Delphi',
+    'すべてのDelphiバージョンとプロファイルでポートとBearerトークンを共有する');
   FUseSharedConnectionSettingsCheckBox.Checked := True;
-  FUseSharedConnectionSettingsCheckBox.Hint := 'Standard: gemeinsame Verbindungseinstellungen für diesen Windows-Benutzer. ' +
-    'Ohne Häkchen gelten Port und Bearer-Token nur für diese Delphi-Version und dieses IDE-Profil. ' +
-    'Andere DAI-Einstellungen bleiben IDE-spezifisch. Umschalten zeigt die vorhandenen Werte; ' +
-    'erst Speichern oder Registrieren übernimmt die Auswahl.';
+  FUseSharedConnectionSettingsCheckBox.Hint := DAIText(
+    'Standard: gemeinsame Verbindungseinstellungen für diesen Windows-Benutzer. Ohne Häkchen gelten Port und Bearer-Token nur für ' +
+      'diese Delphi-Version und dieses IDE-Profil. Andere DAI-Einstellungen bleiben IDE-spezifisch. Umschalten zeigt die vorhandenen ' +
+      'Werte; erst Speichern oder Registrieren übernimmt die Auswahl.',
+    'Default: shared connection settings for this Windows user. When unchecked, the port and bearer token apply only to this Delphi ' +
+      'version and IDE profile. Other DAI settings remain specific to the IDE. Switching previews existing values; saving or registering ' +
+      'applies the selection.',
+    'Par défaut : paramètres de connexion partagés pour cet utilisateur Windows. Sans cette option, le port et le jeton Bearer ' +
+      'concernent uniquement cette version de Delphi et ce profil IDE. Les autres paramètres DAI restent propres à l’IDE. Le changement ' +
+      'affiche les valeurs existantes ; l’enregistrement ou l’inscription applique la sélection.',
+    '既定では、このWindowsユーザーの接続設定を共有します。オフの場合、ポートとBearerトークンはこのDelphiバージョンとIDEプロファイルにのみ適用されます。他のDAI設定はIDEごとに保持されます。切り替えると既存の値を表示し、保存時または登録' +
+      '時に選択を適用します。');
   FUseSharedConnectionSettingsCheckBox.ShowHint := True;
   FUseSharedConnectionSettingsCheckBox.OnClick := ConnectionSettingsScopeClicked;
-  Inc(LTop, 32);
+  Inc(LTop, 44);
 
-  NewLabel(Self, 'Port', 24, LTop + 4);
+  NewLabel(Self, DAIText('Port', 'Port', 'Port', 'ポート'), 24, LTop + 4);
   FPortEdit := TEdit.Create(Self);
   FPortEdit.Parent := Self;
   FPortEdit.Left := 160;
   FPortEdit.Top := LTop;
   FPortEdit.Width := 100;
   FPortEdit.NumbersOnly := True;
-  with NewLabel(Self, Format('Standard: %d', [CDAIDefaultPort]), FPortEdit.Left + FPortEdit.Width + 12, LTop + 4) do
+  with NewLabel(Self, Format(DAIText('Standard: %d', 'Default: %d', 'Par défaut : %d', '既定: %d'), [CDAIDefaultPort]), FPortEdit.Left + FPortEdit.Width + 12, LTop + 4) do
     Font.Color := clGrayText;
   Inc(LTop, 32);
 
-  NewLabel(Self, 'Bearer-Token', 24, LTop + 4);
+  NewLabel(Self, DAIText('Bearer-Token', 'Bearer token', 'Jeton Bearer', 'Bearerトークン'), 24, LTop + 4);
   FTokenEdit := TEdit.Create(Self);
   FTokenEdit.Parent := Self;
   FTokenEdit.Left := 160;
@@ -550,8 +628,12 @@ begin
   FGenerateTokenButton.Left := FTokenEdit.Left + FTokenEdit.Width + 12;
   FGenerateTokenButton.Top := LTop;
   FGenerateTokenButton.Width := 158;
-  FGenerateTokenButton.Caption := 'Token erzeugen';
-  FGenerateTokenButton.Hint := 'Erzeugt eine neue GUID. Danach „Registrieren“ und den KI-Client neu starten, damit die neue Verbindung verwendet wird.';
+  FGenerateTokenButton.Caption := DAIText('Token erzeugen', 'Generate token', 'Générer un jeton', 'トークンを生成');
+  FGenerateTokenButton.Hint := DAIText(
+    'Erzeugt eine neue GUID. Danach „Registrieren“ und den KI-Client neu starten, damit die neue Verbindung verwendet wird.',
+    'Generates a new GUID. Then register and restart the AI client to use the new connection.',
+    'Génère un nouvel identifiant GUID. Inscrivez ensuite le client IA et redémarrez-le pour utiliser la nouvelle connexion.',
+    '新しいGUIDを生成します。その後、登録を行い、AIクライアントを再起動して新しい接続を使用してください。');
   FGenerateTokenButton.ShowHint := True;
   FGenerateTokenButton.OnClick := GenerateTokenClicked;
   Inc(LTop, 32);
@@ -566,52 +648,85 @@ begin
   FStartServerButton := TButton.Create(Self);
   FStartServerButton.Parent := Self;
   FStartServerButton.SetBounds(24, LTop, 160, 28);
-  FStartServerButton.Caption := 'Server starten';
-  FStartServerButton.Hint := 'Startet mit dem hier eingetragenen Port und Bearer-Token. „Speichern“ oder „Registrieren“ übernimmt die Werte dauerhaft.';
+  FStartServerButton.Caption := DAIText('Server starten', 'Start server', 'Démarrer le serveur', 'サーバーを開始');
+  FStartServerButton.Hint := DAIText(
+    'Startet mit dem hier eingetragenen Port und Bearer-Token. „Speichern“ oder „Registrieren“ übernimmt die Werte dauerhaft.',
+    'Starts using the port and bearer token entered here. Saving or registering stores the values permanently.',
+    'Démarre avec le port et le jeton Bearer saisis ici. L’enregistrement ou l’inscription conserve ces valeurs.',
+    'ここに入力したポートとBearerトークンで開始します。保存または登録すると値が永続的に保存されます。');
   FStartServerButton.ShowHint := True;
   FStartServerButton.OnClick := StartServerClicked;
 
   FStopServerButton := TButton.Create(Self);
   FStopServerButton.Parent := Self;
   FStopServerButton.SetBounds(196, LTop, 160, 28);
-  FStopServerButton.Caption := 'Server stoppen';
-  FStopServerButton.Hint := 'Stoppt den Server dieser IDE. Danach kann eine andere IDE ihn manuell starten.';
+  FStopServerButton.Caption := DAIText('Server stoppen', 'Stop server', 'Arrêter le serveur', 'サーバーを停止');
+  FStopServerButton.Hint := DAIText(
+    'Stoppt den Server dieser IDE. Danach kann eine andere IDE ihn manuell starten.',
+    'Stops this IDE’s server. Another IDE can then start it manually.',
+    'Arrête le serveur de cet IDE. Un autre IDE peut ensuite le démarrer manuellement.',
+    'このIDEのサーバーを停止します。その後、別のIDEで手動起動できます。');
   FStopServerButton.ShowHint := True;
   FStopServerButton.OnClick := StopServerClicked;
   Inc(LTop, 36);
-  with NewLabel(Self, 'Starten/Stoppen wirkt sofort. „Speichern“ oder „Registrieren“ übernimmt Port und Token dauerhaft.', 24, LTop) do
+  with NewWrappedLabel(Self, DAIText(
+    'Starten/Stoppen wirkt sofort. „Speichern“ oder „Registrieren“ übernimmt Port und Token dauerhaft.',
+    'Starting or stopping takes effect immediately. Saving or registering stores the port and token permanently.',
+    'Le démarrage et l’arrêt sont immédiats. L’enregistrement ou l’inscription conserve le port et le jeton.',
+    '開始と停止は即座に反映されます。保存または登録するとポートとトークンが永続的に保存されます。'), 24, LTop, 760, 40) do
     Font.Color := clGrayText;
-  Inc(LTop, 28);
+  Inc(LTop, 48);
 
   FLoggingCheckBox := TCheckBox.Create(Self);
   FLoggingCheckBox.Parent := Self;
   FLoggingCheckBox.Left := 24;
   FLoggingCheckBox.Top := LTop;
-  FLoggingCheckBox.Caption := 'Alle Zugriffspunkte mit IOTAMessageServices.AddTitleMessage protokollieren';
-  FLoggingCheckBox.Width := 650;
-  Inc(LTop, 28);
+  FLoggingCheckBox.Caption := DAIText(
+    'Alle Zugriffspunkte mit IOTAMessageServices.AddTitleMessage protokollieren',
+    'Log all access points with IOTAMessageServices.AddTitleMessage',
+    'Journaliser tous les points d’accès avec IOTAMessageServices.AddTitleMessage',
+    'IOTAMessageServices.AddTitleMessageですべてのアクセスポイントを記録する');
+  FLoggingCheckBox.Width := 736;
+  FLoggingCheckBox.Height := 36;
+  FLoggingCheckBox.WordWrap := True;
+  Inc(LTop, 44);
 
   FUsageLogLink := TLinkLabel.Create(Self);
   FUsageLogLink.Parent := Self;
   FUsageLogLink.Name := 'DAIUsageLogLink';
   FUsageLogLink.SetBounds(24, LTop, 736, 24);
-  FUsageLogLink.Caption := '<a id="usage">Nutzungszähler in der Registry öffnen</a>';
+  FUsageLogLink.Caption := DAIText(
+    '<a id="usage">Nutzungszähler in der Registry öffnen</a>',
+    '<a id="usage">Open usage counters in the registry</a>',
+    '<a id="usage">Ouvrir les compteurs d’utilisation dans le Registre</a>',
+    '<a id="usage">レジストリで使用回数を表示</a>');
   FUsageLogLink.TabStop := True;
-  FUsageLogLink.Hint := 'Lokale Monatszähler für Toolaufrufe aller Delphi-Versionen, einschließlich Status- und Listenabfragen. ' +
-    'Es werden keine Inhalte gespeichert oder Daten hochgeladen. Öffnet HKCU\Software\DelphiAI\DAI\UsageLog.';
+  FUsageLogLink.Hint := DAIText(
+    'Lokale Monatszähler für Toolaufrufe aller Delphi-Versionen, einschließlich Status- und Listenabfragen. Es werden keine Inhalte ' +
+      'gespeichert oder Daten hochgeladen. Öffnet HKCU\Software\DelphiAI\DAI\UsageLog.',
+    'Local monthly tool-call counters for all Delphi versions, including status and list queries. No content is saved and no data is ' +
+      'uploaded. Opens HKCU\Software\DelphiAI\DAI\UsageLog.',
+    'Compteurs mensuels locaux des appels d’outils de toutes les versions Delphi, y compris les consultations d’état et de listes. ' +
+      'Aucun contenu n’est enregistré et aucune donnée n’est envoyée. Ouvre HKCU\Software\DelphiAI\DAI\UsageLog.',
+    '状態や一覧の照会を含む、すべてのDelphiバージョンのツール呼び出し回数を月別にローカルで記録します。内容の保存やデータの送信は行いません。HKCU\Software\DelphiAI\DAI\UsageLogを開きます。');
   FUsageLogLink.ShowHint := True;
   FUsageLogLink.OnLinkClick := UsageLogLinkClicked;
   Inc(LTop, 26);
-  with NewLabel(Self, 'Toolaufrufe werden lokal je Monat gezählt, unabhängig vom Zugriffsprotokoll. Keine Inhalte, kein Upload.', 24, LTop) do
+  with NewWrappedLabel(Self, DAIText(
+    'Toolaufrufe werden lokal je Monat gezählt, unabhängig vom Zugriffsprotokoll. Keine Inhalte, kein Upload.',
+    'Tool calls are counted locally each month, independently of access logging. No content, no upload.',
+    'Les appels d’outils sont comptés localement par mois, indépendamment du journal d’accès. Aucun contenu ni envoi.',
+    'ツール呼び出し回数はアクセスログとは別に月ごとにローカルで記録されます。内容の保存や送信はありません。'), 24, LTop, 760, 40) do
     Font.Color := clGrayText;
-  Inc(LTop, 36);
+  Inc(LTop, 48);
 
-  with NewLabel(Self, 'Zusätzliche schreibgeschützte Verzeichnisse', 16, LTop) do
+  with NewLabel(Self, DAIText('Zusätzliche schreibgeschützte Verzeichnisse', 'Additional read-only directories', 'Répertoires supplémentaires en lecture seule',
+    '追加の読み取り専用ディレクトリ'), 16, LTop) do
     Font.Style := [fsBold];
   Inc(LTop, 28);
 
-  FDirectoryHintLabel := NewLabel(Self, '', 24, LTop);
-  Inc(LTop, 24);
+  FDirectoryHintLabel := NewWrappedLabel(Self, '', 24, LTop, 736, 40);
+  Inc(LTop, 48);
 
   FDirectoriesMemo := TMemo.Create(Self);
   FDirectoriesMemo.Parent := Self;
@@ -627,43 +742,56 @@ begin
   FDirectoriesAlwaysAllowedCheckBox.Parent := Self;
   FDirectoriesAlwaysAllowedCheckBox.Name := 'DAICustomReadDirectoriesAlwaysAllowedCheckBox';
   FDirectoriesAlwaysAllowedCheckBox.SetBounds(24, LTop, 736, 24);
-  FDirectoriesAlwaysAllowedCheckBox.Caption := 'Lesen immer erlaubt';
-  FDirectoriesAlwaysAllowedCheckBox.Hint := 'Globales Setting für die zusätzlichen Verzeichnisse. Ohne Häkchen gilt die Leseberechtigung ' +
-    'des aktuellen Projekts, ohne aktives Projekt die globale Leseberechtigung. Schreibzugriffe bleiben gesperrt.';
+  FDirectoriesAlwaysAllowedCheckBox.Caption := DAIText('Lesen immer erlaubt', 'Always allow reading', 'Toujours autoriser la lecture', '読み取りを常に許可');
+  FDirectoriesAlwaysAllowedCheckBox.Hint := DAIText(
+    'Globales Setting für die zusätzlichen Verzeichnisse. Ohne Häkchen gilt die Leseberechtigung des aktuellen Projekts, ohne aktives ' +
+      'Projekt die globale Leseberechtigung. Schreibzugriffe bleiben gesperrt.',
+    'Global setting for additional directories. When unchecked, the current project’s read permission applies, or the global read ' +
+      'permission if no project is active. Write access remains blocked.',
+    'Paramètre global des répertoires supplémentaires. Sans cette option, l’autorisation de lecture du projet actuel s’applique, ou ' +
+      'l’autorisation globale si aucun projet n’est actif. L’écriture reste interdite.',
+    '追加ディレクトリのグローバル設定です。オフの場合、現在のプロジェクトの読み取り権限を使用し、プロジェクトがない場合はグローバルの読み取り権限を使用します。書き込みは禁止されたままです。');
   FDirectoriesAlwaysAllowedCheckBox.ShowHint := True;
   Inc(LTop, 38);
 
-  with NewLabel(Self, 'Berechtigungen', 16, LTop) do
+  with NewLabel(Self, DAIText('Berechtigungen', 'Permissions', 'Autorisations', '権限'), 16, LTop) do
     Font.Style := [fsBold];
   Inc(LTop, 30);
 
-  NewLabel(Self, 'Global', 320, LTop + 4);
-  NewLabel(Self, 'Aktuelles Projekt', 548, LTop + 4);
+  NewLabel(Self, DAIText('Global', 'Global', 'Globales', 'グローバル'), 320, LTop + 4);
+  NewLabel(Self, DAIText('Aktuelles Projekt', 'Current project', 'Projet actuel', '現在のプロジェクト'), 548, LTop + 4);
   Inc(LTop, 34);
 
   FProjectLabel := NewLabel(Self, '', 24, LTop);
   FProjectLabel.Width := 744;
   FProjectLabel.AutoSize := False;
   FProjectLabel.WordWrap := True;
-  FProjectLabel.Height := 44;
-  Inc(LTop, 52);
+  FProjectLabel.Height := 64;
+  Inc(LTop, 72);
 
   for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
     AddPermissionRow(Self, LCategory, LTop);
 
   LInfoLabel := NewLabel(
     Self,
-    'Globale Änderungen setzen die entsprechende Auswahl des aktuellen Projekts auf „Default“. Delphi-Sourcen, GetIt und IDE-Lesezugriffe sind immer erlaubt.',
+    DAIText(
+      'Globale Änderungen setzen die entsprechende Auswahl des aktuellen Projekts auf „Default“. Delphi-Sourcen, GetIt und ' +
+        'IDE-Lesezugriffe sind immer erlaubt.',
+      'Global changes reset the corresponding current-project choice to “Default”. Reading Delphi sources, GetIt and IDE settings is ' +
+        'always allowed.',
+      'Les modifications globales rétablissent le choix correspondant du projet actuel sur « Par défaut ». La lecture des sources ' +
+        'Delphi, de GetIt et des paramètres IDE est toujours autorisée.',
+      'グローバル設定を変更すると、現在のプロジェクトの対応する選択は「既定」に戻ります。Delphiソース、GetIt、IDE設定の読み取りは常に許可されます。'),
     24,
     LTop
   );
   LInfoLabel.AutoSize := False;
   LInfoLabel.WordWrap := True;
   LInfoLabel.Width := 760;
-  LInfoLabel.Height := 36;
-  Inc(LTop, 42);
+  LInfoLabel.Height := 60;
+  Inc(LTop, 68);
 
-  with NewLabel(Self, 'KI-Client- und Skill-Registrierung', 16, LTop) do
+  with NewLabel(Self, DAIText('KI-Client- und Skill-Registrierung', 'AI client and skill registration', 'Inscription des clients IA et du skill', 'AIクライアントとスキルの登録'), 16, LTop) do
     Font.Style := [fsBold];
   Inc(LTop, 30);
 
@@ -674,7 +802,7 @@ begin
   FClientComboBox.Top := LTop;
   FClientComboBox.Width := 330;
   FClientComboBox.Style := csDropDownList;
-  FClientComboBox.Items.Add('Alle erkannten Clients');
+  FClientComboBox.Items.Add(DAIText('Alle erkannten Clients', 'All detected clients', 'Tous les clients détectés', '検出されたすべてのクライアント'));
   FClientComboBox.Items.Add('Codex');
   FClientComboBox.Items.Add('Claude Code (CLI / VS Code)');
   FClientComboBox.Items.Add('Claude Desktop');
@@ -717,7 +845,7 @@ begin
   FRegisterButton.Left := 24;
   FRegisterButton.Top := LTop;
   FRegisterButton.Width := 160;
-  FRegisterButton.Caption := 'Registrieren';
+  FRegisterButton.Caption := DAIText('Registrieren', 'Register', 'Inscrire', '登録');
   FRegisterButton.OnClick := RegisterClicked;
 
   FUnregisterButton := TButton.Create(Self);
@@ -725,14 +853,14 @@ begin
   FUnregisterButton.Left := 196;
   FUnregisterButton.Top := LTop;
   FUnregisterButton.Width := 160;
-  FUnregisterButton.Caption := 'Deregistrieren';
+  FUnregisterButton.Caption := DAIText('Deregistrieren', 'Unregister', 'Désinscrire', '登録解除');
   FUnregisterButton.OnClick := UnregisterClicked;
 
   FShowToolsButton := TButton.Create(Self);
   FShowToolsButton.Parent := Self;
   FShowToolsButton.Name := 'DAIFunctionsButton';
   FShowToolsButton.SetBounds(368, LTop, 280, 28);
-  FShowToolsButton.Caption := 'Skill und MCP-Werkzeuge';
+  FShowToolsButton.Caption := DAIText('Skill und MCP-Werkzeuge', 'Skill and MCP tools', 'Skill et outils MCP', 'スキルとMCPツール');
   FShowToolsButton.OnClick := ShowToolsClicked;
   Inc(LTop, 36);
 
@@ -740,8 +868,12 @@ begin
   FFindRegistrationsButton.Name := 'DAIFindRegistrationsButton';
   FFindRegistrationsButton.Parent := Self;
   FFindRegistrationsButton.SetBounds(24, LTop, 332, 28);
-  FFindRegistrationsButton.Caption := 'Registrierungen suchen und entfernen';
-  FFindRegistrationsButton.Hint := 'Sucht auch DAI-Registrierungen anderer Delphi-Versionen und Profile beim ausgewählten KI-Client.';
+  FFindRegistrationsButton.Caption := DAIText('Registrierungen suchen und entfernen', 'Find and remove registrations', 'Rechercher et supprimer les inscriptions', '登録の検索と削除');
+  FFindRegistrationsButton.Hint := DAIText(
+    'Sucht auch DAI-Registrierungen anderer Delphi-Versionen und Profile beim ausgewählten KI-Client.',
+    'Also finds DAI registrations for other Delphi versions and profiles in the selected AI client.',
+    'Recherche aussi les inscriptions DAI d’autres versions et profils Delphi dans le client IA sélectionné.',
+    '選択したAIクライアントで、他のDelphiバージョンとプロファイルのDAI登録も検索します。');
   FFindRegistrationsButton.ShowHint := True;
   FFindRegistrationsButton.OnClick := FindRegistrationsClicked;
 
@@ -749,8 +881,12 @@ begin
   FManualRegistrationButton.Name := 'DAIManualRegistrationButton';
   FManualRegistrationButton.Parent := Self;
   FManualRegistrationButton.SetBounds(368, LTop, 280, 28);
-  FManualRegistrationButton.Caption := 'Manuell registrieren…';
-  FManualRegistrationButton.Hint := 'Zeigt Verbindungsdaten und Konfigurationsbeispiele für die manuelle Registrierung beim ausgewählten KI-Client.';
+  FManualRegistrationButton.Caption := DAIText('Manuell registrieren…', 'Register manually…', 'Inscription manuelle…', '手動で登録…');
+  FManualRegistrationButton.Hint := DAIText(
+    'Zeigt Verbindungsdaten und Konfigurationsbeispiele für die manuelle Registrierung beim ausgewählten KI-Client.',
+    'Shows connection details and configuration examples for manual registration in the selected AI client.',
+    'Affiche les données de connexion et des exemples de configuration pour l’inscription manuelle dans le client IA sélectionné.',
+    '選択したAIクライアントで手動登録するための接続情報と設定例を表示します。');
   FManualRegistrationButton.ShowHint := True;
   FManualRegistrationButton.OnClick := ManualRegistrationClicked;
   Inc(LTop, 36);
@@ -759,16 +895,28 @@ begin
   FManualClientRegistrationCheckBox.Name := 'DAIManualClientRegistrationCheckBox';
   FManualClientRegistrationCheckBox.Parent := Self;
   FManualClientRegistrationCheckBox.SetBounds(24, LTop, 736, 24);
-  FManualClientRegistrationCheckBox.Caption := 'Manuell registriert';
-  FManualClientRegistrationCheckBox.Hint := 'Für die ausgewählte Verbindung: Der DAI-Button ignoriert „Nicht registriert“. ' +
-    'Hinweise auf veraltete oder fehlerhafte automatisch erkannte Registrierungen bleiben sichtbar. Wird beim Speichern oder Registrieren übernommen.';
+  FManualClientRegistrationCheckBox.Caption := DAIText('Manuell registriert', 'Manually registered', 'Inscrit manuellement', '手動登録済み');
+  FManualClientRegistrationCheckBox.Hint := DAIText(
+    'Für die ausgewählte Verbindung: Der DAI-Button ignoriert „Nicht registriert“. Hinweise auf veraltete oder fehlerhafte automatisch ' +
+      'erkannte Registrierungen bleiben sichtbar. Wird beim Speichern oder Registrieren übernommen.',
+    'For the selected connection, the DAI button ignores “Not registered”. Warnings about outdated or faulty automatically detected ' +
+      'registrations remain visible. Applied when saving or registering.',
+    'Pour la connexion sélectionnée, le bouton DAI ignore « Non inscrit ». Les avertissements concernant les inscriptions détectées ' +
+      'automatiquement qui sont obsolètes ou incorrectes restent visibles. Prend effet lors de l’enregistrement ou de l’inscription.',
+    '選択した接続では、DAIボタンは「未登録」を無視します。自動検出された登録が古い場合や不正な場合の警告は引き続き表示されます。保存時または登録時に反映されます。');
   FManualClientRegistrationCheckBox.ShowHint := True;
   Inc(LTop, 42);
 
   LInfoLabel := NewLabel(
     Self,
-    'Betroffene KI-Clients müssen ihre MCP-Verbindung neu laden oder neu gestartet werden. ' +
-    'Hinweis: Nach dem Ändern von Port oder Bearer-Token sowie nach dem Registrieren oder Deregistrieren muss die Codex-App neu gestartet werden.',
+    DAIText(
+      'Betroffene KI-Clients müssen ihre MCP-Verbindung neu laden oder neu gestartet werden. Hinweis: Nach dem Ändern von Port oder ' +
+        'Bearer-Token sowie nach dem Registrieren oder Deregistrieren muss die Codex-App neu gestartet werden.',
+      'Affected AI clients must reload their MCP connection or restart. Note: restart the Codex app after changing the port or bearer ' +
+        'token, or after registering or unregistering.',
+      'Les clients IA concernés doivent recharger leur connexion MCP ou redémarrer. Remarque : redémarrez l’application Codex après ' +
+        'toute modification du port ou du jeton Bearer, ou après une inscription ou une désinscription.',
+      '対象のAIクライアントでMCP接続を再読み込みするか、クライアントを再起動してください。ポートやBearerトークンの変更、登録、登録解除の後は、Codexアプリを再起動してください。'),
     24,
     LTop
   );
@@ -815,7 +963,7 @@ begin
     LDialog := TForm.CreateNew(nil);
     try
       LDialog.Name := 'DAIToolCatalogDialog';
-      LDialog.Caption := 'DAI – Skill und MCP-Werkzeuge';
+      LDialog.Caption := DAIText('DAI – Skill und MCP-Werkzeuge', 'DAI – Skill and MCP tools', 'DAI – Skill et outils MCP', 'DAI – スキルとMCPツール');
       LDialog.Position := poScreenCenter;
       LDialog.BorderStyle := bsSizeable;
       LDialog.ClientWidth := 820;
@@ -836,8 +984,8 @@ begin
       LMemo.Font.Name := 'Consolas';
       LMemo.Font.Size := 10;
       LMemo.Clear;
-      LMemo.Lines.Add('Skill: ' + CDAISkillDirectoryName);
-      LMemo.Lines.Add('MCP-Werkzeuge: ' + IntToStr(LTools.Count));
+      LMemo.Lines.Add(DAIText('Skill: ', 'Skill: ', 'Skill : ', 'スキル: ') + CDAISkillDirectoryName);
+      LMemo.Lines.Add(DAIText('MCP-Werkzeuge: ', 'MCP tools: ', 'Outils MCP : ', 'MCPツール: ') + IntToStr(LTools.Count));
       for LTool in LTools do
         if LTool is TJSONObject then
         begin
@@ -850,7 +998,7 @@ begin
       LOKButton.Parent := LDialog;
       LOKButton.SetBounds(LDialog.ClientWidth - 112, LDialog.ClientHeight - 44, 96, 28);
       LOKButton.Anchors := [akRight, akBottom];
-      LOKButton.Caption := 'OK';
+      LOKButton.Caption := DAIText('OK', 'OK', 'OK', 'OK');
       LOKButton.Default := True;
       LOKButton.Cancel := True;
       LOKButton.ModalResult := mrOK;
@@ -918,7 +1066,8 @@ begin
   FDirectoriesMemo.Lines.Assign(TDAISettings.Instance.CustomReadDirectories);
   FDirectoriesAlwaysAllowedCheckBox.Checked := TDAISettings.Instance.CustomReadDirectoriesAlwaysAllowed;
   FDirectoriesMemo.TextHint := TDAISettings.Instance.LocalizedProjectsDirectoryHint;
-  FDirectoryHintLabel.Caption := 'Vorschlag für diese IDE-Sprache: ' + TDAISettings.Instance.LocalizedProjectsDirectoryHint;
+  FDirectoryHintLabel.Caption := DAIText('Vorschlag für diese IDE-Sprache: ', 'Suggestion for this IDE language: ', 'Suggestion pour la langue de cet IDE : ',
+    'このIDE言語の候補: ') + TDAISettings.Instance.LocalizedProjectsDirectoryHint;
   RefreshServerStatus;
   LoadPermissionSettings;
   RefreshRegistrationStatus;
@@ -1047,19 +1196,35 @@ begin
     FPermissionComboBoxes[psGlobal, LCategory].Enabled := LCategory <> pcReferenceRead;
     FPermissionComboBoxes[psProject, LCategory].Enabled := LAvailable and not DAIPermissionCategoryIsGlobal(LCategory);
     FPermissionButtons[LCategory].Enabled := LCategory <> pcReferenceRead;
-    FPermissionButtons[LCategory].Hint := DAIPermissionCategoryName(LCategory) + ' – ' +
+    FPermissionButtons[LCategory].Hint := PermissionCategoryCaption(LCategory) + ' – ' +
       IfThen(LAvailable and not DAIPermissionCategoryIsGlobal(LCategory),
-        'Berechtigung für das angezeigte Projekt oder global auswählen', 'globale Berechtigung auswählen');
+        DAIText(
+          'Berechtigung für das angezeigte Projekt oder global auswählen',
+          'Select a permission for the displayed project or globally',
+          'Choisir une autorisation pour le projet affiché ou globalement',
+          '表示中のプロジェクトまたはグローバルの権限を選択'), DAIText('globale Berechtigung auswählen', 'Select a global permission', 'Choisir une autorisation globale', 'グローバル権限を選択'));
     if LCategory = pcReferenceRead then
-      FPermissionComboBoxes[psGlobal, LCategory].Hint := 'Delphi-Sourcen, GetIt-Projekte und IDE-Optionen dürfen immer gelesen werden.';
+      FPermissionComboBoxes[psGlobal, LCategory].Hint := DAIText(
+        'Delphi-Sourcen, GetIt-Projekte und IDE-Optionen dürfen immer gelesen werden.',
+        'Reading Delphi sources, GetIt projects and IDE settings is always allowed.',
+        'La lecture des sources Delphi, des projets GetIt et des paramètres IDE est toujours autorisée.',
+        'Delphiソース、GetItプロジェクト、IDE設定の読み取りは常に許可されます。');
   end;
   if LAvailable then
-    FProjectLabel.Caption := 'Aktuelles Projekt: ' + FPermissionProjectKey + sLineBreak +
-      'Projektdatei: ' + ChangeFileExt(FPermissionProjectKey, '.dai.permissions.json')
+    FProjectLabel.Caption := DAIText('Aktuelles Projekt: ', 'Current project: ', 'Projet actuel : ', '現在のプロジェクト: ') + FPermissionProjectKey + sLineBreak +
+      DAIText('Projektdatei: ', 'Project file: ', 'Fichier du projet : ', 'プロジェクトファイル: ') + ChangeFileExt(FPermissionProjectKey, '.dai.permissions.json')
   else if TDAIOTA.ActiveProjectFileName = '' then
-    FProjectLabel.Caption := 'Kein aktives Projekt. Projektberechtigungen sind deaktiviert.'
+    FProjectLabel.Caption := DAIText(
+      'Kein aktives Projekt. Projektberechtigungen sind deaktiviert.',
+      'No active project. Project permissions are disabled.',
+      'Aucun projet actif. Les autorisations du projet sont désactivées.',
+      'アクティブなプロジェクトがありません。プロジェクトの権限は無効です。')
   else
-    FProjectLabel.Caption := 'Das aktive Projekt hat gewechselt. Die Optionen für das neue Projekt erneut öffnen.';
+    FProjectLabel.Caption := DAIText(
+      'Das aktive Projekt hat gewechselt. Die Optionen für das neue Projekt erneut öffnen.',
+      'The active project has changed. Reopen the options for the new project.',
+      'Le projet actif a changé. Rouvrez les options du nouveau projet.',
+      'アクティブなプロジェクトが変わりました。新しいプロジェクトのオプションを開き直してください。');
 end;
 
 procedure TDAIOptionsFrame.RefreshInheritedPermissionHints;
@@ -1071,14 +1236,27 @@ begin
   begin
     LComboBox := FPermissionComboBoxes[psProject, LCategory];
     if DAIPermissionCategoryIsGlobal(LCategory) then
-      LComboBox.Hint := 'Diese Berechtigung gilt ausschließlich global.'
+      LComboBox.Hint := DAIText(
+        'Diese Berechtigung gilt ausschließlich global.',
+        'This permission applies globally only.',
+        'Cette autorisation s’applique uniquement globalement.',
+        'この権限はグローバルにのみ適用されます。')
     else if not LComboBox.Enabled then
-      LComboBox.Hint := 'Kein passendes aktives Projekt.'
+      LComboBox.Hint := DAIText('Kein passendes aktives Projekt.', 'No matching active project.', 'Aucun projet actif correspondant.', '一致するアクティブなプロジェクトがありません。')
     else if LComboBox.ItemIndex = 6 then
-      LComboBox.Hint := 'Default: globalen Standard verwenden (' + FPermissionComboBoxes[psGlobal, LCategory].Text + '). ' +
-        'Beim Speichern wird eine eigene Projektvorgabe entfernt.'
+      LComboBox.Hint := DAIText('Default: globalen Standard verwenden (', 'Default: use the global setting (', 'Par défaut : utiliser le paramètre global (',
+        '既定: グローバル設定を使用（') + FPermissionComboBoxes[psGlobal, LCategory].Text + DAIText('). ', '). ', '). ', '）。') +
+        DAIText(
+          'Beim Speichern wird eine eigene Projektvorgabe entfernt.',
+          'Saving removes the project-specific override.',
+          'L’enregistrement supprime la valeur propre au projet.',
+          '保存時にプロジェクト固有の設定を削除します。')
     else
-      LComboBox.Hint := 'Eigene Projektberechtigung. Mit „Default“ wieder den globalen Standard verwenden.';
+      LComboBox.Hint := DAIText(
+        'Eigene Projektberechtigung. Mit „Default“ wieder den globalen Standard verwenden.',
+        'Project-specific permission. Choose “Default” to use the global setting again.',
+        'Autorisation propre au projet. Choisissez « Par défaut » pour utiliser à nouveau le paramètre global.',
+        'プロジェクト固有の権限です。「既定」を選択するとグローバル設定に戻ります。');
   end;
 end;
 
@@ -1112,15 +1290,16 @@ end;
 
 procedure TDAIOptionsFrame.PopulatePermissionCombo(const AComboBox: TComboBox);
 begin
+  AComboBox.Perform(CB_SETDROPPEDWIDTH, 330, 0);
   AComboBox.Items.BeginUpdate;
   try
     AComboBox.Items.Clear;
-    AComboBox.Items.Add('Nachfragen');
-    AComboBox.Items.Add('Nie erlauben');
-    AComboBox.Items.Add('Verweigern – nächste Anfrage');
-    AComboBox.Items.Add('Nur einmal – nächste Anfrage');
-    AComboBox.Items.Add('Für diese Projektsession');
-    AComboBox.Items.Add('Immer erlauben');
+    AComboBox.Items.Add(DAIText('Nachfragen', 'Ask', 'Demander', '確認する'));
+    AComboBox.Items.Add(DAIText('Nie erlauben', 'Never allow', 'Ne jamais autoriser', '常に拒否'));
+    AComboBox.Items.Add(DAIText('Verweigern – nächste Anfrage', 'Deny next request', 'Refuser la prochaine demande', '次の要求を拒否'));
+    AComboBox.Items.Add(DAIText('Nur einmal – nächste Anfrage', 'Allow next request once', 'Autoriser la prochaine demande une fois', '次の要求を一度だけ許可'));
+    AComboBox.Items.Add(DAIText('Für diese Projektsession', 'For this project session', 'Pour cette session du projet', 'このプロジェクトセッション中'));
+    AComboBox.Items.Add(DAIText('Immer erlauben', 'Always allow', 'Toujours autoriser', '常に許可'));
   finally
     AComboBox.Items.EndUpdate;
   end;
@@ -1133,19 +1312,28 @@ begin
   FStartServerButton.Enabled := not TDAIRuntime.ServerActive;
   FStopServerButton.Enabled := TDAIRuntime.ServerActive;
   if TDAIRuntime.ServerActive then
-    FServerStatusLabel.Caption := Format('Status: aktiv auf http://%s:%d%s', [CDAIDefaultBindAddress, TDAIRuntime.ServerPort, CDAIMcpPath])
+    FServerStatusLabel.Caption := Format(DAIText('Status: aktiv auf http://%s:%d%s', 'Status: active at http://%s:%d%s', 'État : actif sur http://%s:%d%s',
+      '状態: 稼働中 http://%s:%d%s'), [CDAIDefaultBindAddress, TDAIRuntime.ServerPort, CDAIMcpPath])
   else
   begin
     LError := Trim(TDAIRuntime.LastServerError);
     if LError = '' then
     begin
       if TDAISettings.Instance.Enabled then
-        FServerStatusLabel.Caption := 'Status: gestoppt; bereit zum Starten in dieser IDE.'
+        FServerStatusLabel.Caption := DAIText(
+          'Status: gestoppt; bereit zum Starten in dieser IDE.',
+          'Status: stopped; ready to start in this IDE.',
+          'État : arrêté ; prêt à démarrer dans cet IDE.',
+          '状態: 停止中。このIDEで開始できます。')
       else
-        FServerStatusLabel.Caption := 'Status: gestoppt; automatischer Start deaktiviert.';
+        FServerStatusLabel.Caption := DAIText(
+          'Status: gestoppt; automatischer Start deaktiviert.',
+          'Status: stopped; automatic startup disabled.',
+          'État : arrêté ; démarrage automatique désactivé.',
+          '状態: 停止中。自動起動は無効です。');
     end
     else
-      FServerStatusLabel.Caption := 'Status: nicht aktiv. ' + LError;
+      FServerStatusLabel.Caption := DAIText('Status: nicht aktiv. ', 'Status: inactive. ', 'État : inactif. ', '状態: 稼働していません。') + LError;
   end;
 end;
 
@@ -1158,14 +1346,21 @@ begin
     try
       LStatus := TDAICodexRegistration.Status;
       FCodexStatusLabel.Caption := 'Codex: ' + LStatus.GetValue<string>('codex_config') + ' – ' +
-        IfThen(LStatus.GetValue<Boolean>('codex_entry_registered'), 'registriert', 'nicht registriert');
-      FSkillStatusLabel.Caption := 'Skill: ' + LStatus.GetValue<string>('skill_file') + ' – ' +
-        IfThen(LStatus.GetValue<Boolean>('skill_registered'), 'registriert', 'nicht registriert');
+        IfThen(LStatus.GetValue<Boolean>('codex_entry_registered'), DAIText('registriert', 'registered', 'inscrit', '登録済み'), DAIText('nicht registriert',
+          'not registered', 'non inscrit', '未登録'));
+      FSkillStatusLabel.Caption := DAIText('Skill: ', 'Skill: ', 'Skill : ', 'スキル: ') + LStatus.GetValue<string>('skill_file') + ' – ' +
+        IfThen(LStatus.GetValue<Boolean>('skill_registered'), DAIText('registriert', 'registered', 'inscrit', '登録済み'), DAIText('nicht registriert', 'not registered',
+          'non inscrit', '未登録'));
     except
       on E: Exception do
       begin
-        FCodexStatusLabel.Caption := 'Codex-Status nicht lesbar; Details in der Ergebnisliste.';
-        FSkillStatusLabel.Caption := 'Skill-Status konnte nicht geprüft werden.';
+        FCodexStatusLabel.Caption := DAIText(
+          'Codex-Status nicht lesbar; Details in der Ergebnisliste.',
+          'Cannot read Codex status; see the result list for details.',
+          'Impossible de lire l’état de Codex ; consultez la liste des résultats.',
+          'Codexの状態を読み取れません。結果一覧で詳細を確認してください。');
+        FSkillStatusLabel.Caption := DAIText('Skill-Status konnte nicht geprüft werden.', 'Could not check skill status.', 'Impossible de vérifier l’état du skill.',
+          'スキルの状態を確認できませんでした。');
       end;
     end;
   finally
@@ -1198,32 +1393,33 @@ begin
         Continue;
       LObject := TJSONObject(LClient);
       LText := LObject.GetValue<string>('status', '');
-      if LText = 'registered' then LText := 'registriert'
-      else if LText = 'unregistered' then LText := 'deregistriert'
-      else if LText = 'not_registered' then LText := 'nicht registriert'
-      else if LText = 'needs_update' then LText := 'Registrierung muss aktualisiert werden'
-      else if LText = 'not_detected' then LText := 'nicht erkannt'
-      else if LText = 'unsupported' then LText := 'manuelle Einrichtung erforderlich'
-      else if LText = 'manual_configuration' then LText := 'manuelle Einrichtung erforderlich'
-      else if LText = 'configured' then LText := 'registriert'
-      else if LText = 'configured_pending' then LText := 'registriert; Verwaltungsabschluss offen'
-      else if LText = 'removed' then LText := 'deregistriert'
-      else if LText = 'unchanged' then LText := 'unverändert'
-      else if LText = 'conflict' then LText := 'Konflikt'
-      else if LText = 'missing_bridge' then LText := 'Delphi-Brücke fehlt'
-      else if LText = 'error' then LText := 'Fehler';
+      if LText = 'registered' then LText := DAIText('registriert', 'registered', 'inscrit', '登録済み')
+      else if LText = 'unregistered' then LText := DAIText('deregistriert', 'unregistered', 'désinscrit', '登録解除済み')
+      else if LText = 'not_registered' then LText := DAIText('nicht registriert', 'not registered', 'non inscrit', '未登録')
+      else if LText = 'needs_update' then LText := DAIText('Registrierung muss aktualisiert werden', 'registration needs updating', 'inscription à mettre à jour', '登録の更新が必要')
+      else if LText = 'not_detected' then LText := DAIText('nicht erkannt', 'not detected', 'non détecté', '未検出')
+      else if LText = 'unsupported' then LText := DAIText('manuelle Einrichtung erforderlich', 'manual setup required', 'configuration manuelle requise', '手動設定が必要')
+      else if LText = 'manual_configuration' then LText := DAIText('manuelle Einrichtung erforderlich', 'manual setup required', 'configuration manuelle requise', '手動設定が必要')
+      else if LText = 'configured' then LText := DAIText('registriert', 'registered', 'inscrit', '登録済み')
+      else if LText = 'configured_pending' then LText := DAIText('registriert; Verwaltungsabschluss offen', 'registered; management finalization pending',
+        'inscrit ; finalisation de la gestion en attente', '登録済み。管理処理の完了待ち')
+      else if LText = 'removed' then LText := DAIText('deregistriert', 'unregistered', 'désinscrit', '登録解除済み')
+      else if LText = 'unchanged' then LText := DAIText('unverändert', 'unchanged', 'inchangé', '変更なし')
+      else if LText = 'conflict' then LText := DAIText('Konflikt', 'conflict', 'conflit', '競合')
+      else if LText = 'missing_bridge' then LText := DAIText('Delphi-Brücke fehlt', 'Delphi bridge missing', 'passerelle Delphi absente', 'Delphiブリッジがありません')
+      else if LText = 'error' then LText := DAIText('Fehler', 'error', 'erreur', 'エラー');
       FClientStatusMemo.Lines.Add(LObject.GetValue<string>('label', ''));
-      AddIndentedLines(FClientStatusMemo.Lines, 'Status: ' + LText);
+      AddIndentedLines(FClientStatusMemo.Lines, DAIText('Status: ', 'Status: ', 'État : ', '状態: ') + LText);
       LText := LObject.GetValue<string>('server_name', '');
-      if LText <> '' then AddIndentedLines(FClientStatusMemo.Lines, 'MCP-Server: ' + LText);
+      if LText <> '' then AddIndentedLines(FClientStatusMemo.Lines, DAIText('MCP-Server: ', 'MCP server: ', 'Serveur MCP : ', 'MCPサーバー: ') + LText);
       LText := LObject.GetValue<string>('launcher_server', '');
-      if LText <> '' then AddIndentedLines(FClientStatusMemo.Lines, 'Starthelfer: ' + LText);
+      if LText <> '' then AddIndentedLines(FClientStatusMemo.Lines, DAIText('Starthelfer: ', 'Launcher: ', 'Lanceur : ', 'ランチャー: ') + LText);
       LText := LObject.GetValue<string>('path', '');
       AddIndentedLines(FClientStatusMemo.Lines, LText);
       LText := LObject.GetValue<string>('message', '');
       AddIndentedLines(FClientStatusMemo.Lines, LText);
       LText := LObject.GetValue<string>('backup', '');
-      if LText <> '' then AddIndentedLines(FClientStatusMemo.Lines, 'Sicherung: ' + LText);
+      if LText <> '' then AddIndentedLines(FClientStatusMemo.Lines, DAIText('Sicherung: ', 'Backup: ', 'Sauvegarde : ', 'バックアップ: ') + LText);
     end;
   finally
     FClientStatusMemo.Lines.EndUpdate;
@@ -1366,7 +1562,11 @@ begin
   if (FPermissionProjectKey <> '') and not SameText(FPermissionProjectKey, TDAIOTA.ActiveProjectFileName) then
     for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
       if FPermissionModified[psProject, LCategory] then
-        raise EInvalidOperation.Create('Das aktive Projekt hat gewechselt. Projektberechtigungen wurden nicht gespeichert; die Optionen erneut öffnen.');
+        raise EInvalidOperation.Create(DAIText(
+          'Das aktive Projekt hat gewechselt. Projektberechtigungen wurden nicht gespeichert; die Optionen erneut öffnen.',
+          'The active project has changed. Project permissions were not saved; reopen the options.',
+          'Le projet actif a changé. Les autorisations du projet n’ont pas été enregistrées ; rouvrez les options.',
+          'アクティブなプロジェクトが変わりました。プロジェクトの権限は保存されていません。オプションを開き直してください。'));
   LPort := StrToIntDef(Trim(FPortEdit.Text), 0);
   LToken := Trim(FTokenEdit.Text);
   if not TDAIRuntime.ValidateServerConfiguration(LPort, LToken, LError) then

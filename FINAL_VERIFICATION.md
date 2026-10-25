@@ -1,5 +1,30 @@
 ﻿# DAI 1.2.36 – Suchindex-Stash integriert, 24. Oktober 2026
 
+Nachtrag zur IDE-Sprachlokalisierung, 25. Oktober 2026:
+Die zentrale Localization-Unit wählt Deutsch, Englisch, Französisch oder Japanisch anhand des bds-Sprachressourcenmoduls.
+Die offizielle RTL-Funktion FindResourceHInstance löst auch zunächst ungeladene Ressourcen auf, statt diesen Zustand als Englisch zu cachen.
+Die RTL berücksichtigt die BDSSetLang-IDE-Vorgabe für bds.exe unter HKCU\Software\Embarcadero\Locales; die Bibliothekssprache ist getrennt.
+Die zurückgegebene Ressource wird auch bei Mapping als Datendatei erkannt; Registry und IDE-Konfiguration bleiben unverändert.
+Ohne passende Ressource beziehungsweise außerhalb von bds.exe gilt Englisch, auch auf einem deutschen Windows. Die Auswahl wird threadsicher gecacht.
+Einstellungen, Toolbar-/Menütexte, Hinweise, Indexverwaltung/-berichte, Berechtigungsdialoge, Projektbestätigungen und manuelle Anleitungen sind übersetzt.
+93 bekannte Berechtigungsoperationen einschließlich fünf dynamischer Präfixe werden bei der Darstellung lokalisiert; technische Suffixe bleiben unverändert.
+Client-/Scope-/Enumwerte, Pfade, übergebene Texte, vollständige Konfigurationsblöcke und ursprüngliche technische Diagnosen bleiben erhalten.
+Lange Beschriftungen umbrechen; Indexaktionen messen ihre Breite. Japanische Indexfenster verwenden eine passende UI-Schrift.
+Die vorhandenen Scrollbar-, einheitlichen Erstellen-/Aktualisieren- und Popup-/Cursor-Korrekturen bleiben erhalten.
+Bestanden je Win32/Win64: Localization 78, Options 1407, SymbolDialog 1469, ClientRegistration 2504, PermissionOptions 106 Prüfungen.
+Toolbar-Popupprüfungen: Win32 6477, Win64 6294; beide SDK-Proben und Testpackages ohne impliziten Localization-Import.
+Zusätzliche isolierte bds-Testprozesse prüfen ungeladene Ressourcen, alle vier Sprachen, fehlende Satelliten und Unicode-Pfade;
+die jeweils 35 neuen Prüfungen verwenden ausschließlich prozesslokale Sprachvorgaben und eigene Testdateien.
+Die Python-Verifier-Tests bestehen mit 30 Prüfungen; die Gesamtprüfung bestätigt 68 Pascal-Units und unverändert 87 MCP-Werkzeuge.
+Die statischen Port-/Neustarthinweisprüfungen akzeptieren lokalisierte und aufgeteilte Texte, prüfen aber weiterhin Konstante und Position.
+Vier Sprachmatrizen prüfen Unicode, Layout bei mehreren DPI-Werten, fehlende implizite Indexaufträge und unveränderte Speicherung.
+Registrierungstests vergleichen die gesamten kopierbaren Konfigurationsblöcke zwischen allen Sprachen. 824 statische Operationsprüfungen bestehen.
+Französische und japanische Einstellungs-/Indexansichten bei 96/192 PPI sowie Fehlerberichte wurden visuell geprüft.
+Die Vorschaubilder verwenden ausschließlich synthetische Testfenster/-daten; keine Desktop- oder Benutzer-IDE-Aufnahmen.
+Release-Package und Bridge wurden nach dem endgültigen Quellstand erfolgreich für Win32/Win64 mit Delphi 13 gebaut. Delphi 11 war nicht installiert.
+DPK und DPROJ erhalten ausschließlich die neue Unitreferenz. Der offene DPK-Puffer wurde über DAI angeglichen; übrige Bytes und vorhandene Editorpuffer bleiben erhalten.
+Keine übrigen Projekt-/Optionsentwürfe gespeichert, keine Registrierung oder IDE-Sprache geändert, keine Indizes erstellt und keine IDE neu gestartet.
+
 Nachtrag zum Mauszeiger beim Öffnen des DAI-Menüs, 25. Oktober 2026:
 PopupOpening setzt nach CancelHint und nach der Indexabfrage den sichtbaren Cursor nativ über SetCursor(Screen.Cursors[crArrow]).
 Screen.Cursor bleibt unverändert; die VCL kann nach dem Menü wieder den normalen Cursor des jeweiligen Controls auswählen.

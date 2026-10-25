@@ -38,6 +38,7 @@ uses
   Vcl.ImgList,
   Vcl.Menus,
   h5u.DAI.Clients.Registration,
+  h5u.DAI.Localization,
   h5u.DAI.Log,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
@@ -182,13 +183,83 @@ type
 var
   GController: TDAIToolbarController;
 
+function PermissionSummaryCaption(const ASummary: string): string;
+begin
+  // PermissionManager's summaries are protocol data; translate only their presentation.
+  if ASummary = 'kein Projekt' then
+    Exit(DAIText('kein Projekt', 'no project', 'aucun projet', 'プロジェクトなし'));
+  if ASummary = 'gesperrt' then
+    Exit(DAIText('gesperrt', 'blocked', 'bloqué', 'アクセス不可'));
+  if ASummary = 'nachfragen' then
+    Exit(DAIText('nachfragen', 'ask', 'demander', '確認する'));
+  if ASummary = 'lesen' then
+    Exit(DAIText('lesen', 'read', 'lecture', '読み取り'));
+  if ASummary = 'schreiben' then
+    Exit(DAIText('schreiben', 'write', 'écriture', '書き込み'));
+  if ASummary = 'Vollzugriff' then
+    Exit(DAIText('Vollzugriff', 'full access', 'accès complet', 'フルアクセス'));
+  if ASummary = 'Status unbekannt' then
+    Exit(DAIText('Status unbekannt', 'status unknown', 'état inconnu', '状態不明'));
+  Result := ASummary;
+end;
+
+function RegistrationDetailsCaption(const ADetails: string): string;
+
+  procedure TranslateSuffix(const AGerman, AEnglish, AFrench, AJapanese: string);
+  begin
+    if Result.EndsWith(AGerman) then
+      Result := Copy(Result, 1, Length(Result) - Length(AGerman)) + DAIText(AGerman, AEnglish, AFrench, AJapanese);
+  end;
+
+begin
+  // Preserve the technical client/profile prefix and unknown diagnostics verbatim.
+  Result := ADetails;
+  TranslateSuffix('Keine Registrierung für die aktuellen Verbindungseinstellungen gefunden.',
+    'No registration found for the current connection settings.',
+    'Aucune inscription trouvée pour les paramètres de connexion actuels.',
+    '現在の接続設定に対応する登録が見つかりません。');
+  TranslateSuffix('Passend registriert.', 'Registration is current.', 'Inscription à jour.', '現在の設定で登録済みです。');
+  TranslateSuffix('Registrierung oder Starthelfer aktualisieren.', 'Update the registration or launcher.',
+    'Mettez à jour l’inscription ou le lanceur.', '登録または起動ヘルパーを更新してください。');
+  TranslateSuffix('Registrierung konnte nicht eindeutig geprüft werden; DAI-Optionen öffnen.',
+    'Registration could not be verified; open the DAI options.',
+    'Impossible de vérifier l’inscription ; ouvrez les options DAI.', '登録を確認できませんでした。DAI オプションを開いてください。');
+  TranslateSuffix('Registrierung, Delphi-Skill oder Starthelfer aktualisieren.',
+    'Update the registration, Delphi skill or launcher.', 'Mettez à jour l’inscription, le skill Delphi ou le lanceur.',
+    '登録、Delphi スキル、または起動ヘルパーを更新してください。');
+  TranslateSuffix('Vorhandenen Delphi-Skill in den DAI-Optionen prüfen.',
+    'Check the existing Delphi skill in the DAI options.', 'Vérifiez le skill Delphi existant dans les options DAI.',
+    '既存の Delphi スキルを DAI オプションで確認してください。');
+  TranslateSuffix('Vorhandene Codex-Registrierung in den DAI-Optionen prüfen.',
+    'Check the existing Codex registration in the DAI options.', 'Vérifiez l’inscription Codex existante dans les options DAI.',
+    '既存の Codex 登録を DAI オプションで確認してください。');
+  TranslateSuffix('Registrierungen konnten nicht geprüft werden; DAI-Optionen öffnen.',
+    'Registrations could not be checked; open the DAI options.',
+    'Impossible de vérifier les inscriptions ; ouvrez les options DAI.', '登録を確認できませんでした。DAI オプションを開いてください。');
+end;
+
+function IndexMenuCaption(const AIndex: Integer): string;
+begin
+  case AIndex of
+    0: Result := DAIText('Index: Delphi / ToolsAPI', 'Index: Delphi / ToolsAPI', 'Index : Delphi / ToolsAPI', 'インデックス: Delphi / ToolsAPI');
+    1: Result := DAIText('Index: GetIt', 'Index: GetIt', 'Index : GetIt', 'インデックス: GetIt');
+    2: Result := DAIText('Index: Projektgruppe', 'Index: Project group', 'Index : Groupe de projets', 'インデックス: プロジェクトグループ');
+    3: Result := DAIText('Index: Projekt', 'Index: Project', 'Index : Projet', 'インデックス: プロジェクト');
+  else
+    Result := '';
+  end;
+end;
+
 function DAIGetModuleHandleExW(const AFlags: DWORD; const AAddress: PWideChar; out AModule: HMODULE): BOOL; stdcall;
   external 'kernel32.dll' name 'GetModuleHandleExW';
 
 procedure RequireMainThread;
 begin
   if GetCurrentThreadId <> MainThreadID then
-    raise EInvalidOperation.Create('Die DAI-Werkzeugleiste muss auf dem IDE-Hauptthread verwaltet werden.');
+    raise EInvalidOperation.Create(DAIText('Die DAI-Werkzeugleiste muss auf dem IDE-Hauptthread verwaltet werden.',
+      'The DAI toolbar must be managed on the IDE main thread.',
+      'La barre d’outils DAI doit être gérée sur le thread principal de l’IDE.',
+      'DAI ツールバーは IDE のメインスレッドで管理する必要があります。'));
 end;
 
 function IDEMenuTracking: Boolean;
@@ -215,7 +286,10 @@ begin
       // The already detached receiver can be retained by the IDE after failure.
       // Only this exceptional path pins its code; normal reload remains unpinned.
       DAIGetModuleHandleExW($00000001 or $00000004, PWideChar(@RequireMainThread), LModule);
-      TDAILog.Error('DAI-Toolbar-Notifier konnte nicht abgemeldet werden: ' + E.ClassName + ': ' + E.Message);
+      TDAILog.Error(DAIText('DAI-Toolbar-Notifier konnte nicht abgemeldet werden: ',
+        'Could not unregister the DAI toolbar notifier: ',
+        'Impossible de désinscrire le notificateur de la barre d’outils DAI : ',
+        'DAI ツールバー通知の登録を解除できませんでした: ') + E.ClassName + ': ' + E.Message);
     end;
   end;
 end;
@@ -390,7 +464,10 @@ begin
   try
     LIndex := LServices.RegisterToolbarNotifier(LInterface);
     if LIndex < 0 then
-      raise EInvalidOperation.Create('Die IDE hat die DAI-Toolbar-Lesenotification nicht registriert.');
+      raise EInvalidOperation.Create(DAIText('Die IDE hat die DAI-Toolbar-Lesenotification nicht registriert.',
+        'The IDE did not register the DAI toolbar read notifier.',
+        'L’IDE n’a pas inscrit le notificateur de lecture de la barre d’outils DAI.',
+        'IDE が DAI ツールバー読み取り通知を登録しませんでした。'));
     if FShuttingDown then
     begin
       LNotifier.Detach;
@@ -778,7 +855,7 @@ begin
   if AError = FLastInstallError then
     Exit;
   FLastInstallError := AError;
-  TDAILog.Error('DAI-Werkzeugleiste: ' + AError);
+  TDAILog.Error(DAIText('DAI-Werkzeugleiste: ', 'DAI toolbar: ', 'Barre d’outils DAI : ', 'DAI ツールバー: ') + AError);
 end;
 
 function CreateServerGlyph(const AState: TDAIServerGlyphState; const ASize: Integer): TPngImage;
@@ -935,7 +1012,10 @@ var
   LSize: Integer;
 begin
   if (AImages.Width < 8) or (AImages.Height < 8) then
-    raise EInvalidOperation.Create('Die IDE-Bildliste ist noch nicht bereit.');
+    raise EInvalidOperation.Create(DAIText('Die IDE-Bildliste ist noch nicht bereit.',
+      'The IDE image list is not ready yet.',
+      'La liste d’images de l’IDE n’est pas encore prête.',
+      'IDE の画像リストはまだ準備できていません。'));
   SetLength(LGraphics, Length(CDAIImageSizes));
   for LState := Low(FImages) to High(FImages) do
   begin
@@ -946,7 +1026,10 @@ begin
       // Stable names deduplicate on reload; never delete shared image indices.
       FImages[LState] := AServices.AddImage(CDAIImageIds[LState], LGraphics);
       if (FImages[LState] < 0) or (FImages[LState] >= AImages.Count) then
-        raise EInvalidOperation.Create('Die IDE hat kein gültiges DAI-Statusbild registriert.');
+        raise EInvalidOperation.Create(DAIText('Die IDE hat kein gültiges DAI-Statusbild registriert.',
+          'The IDE did not register a valid DAI status image.',
+          'L’IDE n’a pas inscrit d’image d’état DAI valide.',
+          'IDE が有効な DAI 状態画像を登録しませんでした。'));
     finally
       for LSize := Low(LGraphics) to High(LGraphics) do
         FreeAndNil(LGraphics[LSize]);
@@ -955,8 +1038,6 @@ begin
 end;
 
 procedure TDAIToolbarController.CreatePopup;
-const
-  LIndexCaptions: array[0..3] of string = ('Index: Delphi / ToolsAPI', 'Index: GetIt', 'Index: Projektgruppe', 'Index: Projekt');
 var
   LSeparator: TMenuItem;
   LIndex: Integer;
@@ -974,12 +1055,18 @@ begin
   FPopup.Items.Add(FToggleItem);
   FOptionsItem := TMenuItem.Create(FPopup);
   FOptionsItem.FreeNotification(Self);
-  FOptionsItem.Caption := 'DAI-&Optionen und Berechtigungen …';
+  FOptionsItem.Caption := DAIText('DAI-&Optionen und Berechtigungen …',
+    'DAI &options and permissions …',
+    '&Options et autorisations DAI …',
+    'DAI のオプションと権限 …');
   FOptionsItem.OnClick := OpenOptions;
   FPopup.Items.Add(FOptionsItem);
   FResetItem := TMenuItem.Create(FPopup);
   FResetItem.FreeNotification(Self);
-  FResetItem.Caption := 'Sitzungsfreigaben &zurücksetzen';
+  FResetItem.Caption := DAIText('Sitzungsfreigaben &zurücksetzen',
+    '&Reset session permissions',
+    '&Réinitialiser les autorisations de session',
+    'セッションの権限をリセット');
   FResetItem.OnClick := ResetSessionPermissions;
   FPopup.Items.Add(FResetItem);
   LSeparator := TMenuItem.Create(FPopup);
@@ -1000,7 +1087,7 @@ begin
   begin
     FIndexItems[LIndex] := TMenuItem.Create(FPopup);
     FIndexItems[LIndex].FreeNotification(Self);
-    FIndexItems[LIndex].Caption := LIndexCaptions[LIndex];
+    FIndexItems[LIndex].Caption := IndexMenuCaption(LIndex);
     FIndexItems[LIndex].Tag := LIndex;
     FIndexItems[LIndex].Enabled := LIndex < 2;
     FIndexItems[LIndex].OnClick := OpenIndexes;
@@ -1008,7 +1095,7 @@ begin
   end;
   FManageIndexesItem := TMenuItem.Create(FPopup);
   FManageIndexesItem.FreeNotification(Self);
-  FManageIndexesItem.Caption := 'Indizes verwalten …';
+  FManageIndexesItem.Caption := DAIText('Indizes verwalten …', 'Manage indexes …', 'Gérer les index …', 'インデックスの管理 …');
   FManageIndexesItem.Tag := -1;
   FManageIndexesItem.OnClick := OpenIndexes;
   FPopup.Items.Add(FManageIndexesItem);
@@ -1058,7 +1145,10 @@ begin
       end;
     except
       on E: Exception do
-        TDAILog.Error('DAI-Indexliste konnte nicht gelesen werden: ' + E.Message);
+        TDAILog.Error(DAIText('DAI-Indexliste konnte nicht gelesen werden: ',
+          'Could not read the DAI index list: ',
+          'Impossible de lire la liste des index DAI : ',
+          'DAI インデックス一覧を読み取れませんでした: ') + E.Message);
     end;
     // Index queries can change the cursor; restore the menu arrow immediately before tracking starts.
     Winapi.Windows.SetCursor(Screen.Cursors[crArrow]);
@@ -1251,10 +1341,16 @@ begin
   for LIndex := 0 to LToolbar.ButtonCount - 1 do
     if LToolbar.Buttons[LIndex] <> LRestored then
       if SameText(LToolbar.Buttons[LIndex].Name, CDAIButtonName) then
-        raise EInvalidOperation.Create('Der DAI-Schalter ist bereits durch eine andere Instanz registriert.');
+        raise EInvalidOperation.Create(DAIText('Der DAI-Schalter ist bereits durch eine andere Instanz registriert.',
+          'The DAI button is already registered by another instance.',
+          'Le bouton DAI est déjà inscrit par une autre instance.',
+          'DAI ボタンは別のインスタンスによって登録されています。'));
   for LIndex := 0 to LActionList.ActionCount - 1 do
     if SameText(LActionList.Actions[LIndex].Name, CDAIActionName) then
-      raise EInvalidOperation.Create('Die DAI-Aktion ist bereits durch eine andere Instanz registriert.');
+      raise EInvalidOperation.Create(DAIText('Die DAI-Aktion ist bereits durch eine andere Instanz registriert.',
+        'The DAI action is already registered by another instance.',
+        'L’action DAI est déjà inscrite par une autre instance.',
+        'DAI アクションは別のインスタンスによって登録されています。'));
   InstallImages(LServices, LImages);
   FToolbar := LToolbar;
   FToolbar.FreeNotification(Self);
@@ -1264,7 +1360,7 @@ begin
     FAction := TAction.Create(FActionList.Owner);
     FAction.Name := CDAIActionName;
     FAction.Category := 'DAI';
-    FAction.Caption := 'DAI inaktiv';
+    FAction.Caption := DAIText('DAI inaktiv', 'DAI inactive', 'DAI inactif', 'DAI 停止中');
     FAction.ActionList := FActionList;
     FAction.ImageIndex := FImages[sgInactive];
     FAction.OnExecute := ToggleServer;
@@ -1277,7 +1373,10 @@ begin
       if not (LControl is TToolButton) then
       begin
         LControl.Free;
-        raise EInvalidOperation.Create('Die Debugger-Werkzeugleiste liefert keinen VCL-ToolButton.');
+        raise EInvalidOperation.Create(DAIText('Die Debugger-Werkzeugleiste liefert keinen VCL-ToolButton.',
+          'The debugger toolbar did not provide a VCL ToolButton.',
+          'La barre d’outils du débogueur n’a pas fourni de bouton VCL.',
+          'デバッガーツールバーが VCL ToolButton を返しませんでした。'));
       end;
       FButton := TToolButton(LControl);
     end;
@@ -1319,7 +1418,10 @@ begin
     FRegistrationChecked := True;
     FRegistrationDirty := True;
     FRegistrationHealth := rhCheckRecommended;
-    FRegistrationDetails := 'Die manuelle KI-Registrierung konnte nicht geprüft werden. Bitte die DAI-Optionen öffnen.';
+    FRegistrationDetails := DAIText('Die manuelle KI-Registrierung konnte nicht geprüft werden. Bitte die DAI-Optionen öffnen.',
+      'The manual AI registration could not be checked. Open the DAI options.',
+      'Impossible de vérifier l’inscription manuelle de l’IA. Ouvrez les options DAI.',
+      '手動の AI 登録を確認できませんでした。DAI オプションを開いてください。');
     Exit;
   end;
   if FRegistrationChecked and not FRegistrationDirty and (FRegistrationVersion = LVersion) and
@@ -1337,14 +1439,20 @@ begin
     begin
       // This suppresses only a missing-registration notice, not update/read errors.
       FRegistrationHealth := rhCurrent;
-      FRegistrationDetails := 'Manuell registriert (vom Benutzer bestätigt).';
+      FRegistrationDetails := DAIText('Manuell registriert (vom Benutzer bestätigt).',
+        'Manually registered (confirmed by the user).',
+        'Inscription manuelle (confirmée par l’utilisateur).',
+        '手動で登録済み（ユーザー確認済み）。');
     end;
   except
     on E: Exception do
     begin
       FRegistrationHealth := rhCheckRecommended;
       // Client-file parse errors may contain credentials; expose no raw exception.
-      FRegistrationDetails := 'Die KI-Registrierungen konnten nicht vollständig geprüft werden. Bitte die DAI-Optionen öffnen.';
+      FRegistrationDetails := DAIText('Die KI-Registrierungen konnten nicht vollständig geprüft werden. Bitte die DAI-Optionen öffnen.',
+        'The AI registrations could not be fully checked. Open the DAI options.',
+        'Impossible de vérifier toutes les inscriptions de l’IA. Ouvrez les options DAI.',
+        'AI 登録を完全に確認できませんでした。DAI オプションを開いてください。');
     end;
   end;
 end;
@@ -1384,10 +1492,13 @@ var
   LImage: Integer;
   LAccessAgeMs: UInt64;
   LAccessShown: Boolean;
+  LIDEPermissions, LProjectPermissions: string;
 begin
   if not Assigned(FAction) or IDEMenuTracking then
     Exit;
   UpdatePermissionStatus;
+  LIDEPermissions := PermissionSummaryCaption(FIDEPermissionSummary);
+  LProjectPermissions := PermissionSummaryCaption(FProjectPermissionSummary);
   LActive := TDAIRuntime.ServerActive;
   LAccessShown := False;
   LError := TDAIRuntime.LastServerError;
@@ -1395,9 +1506,12 @@ begin
     LError := FActionError;
   if LActive then
   begin
-    LCaption := 'DAI aktiv';
-    LHint := Format('DAI aktiv auf Port %d. Klicken zum Stoppen.', [TDAIRuntime.ServerPort]);
-    LCommand := 'Server &stoppen';
+    LCaption := DAIText('DAI aktiv', 'DAI active', 'DAI actif', 'DAI 稼働中');
+    LHint := Format(DAIText('DAI aktiv auf Port %d. Klicken zum Stoppen.',
+      'DAI active on port %d. Click to stop.',
+      'DAI actif sur le port %d. Cliquez pour arrêter.',
+      'DAI はポート %d で稼働中です。クリックして停止します。'), [TDAIRuntime.ServerPort]);
+    LCommand := DAIText('Server &stoppen', '&Stop server', '&Arrêter le serveur', 'サーバーを停止');
     LImage := FImages[sgActive];
     if TDAIRuntime.TryGetMCPAccessAgeMs(LAccessAgeMs) then
     begin
@@ -1405,21 +1519,30 @@ begin
       begin
         LImage := FImages[sgRecentAccess];
         LAccessShown := True;
-        LHint := LHint + sLineBreak + 'MCP-Zugriff in den letzten 15 Sekunden.';
+        LHint := LHint + sLineBreak + DAIText('MCP-Zugriff in den letzten 15 Sekunden.',
+          'MCP access within the last 15 seconds.',
+          'Accès MCP au cours des 15 dernières secondes.',
+          '過去 15 秒以内に MCP アクセスがありました。');
       end
       else if LAccessAgeMs <= 900000 then
       begin
         LImage := FImages[sgEarlierAccess];
         LAccessShown := True;
-        LHint := LHint + sLineBreak + 'MCP-Zugriff vor mehr als 15 Sekunden, innerhalb der letzten 15 Minuten.';
+        LHint := LHint + sLineBreak + DAIText('MCP-Zugriff vor mehr als 15 Sekunden, innerhalb der letzten 15 Minuten.',
+          'MCP access more than 15 seconds ago, within the last 15 minutes.',
+          'Accès MCP il y a plus de 15 secondes, au cours des 15 dernières minutes.',
+          '15 秒より前、過去 15 分以内に MCP アクセスがありました。');
       end;
     end;
   end
   else
   begin
-    LCaption := 'DAI inaktiv';
-    LHint := Format('DAI inaktiv; kein aktiver Port. Klicken zum Starten mit gespeichertem Port %d.', [TDAISettings.Instance.Port]);
-    LCommand := 'Server &starten';
+    LCaption := DAIText('DAI inaktiv', 'DAI inactive', 'DAI inactif', 'DAI 停止中');
+    LHint := Format(DAIText('DAI inaktiv; kein aktiver Port. Klicken zum Starten mit gespeichertem Port %d.',
+      'DAI inactive; no active port. Click to start on saved port %d.',
+      'DAI inactif ; aucun port actif. Cliquez pour démarrer sur le port enregistré %d.',
+      'DAI は停止中です。クリックすると保存済みのポート %d で起動します。'), [TDAISettings.Instance.Port]);
+    LCommand := DAIText('Server &starten', '&Start server', '&Démarrer le serveur', 'サーバーを起動');
     LImage := FImages[sgInactive];
   end;
   if TDAIIDEToolbar.FUpdateAvailable then
@@ -1427,9 +1550,15 @@ begin
     if not LAccessShown then
     begin
       LImage := FImages[sgUpdateAvailable];
-      LCaption := 'DAI: Neue Version verfügbar';
+      LCaption := DAIText('DAI: Neue Version verfügbar',
+        'DAI: New version available',
+        'DAI : nouvelle version disponible',
+        'DAI: 新しいバージョンがあります');
     end;
-    LHint := LHint + sLineBreak + 'Neue DAI-Version verfügbar';
+    LHint := LHint + sLineBreak + DAIText('Neue DAI-Version verfügbar',
+      'New DAI version available',
+      'Nouvelle version de DAI disponible',
+      '新しい DAI バージョンがあります');
     if TDAIIDEToolbar.FUpdateVersion <> '' then
       LHint := LHint + ': ' + TDAIIDEToolbar.FUpdateVersion;
     LHint := LHint + '.';
@@ -1442,34 +1571,41 @@ begin
         rhNotRegistered:
           begin
             LImage := FImages[sgNotRegistered];
-            LCaption := 'DAI nicht registriert';
+            LCaption := DAIText('DAI nicht registriert', 'DAI not registered', 'DAI non inscrit', 'DAI 未登録');
           end;
         rhUpdateRecommended:
           begin
             LImage := FImages[sgRegistrationUpdate];
-            LCaption := 'DAI: Registrierung aktualisieren';
+            LCaption := DAIText('DAI: Registrierung aktualisieren',
+              'DAI: Update registration',
+              'DAI : mettre à jour l’inscription',
+              'DAI: 登録を更新してください');
           end;
         rhCheckRecommended:
           begin
             LImage := FImages[sgRegistrationUpdate];
-            LCaption := 'DAI: Registrierung prüfen';
+            LCaption := DAIText('DAI: Registrierung prüfen', 'DAI: Check registration', 'DAI : vérifier l’inscription', 'DAI: 登録を確認してください');
           end;
       end;
     if FRegistrationDetails <> '' then
-      LHint := LHint + sLineBreak + FRegistrationDetails;
+      LHint := LHint + sLineBreak + RegistrationDetailsCaption(FRegistrationDetails);
   end;
   if LError <> '' then
   begin
-    LCaption := 'DAI Fehler';
-    LHint := LHint + sLineBreak + 'Fehler: ' + LError;
+    LCaption := DAIText('DAI Fehler', 'DAI error', 'Erreur DAI', 'DAI エラー');
+    LHint := LHint + sLineBreak + DAIText('Fehler: ', 'Error: ', 'Erreur : ', 'エラー: ') + LError;
     LImage := FImages[sgError];
   end;
   if FBusy then
   begin
     LCaption := 'DAI …';
-    LHint := 'DAI: Serverzustand wird geändert.';
+    LHint := DAIText('DAI: Serverzustand wird geändert.',
+      'DAI: Changing server state.',
+      'DAI : changement d’état du serveur.',
+      'DAI: サーバーの状態を変更中です。');
   end;
-  LHint := LHint + sLineBreak + 'IDE : ' + FIDEPermissionSummary + sLineBreak + 'Projekt : ' + FProjectPermissionSummary;
+  LHint := LHint + sLineBreak + 'IDE : ' + LIDEPermissions + sLineBreak +
+    DAIText('Projekt : ', 'Project : ', 'Projet : ', 'プロジェクト : ') + LProjectPermissions;
   if FAction.Caption <> LCaption then
     FAction.Caption := LCaption;
   if FAction.Hint <> LHint then
@@ -1484,10 +1620,11 @@ begin
     if FToggleItem.Enabled <> not FBusy then
       FToggleItem.Enabled := not FBusy;
   end;
-  if Assigned(FIDEPermissionItem) and (FIDEPermissionItem.Caption <> 'IDE : ' + FIDEPermissionSummary) then
-    FIDEPermissionItem.Caption := 'IDE : ' + FIDEPermissionSummary;
-  if Assigned(FProjectPermissionItem) and (FProjectPermissionItem.Caption <> 'Projekt : ' + FProjectPermissionSummary) then
-    FProjectPermissionItem.Caption := 'Projekt : ' + FProjectPermissionSummary;
+  if Assigned(FIDEPermissionItem) and (FIDEPermissionItem.Caption <> 'IDE : ' + LIDEPermissions) then
+    FIDEPermissionItem.Caption := 'IDE : ' + LIDEPermissions;
+  LCaption := DAIText('Projekt : ', 'Project : ', 'Projet : ', 'プロジェクト : ') + LProjectPermissions;
+  if Assigned(FProjectPermissionItem) and (FProjectPermissionItem.Caption <> LCaption) then
+    FProjectPermissionItem.Caption := LCaption;
 end;
 
 procedure TDAIToolbarController.Refresh;
@@ -1541,7 +1678,10 @@ begin
       else
         LResult := TDAIRuntime.StartServer;
       if not LResult and (TDAIRuntime.LastServerError = '') then
-        FActionError := 'Der Serverzustand konnte nicht geändert werden.';
+        FActionError := DAIText('Der Serverzustand konnte nicht geändert werden.',
+          'The server state could not be changed.',
+          'Impossible de modifier l’état du serveur.',
+          'サーバーの状態を変更できませんでした。');
     except
       on E: Exception do
         FActionError := E.ClassName + ': ' + E.Message;

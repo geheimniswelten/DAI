@@ -3,6 +3,14 @@
 DAI ist ein Design-Time-Package für Delphi 13 / RAD Studio 13 (`BDS 37.0`). Es stellt lokal laufenden KI-Clients einen MCP-Server zur Verfügung und
 vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
 
+Die DAI-Oberfläche folgt der tatsächlich geladenen IDE-Sprache: Deutsch, Englisch, Französisch oder Japanisch.
+Dies umfasst Einstellungen, Statusmenü und Hinweise, Indexverwaltung und Fehlerberichtüberschriften, Berechtigungsdialoge,
+Projektbestätigungen sowie die Anleitung zur manuellen Clientregistrierung. Die Spracherkennung verwendet die offizielle RTL-Ressourcenauflösung
+für die laufende bds.exe und berücksichtigt damit auch die über BDSSetLang eingestellte IDE-Sprache. Die Bibliotheks-/Compilersprache wird nicht
+herangezogen. Ohne passende IDE-Sprachressource gilt Englisch; ohne ausdrückliche IDE-Sprachvorgabe verwendet die RTL ihre reguläre Sprachauswahl.
+Datums- und Zahlenformate folgen weiterhin den regionalen Einstellungen. Technische Kennungen, Pfade, Konfigurationsbeispiele und
+übergebene Texte bleiben unverändert; rohe Backend-/Betriebssystemdiagnosen werden in ihrer Originalsprache angezeigt.
+
 Zum Betrieb benötigt DAI sein zur IDE-Version und -Architektur passendes Package (bei Delphi 13: `DAI370.bpl`) und die mit Delphi installierten Runtime-/Design-Time-Packages.
 Eigene PAS/DCU/DCP-Dateien oder GetIt-Packages werden nicht benötigt. Port, Token, Berechtigungsdateien und die Clientregistrierung bleiben Konfiguration.
 Für Clients mit stdio-Anbindung wird zusätzlich die eigenständige `DAI.McpBridge.exe` neben der BPL bereitgestellt: Sie liest zeilenweise JSON-RPC von

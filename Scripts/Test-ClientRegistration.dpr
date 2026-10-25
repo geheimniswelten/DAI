@@ -4,6 +4,7 @@
 
 uses
   System.SysUtils,
+  h5u.DAI.Localization,
   System.Classes,
   System.IOUtils,
   System.JSON,
@@ -381,6 +382,34 @@ begin
     Result := LFiles.Text;
   finally
     LFiles.Free;
+  end;
+end;
+
+procedure ManualLocalizationTests;
+var
+  LLanguage: TDAILanguage;
+  LText, LMarker, LConfig, LExpectedConfig: string;
+  LPosition: Integer;
+begin
+  LExpectedConfig := '';
+  try
+    for LLanguage := Low(TDAILanguage) to High(TDAILanguage) do
+    begin
+      DAISetLanguageForTests(LLanguage);
+      LText := TDAIClientRegistration.ManualRegistrationInfo('codex', 18475, 'unicode-ä-日本語', True);
+      LMarker := DAIText('Konfiguration zum Übernehmen:', 'Configuration to copy:', 'Configuration à copier :', 'コピーする設定:') + sLineBreak;
+      LPosition := Pos(LMarker, LText);
+      Check(LPosition > 0, 'manual registration heading follows selected IDE language');
+      Check(Pos(DAIText('Manuelle MCP-Registrierung', 'Manual MCP registration', 'Inscription MCP manuelle', 'MCP の手動登録'), LText) = 1,
+        'manual registration title follows selected IDE language');
+      LConfig := Copy(LText, LPosition + Length(LMarker), MaxInt);
+      if LExpectedConfig = '' then
+        LExpectedConfig := LConfig
+      else
+        Check(LConfig = LExpectedConfig, 'localization preserves the complete machine configuration verbatim');
+    end;
+  finally
+    DAISetLanguageForTests(dlGerman);
   end;
 end;
 
@@ -1639,6 +1668,7 @@ begin
 end;
 
 begin
+  DAISetLanguageForTests(dlGerman);
   try
     if ParamCount <> 1 then
       raise Exception.Create('Pass the isolated test directory.');
@@ -1649,6 +1679,7 @@ begin
     RegistrationTests;
     LauncherRegistrationTests;
     ManualRegistrationInfoTests;
+    ManualLocalizationTests;
     RegistrationScopeNameTests;
     ScopedRegistrationTests;
     RegistrationHealthTests;

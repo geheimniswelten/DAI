@@ -966,7 +966,11 @@ def check_options_frame_layout(errors: list[str]) -> None:
     # Scrolling and host integration are exercised by the native VCL tests in Test.Options.dpr.
     # Do not require a host-owned scrollbar or a particular frame alignment here.
 
-    if "Format('Standard: %d', [CDAIDefaultPort])" not in content:
+    # Allow localized Format arguments while retaining the configurable constant and label association.
+    if not re.search(
+        r"(?s)with\s+NewLabel\s*\(\s*Self\s*,\s*Format\s*\(.{0,1024}?\[\s*CDAIDefaultPort\s*\].{0,256}?FPortEdit\.Left",
+        content,
+    ):
         fail(errors, "h5u.DAI.Options.Frame.pas: der konfigurierbare Port muss den Standardport aus CDAIDefaultPort anzeigen")
     if "FGenerateTokenButton" not in content or "FGenerateTokenButton.OnClick := GenerateTokenClicked" not in content:
         fail(errors, "h5u.DAI.Options.Frame.pas: Schaltfläche zum Erzeugen eines neuen Bearer-Tokens fehlt")
@@ -977,11 +981,13 @@ def check_options_frame_layout(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.Options.Frame.pas: Bearer-Token-Edit muss genügend Platz für die Token-Schaltfläche lassen")
 
     restart_notice = "Nach dem Ändern von Port oder Bearer-Token sowie nach dem Registrieren oder Deregistrieren muss die Codex-App neu gestartet werden."
-    if restart_notice not in content:
+    # Translation arguments may split one message into adjacent Pascal literals.
+    joined_literals = re.sub(r"'\s*\+\s*'", "", content)
+    if restart_notice not in joined_literals:
         fail(errors, "h5u.DAI.Options.Frame.pas: Hinweis zum erforderlichen Neustart der Codex-App fehlt")
-    notice_position = content.find(restart_notice)
-    unregister_position = content.find("FUnregisterButton.OnClick := UnregisterClicked")
-    height_position = content.find("Height := LTop", unregister_position)
+    notice_position = joined_literals.find(restart_notice)
+    unregister_position = joined_literals.find("FUnregisterButton.OnClick := UnregisterClicked")
+    height_position = joined_literals.find("Height := LTop", unregister_position)
     if unregister_position < 0 or height_position < 0 or not (unregister_position < notice_position < height_position):
         fail(errors, "h5u.DAI.Options.Frame.pas: Neustart-Hinweis muss ganz unten vor dem Ende des Optionsinhalts stehen")
 

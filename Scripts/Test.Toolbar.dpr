@@ -25,6 +25,7 @@ uses
   h5u.DAI.IDE.Toolbar,
   h5u.DAI.Clients.Registration,
   h5u.DAI.Log,
+  h5u.DAI.Localization,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
@@ -1205,6 +1206,7 @@ end;
 
 begin
   try
+    DAISetLanguageForTests(dlGerman);
     Application.Initialize;
     if ParamStr(3) = 'LegacyDrag' then
       TestLegacyDragSafety

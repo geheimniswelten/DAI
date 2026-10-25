@@ -63,6 +63,7 @@ contains
   h5u.DAI.Clients.ConfigText in 'Source\h5u.DAI.Clients.ConfigText.pas',
   h5u.DAI.Codex.Registration in 'Source\h5u.DAI.Codex.Registration.pas',
   h5u.DAI.Consts in 'Source\h5u.DAI.Consts.pas',
+  h5u.DAI.Localization in 'Source\h5u.DAI.Localization.pas',
   h5u.DAI.Usage in 'Source\h5u.DAI.Usage.pas',
   h5u.DAI.Symbols.Parser in 'Source\h5u.DAI.Symbols.Parser.pas',
   h5u.DAI.Symbols.Store in 'Source\h5u.DAI.Symbols.Store.pas',

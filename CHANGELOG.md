@@ -2,6 +2,8 @@
 
 ## 1.2.36
 
+- Die sichtbare DAI-Oberfläche unterstützt Deutsch, Englisch, Französisch und Japanisch anhand der IDE-Sprachressourcen. Die offizielle RTL-Ressourcenauflösung berücksichtigt auch BDSSetLang und verzögert geladene Ressourcen. Ohne passende Sprachressource wird Englisch verwendet.
+- Einstellungen, Toolbar-/Menütexte, Hinweise, Indexverwaltung, Berechtigungsdialoge, Projektbestätigungen und manuelle Registrierungsanleitungen sind lokalisiert. Lange Texte umbrechen; Indexaktionen passen ihre Breite an die Sprache an. Maschinenwerte, Konfigurationsbeispiele und rohe Diagnosen bleiben erhalten.
 - Beim Öffnen des DAI-Menüs wird neben dem Hint auch der sichtbare Mauszeiger auf den Pfeil zurückgesetzt, vor und nach der Indexabfrage. Der globale VCL-Cursor bleibt unverändert, damit der Textcursor nach der Rückkehr in den Editor wieder regulär funktioniert.
 - Die Indexverwaltung erstellt und aktualisiert jeden Index über denselben Button anhand der ausgewählten Zeile. Fehlende Projekt-/Gruppenindizes können dort direkt erstellt werden; die zusätzliche Combobox und der separate Projektindex-Button entfallen. Der Aktionsbereich benötigt nur noch eine Zeile.
 - Projekt-/Gruppenindexdateien heißen jetzt `.dai\{Name}.projectindex.{Kennung}.sqlite` beziehungsweise `.dai\{Name}.groupindex.{Kennung}.sqlite`. Die bisherigen Pfadkennungen bleiben erhalten; alte Indexdateien werden nicht verändert. Die Berechtigungsdatei bleibt neben der Projektdatei.

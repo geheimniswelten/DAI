@@ -17,6 +17,7 @@ uses
   Vcl.Graphics,
   Vcl.Imaging.pngimage,
   Vcl.StdCtrls,
+  h5u.DAI.Localization,
   h5u.DAI.Symbols.Service,
   h5u.DAI.Symbols.Dialog in '..\Source\h5u.DAI.Symbols.Dialog.pas';
 
@@ -707,8 +708,96 @@ begin
   TDAISymbolIndexDialog.Shutdown;
 end;
 
+procedure TestLocalizedManager;
+const
+  CTitles: array[TDAILanguage] of string =
+    ('DAI — Source indexes', 'DAI — Quelltextindizes', 'DAI — Index des sources', 'DAI — ソースインデックス');
+  CCreate: array[TDAILanguage] of string = ('Create index', 'Index erstellen', 'Créer l’index', 'インデックスを作成');
+  CUpdate: array[TDAILanguage] of string = ('Update', 'Aktualisieren', 'Mettre à jour', '更新');
+  CMissing: array[TDAILanguage] of string = ('Not created', 'Nicht erstellt', 'Non créé', '未作成');
+  CProject: array[TDAILanguage] of string = ('Project', 'Projekt', 'Projet', 'プロジェクト');
+  CWarning: array[TDAILanguage] of string = ('Declaration index:', 'Deklarationsindex:', 'Index des déclarations', '宣言インデックス:');
+  CError: array[TDAILanguage] of string = ('Index error:', 'Indexfehler:', 'Erreur d’index', 'インデックスエラー:');
+  CReport: array[TDAILanguage] of string = ('Last index job:', 'Letzter Indexauftrag:', 'Dernière tâche d’indexation', '前回のインデックス処理:');
+  CDefaultWarning = 'Deklarationsindex: seit der Erfassung geänderte und ungespeicherte Quellen können abweichen oder fehlen. ' +
+    'Vor Verwendung den aktuellen Quelltext lesen. Bedingte Deklarationen sind nicht compilersemantisch aufgelöst.';
+var
+  LList: TListView;
+  LActions: TPanel;
+  LButton, LPrevious: TButton;
+  LMemo: TMemo;
+  LNativeText: array[0..255] of Char;
 begin
   try
+    for var LLanguage := Low(TDAILanguage) to High(TDAILanguage) do
+    begin
+      DAISetLanguageForTests(LLanguage);
+      TDAISymbolService.Reset;
+      TDAISymbolService.ListWarning := CDefaultWarning;
+      TDAISymbolService.IndexNames[3] := 'Projekt';
+      TDAISymbolIndexDialog.Show('project');
+      Check(Manager.Caption = CTitles[LLanguage], 'The manager title uses the selected language');
+      Check(Button('UpdateIndexButton').Caption = CCreate[LLanguage], 'The shared creation action is localized');
+      Check(Pos(CWarning[LLanguage], LabelByName('IndexStatusLabel').Caption) = 1, 'The known backend warning is localized for display');
+      LList := TListView(Manager.FindComponent('SymbolIndexList'));
+      Check(LList.Selected.Caption = CProject[LLanguage], 'Known service default names are localized');
+      Check(LList.Selected.SubItems[5] = CMissing[LLanguage], 'Missing-index state is localized without changing the JSON token');
+      Check(TDAISymbolService.BuildCount = 0, 'Opening localized metadata never starts an index build');
+      LActions := TPanel(Manager.FindComponent('IndexActionsPanel'));
+      for var LPPI in TArray<Integer>.Create(96, 144, 192) do
+      begin
+        Manager.ScaleForPPI(LPPI);
+        Manager.ClientWidth := MulDiv(900, LPPI, 96);
+        Manager.Realign;
+        Manager.Update;
+        LPrevious := nil;
+        for var LName in TArray<string>.Create('UpdateIndexButton', 'DeleteIndexButton', 'RefreshIndexListButton',
+          'IndexErrorDetailsButton', 'CloseIndexManagerButton') do
+        begin
+          LButton := Button(LName);
+          Manager.Canvas.Font.Assign(LButton.Font);
+          Check(LButton.Width >= Manager.Canvas.TextWidth(LButton.Caption) + MulDiv(16, LPPI, 96),
+            'Translated action text fits its button at each DPI');
+          Check(LButton.Left + LButton.Width <= LActions.ClientWidth, 'Every translated action fits the compact footer');
+          if Assigned(LPrevious) then
+            Check(LButton.Left >= LPrevious.Left + LPrevious.Width, 'Translated actions do not overlap');
+          LPrevious := LButton;
+          Check(Pos(#$FFFD, LButton.Caption) = 0, 'Localized Unicode text has no replacement characters');
+          GetWindowText(LButton.Handle, LNativeText, Length(LNativeText));
+          Check(string(LNativeText) = LButton.Caption, 'Native Windows button text preserves the translated Unicode');
+        end;
+        CheckWrappedLabel(LabelByName('IndexInformationLabel'), LPPI);
+        CheckWrappedLabel(LabelByName('IndexProviderLabel'), LPPI);
+        CheckWrappedLabel(LabelByName('IndexStatusLabel'), LPPI);
+        SaveLayoutPreview(TPath.Combine(ExtractFilePath(ParamStr(0)), Format('Localized-%s-PPI-%d.png', [DAILanguageCode, LPPI])));
+      end;
+      TDAISymbolService.Existing[3] := True;
+      TDAISymbolService.ErrorCounts[3] := 1;
+      TDAISymbolService.RowErrors[3] := '[SQLite] diagnostic 日本語';
+      TDAISymbolService.IndexNames[3] := 'MyProject 日本語';
+      TDAISymbolIndexDialog.Show('project');
+      Check(Button('UpdateIndexButton').Caption = CUpdate[LLanguage], 'The same action switches to the localized update caption');
+      Check(LList.Selected.Caption = 'MyProject 日本語', 'User project names remain unchanged');
+      Check(Pos(CError[LLanguage], LabelByName('IndexStatusLabel').Caption) = 1, 'The index error wrapper is localized');
+      Check(Pos('[SQLite] diagnostic 日本語', LabelByName('IndexStatusLabel').Caption) > 0, 'Diagnostic error details remain verbatim');
+      Button('IndexErrorDetailsButton').Click;
+      LMemo := TMemo(ErrorDetailsForm.FindComponent('IndexErrorsMemo'));
+      Check(Pos(CReport[LLanguage], LMemo.Text) > 0, 'The full error report heading is localized');
+      Check(Pos('C:\Test\Ausgelassen\Unit00000.pas', LMemo.Text) > 0, 'Report localization preserves full file paths');
+      Check(TDAISymbolService.LastErrorIdentity = 'snapshot-project', 'Localized reports preserve the selected data identity');
+      Check(TDAISymbolService.BuildCount = 0, 'Language and report navigation cause no automatic index build');
+      SaveLayoutPreview(TPath.Combine(ExtractFilePath(ParamStr(0)), 'Localized-Errors-' + DAILanguageCode + '.png'), ErrorDetailsForm);
+      TDAISymbolIndexDialog.Shutdown;
+    end;
+  finally
+    TDAISymbolIndexDialog.Shutdown;
+    DAISetLanguageForTests(dlGerman);
+  end;
+end;
+
+begin
+  try
+    DAISetLanguageForTests(dlGerman);
     Application.Initialize;
     TestManager;
     TestSelectedCreation;
@@ -717,6 +806,7 @@ begin
     TestUpdatingErrorReport;
     TestNumberFormatting;
     TestGlobalIndexErrors;
+    TestLocalizedManager;
     Writeln('DAI symbol dialog: ', GChecks, ' checks passed.');
   except
     on E: Exception do

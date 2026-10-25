@@ -29,6 +29,7 @@ uses
   System.Types,
   Vcl.Graphics,
   h5u.DAI.Consts,
+  h5u.DAI.Localization,
   h5u.DAI.IDE.Toolbar,
   h5u.DAI.IDE.Notifier,
   h5u.DAI.Log,
@@ -128,17 +129,29 @@ begin
         CDAIDisplayName,
         LBitmap.Handle,
         False,
-        'MCP-Integration für Codex'
+        DAIText(
+          'MCP-Integration für Codex',
+          'MCP integration for Codex',
+          'Intégration MCP pour Codex',
+          'Codex 向け MCP 統合')
       );
 
     if Supports(BorlandIDEServices, IOTAAboutBoxServices, LAboutServices) then
       FAboutBoxIndex := LAboutServices.AddPluginInfo(
         CDAIDisplayName,
         'DAI – Delphi AI' + sLineBreak +
-        'Lokaler MCP-Server für Codex mit kontrolliertem Zugriff auf die Delphi OpenToolsAPI.',
+        DAIText(
+          'Lokaler MCP-Server für Codex mit kontrolliertem Zugriff auf die Delphi OpenToolsAPI.',
+          'Local MCP server for Codex with controlled access to the Delphi OpenToolsAPI.',
+          'Serveur MCP local pour Codex avec accès contrôlé à l’OpenToolsAPI Delphi.',
+          'Delphi OpenToolsAPI へのアクセスを制御する Codex 用ローカル MCP サーバー。'),
         LBitmap.Handle,
         False,
-        'Interne Erweiterung',
+        DAIText(
+          'Interne Erweiterung',
+          'Internal extension',
+          'Extension interne',
+          '内部拡張'),
         CDAIVersion
       );
   finally

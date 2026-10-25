@@ -37,6 +37,7 @@ uses
   h5u.DAI.Clients.SafeFiles,
   h5u.DAI.Codex.Registration,
   h5u.DAI.Consts,
+  h5u.DAI.Localization,
   h5u.DAI.Settings;
 
 type
@@ -202,7 +203,11 @@ begin
           Result.MarkerDirectory := TPath.GetDirectoryName(Result.FileName);
           Result.Format := 'toml';
           Result.Documentation := 'https://developers.openai.com/codex/mcp/';
-          Result.Note := 'Codex CLI, App und IDE-Erweiterung teilen die Benutzerkonfiguration; Client nach Änderungen neu starten.';
+          Result.Note := DAIText(
+                  'Codex CLI, App und IDE-Erweiterung teilen die Benutzerkonfiguration; Client nach Änderungen neu starten.',
+                  'Codex CLI, app and IDE extension share the user configuration; restart the client after changes.',
+                  'Codex CLI, l’application et l’extension EDI partagent la configuration utilisateur ; redémarrer le client après modification.',
+                  'Codex CLI、アプリ、IDE 拡張はユーザー設定を共有します。変更後にクライアントを再起動してください。');
         end;
       1:
         begin
@@ -213,7 +218,11 @@ begin
             Result.FileName := TPath.Combine(LHome, '.claude.json');
           Result.MarkerDirectory := LDirectory;
           Result.Documentation := 'https://code.claude.com/docs/en/mcp';
-          Result.Note := 'Benutzerscope. Projekt- oder lokale MCP-Konfiguration und Unternehmensrichtlinien können Vorrang haben.';
+          Result.Note := DAIText(
+                  'Benutzerscope. Projekt- oder lokale MCP-Konfiguration und Unternehmensrichtlinien können Vorrang haben.',
+                  'User scope. Project or local MCP settings and organization policies may take precedence.',
+                  'Portée utilisateur. Les paramètres MCP du projet ou locaux et les règles de l’organisation peuvent être prioritaires.',
+                  'ユーザー範囲の設定です。プロジェクトやローカルの MCP 設定、組織のポリシーが優先される場合があります。');
         end;
       2:
         begin
@@ -221,16 +230,32 @@ begin
           Result.MarkerDirectory := TPath.GetDirectoryName(Result.FileName);
           Result.Transport := 'stdio-http-bridge';
           Result.Documentation := 'https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop';
-          Result.Note := 'Die native Delphi-Bridge verbindet stdio mit dem lokalen HTTP-Server; Claude Desktop vollständig neu starten.';
+          Result.Note := DAIText(
+                  'Die native Delphi-Bridge verbindet stdio mit dem lokalen HTTP-Server; Claude Desktop vollständig neu starten.',
+                  'The native Delphi bridge connects stdio to the local HTTP server; fully restart Claude Desktop.',
+                  'La passerelle Delphi native relie stdio au serveur HTTP local ; redémarrer complètement Claude Desktop.',
+                  'ネイティブ Delphi ブリッジが stdio をローカル HTTP サーバーに接続します。Claude Desktop を完全に再起動してください。');
         end;
       3:
         begin
           Result.MarkerDirectory := TPath.Combine(LHome, '.eigent');
           Result.Supported := False;
           Result.Documentation := 'https://github.com/eigent-ai/eigent/blob/main/server/README_EN.md';
-          Result.Note := 'Eigent verwaltet MCPs über UI/API. Kein verifiziertes globales mcp.json-Dateischema; ' +
-            Result.ServerName + ' per URL/Bearer-Header und ' + Result.LauncherServerName +
-            ' bei lokaler STDIO-Unterstützung manuell mit DAI.McpBridge.exe --launcher einrichten.';
+          Result.Note := DAIText(
+                  'Eigent verwaltet MCPs über UI/API. Kein verifiziertes globales mcp.json-Dateischema; ',
+                  'Eigent manages MCP through its UI/API. No verified global mcp.json schema; ',
+                  'Eigent gère MCP via son interface/API. Aucun schéma mcp.json global vérifié ; ',
+                  'Eigent は UI/API で MCP を管理します。確認済みのグローバル mcp.json スキーマはありません。') +
+            Result.ServerName + DAIText(
+                      ' per URL/Bearer-Header und ',
+                      ' through URL/Bearer header and ',
+                      ' via URL/en-tête Bearer et ',
+                      ' を URL/Bearer ヘッダーで、') + Result.LauncherServerName +
+            DAIText(
+                      ' bei lokaler STDIO-Unterstützung manuell mit DAI.McpBridge.exe --launcher einrichten.',
+                      ' manually using DAI.McpBridge.exe --launcher if local STDIO is supported.',
+                      ' manuellement avec DAI.McpBridge.exe --launcher si STDIO local est pris en charge.',
+                      ' をローカル STDIO 対応時に DAI.McpBridge.exe --launcher で手動設定してください。');
         end;
       4:
         begin
@@ -238,14 +263,22 @@ begin
           Result.FileName := TPath.Combine(LDirectory, '.gemini\settings.json');
           Result.MarkerDirectory := TPath.GetDirectoryName(Result.FileName);
           Result.Documentation := 'https://geminicli.com/docs/tools/mcp-server/';
-          Result.Note := 'Gemini CLI und Code Assist im VS-Code-Agentenmodus. IntelliJ hat eigene MCP-Einstellungen; dort manuell eintragen.';
+          Result.Note := DAIText(
+                  'Gemini CLI und Code Assist im VS-Code-Agentenmodus. IntelliJ hat eigene MCP-Einstellungen; dort manuell eintragen.',
+                  'Gemini CLI and Code Assist in VS Code agent mode. IntelliJ has separate MCP settings; configure them manually.',
+                  'Gemini CLI et Code Assist en mode agent VS Code. IntelliJ a ses propres paramètres MCP, à configurer manuellement.',
+                  'Gemini CLI と VS Code エージェントモードの Code Assist に対応します。IntelliJ の MCP 設定は個別に手動で行ってください。');
         end;
       5:
         begin
           Result.Supported := False;
           Result.MarkerDirectory := TPath.Combine(LAppData, 'Gemini');
           Result.Documentation := 'https://geminicli.com/docs/tools/mcp-server/';
-          Result.Note := 'Kein offizielles allgemeines MCP-Konfigurationsschema für eine Gemini-Desktop-App verifiziert. Gemini CLI verwenden.';
+          Result.Note := DAIText(
+                  'Kein offizielles allgemeines MCP-Konfigurationsschema für eine Gemini-Desktop-App verifiziert. Gemini CLI verwenden.',
+                  'No official generic MCP configuration schema verified for a Gemini desktop app. Use Gemini CLI.',
+                  'Aucun schéma MCP générique officiel vérifié pour une application Gemini de bureau. Utiliser Gemini CLI.',
+                  'Gemini デスクトップアプリの公式汎用 MCP 設定スキーマは未確認です。Gemini CLI を使用してください。');
         end;
       6:
         begin
@@ -254,7 +287,11 @@ begin
           if Trim(GetEnvironmentVariable('HERMES_HOME')) = '' then
           begin
             if TDirectory.Exists(LDirectory) and TDirectory.Exists(LLegacy) then
-              Result.BlockReason := 'Mehrere Hermes-Konfigurationsordner; HERMES_HOME auf das gewünschte Profil setzen.'
+              Result.BlockReason := DAIText(
+                          'Mehrere Hermes-Konfigurationsordner; HERMES_HOME auf das gewünschte Profil setzen.',
+                          'Multiple Hermes configuration directories; set HERMES_HOME to the intended profile.',
+                          'Plusieurs dossiers de configuration Hermes ; définir HERMES_HOME sur le profil souhaité.',
+                          'Hermes 設定フォルダーが複数あります。HERMES_HOME を使用するプロファイルに設定してください。')
             else if TDirectory.Exists(LLegacy) then
               LDirectory := LLegacy;
           end;
@@ -263,14 +300,22 @@ begin
           Result.Format := 'yaml';
           Result.Keys := ['mcp_servers', Result.ServerName];
           Result.Documentation := 'https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference';
-          Result.Note := 'Native Windows-Konfiguration. Für ein benanntes Profil HERMES_HOME explizit auf dessen Ordner setzen.';
+          Result.Note := DAIText(
+                  'Native Windows-Konfiguration. Für ein benanntes Profil HERMES_HOME explizit auf dessen Ordner setzen.',
+                  'Native Windows configuration. For a named profile, explicitly set HERMES_HOME to its directory.',
+                  'Configuration Windows native. Pour un profil nommé, définir explicitement HERMES_HOME sur son dossier.',
+                  'Windows のネイティブ設定です。名前付きプロファイルには HERMES_HOME でフォルダーを明示してください。');
         end;
       7:
         begin
           Result.FileName := EnvFile('DAI_LM_STUDIO_CONFIG', TPath.Combine(LHome, '.lmstudio\mcp.json'));
           Result.MarkerDirectory := TPath.GetDirectoryName(Result.FileName);
           Result.Documentation := 'https://lmstudio.ai/docs/app/mcp';
-          Result.Note := 'LM Studio ab 0.3.17; nach Änderungen die MCP-Konfiguration neu laden.';
+          Result.Note := DAIText(
+                  'LM Studio ab 0.3.17; nach Änderungen die MCP-Konfiguration neu laden.',
+                  'LM Studio 0.3.17 or later; reload the MCP configuration after changes.',
+                  'LM Studio 0.3.17 ou ultérieur ; recharger la configuration MCP après modification.',
+                  'LM Studio 0.3.17 以降に対応します。変更後に MCP 設定を再読み込みしてください。');
         end;
       8:
         begin
@@ -280,20 +325,40 @@ begin
           Result.Format := 'json5';
           Result.Keys := ['mcp', 'servers', Result.ServerName];
           Result.Documentation := 'https://docs.openclaw.ai/tools/mcp';
-          Result.Note := 'Native MCP-Unterstützung erforderlich; Gateway auf diesem Windows-Rechner. openclaw mcp doctor ' +
-            Result.ServerName + ' --probe prüft die Verbindung.';
+          Result.Note := DAIText(
+                  'Native MCP-Unterstützung erforderlich; Gateway auf diesem Windows-Rechner. openclaw mcp doctor ',
+                  'Native MCP support required; gateway on this Windows computer. openclaw mcp doctor ',
+                  'Prise en charge MCP native requise ; passerelle sur cet ordinateur Windows. openclaw mcp doctor ',
+                  'ネイティブ MCP 対応とこの Windows コンピューター上のゲートウェイが必要です。openclaw mcp doctor ') +
+            Result.ServerName + DAIText(
+                      ' --probe prüft die Verbindung.',
+                      ' --probe checks the connection.',
+                      ' --probe vérifie la connexion.',
+                      ' --probe で接続を確認できます。');
           if (GetEnvironmentVariable('OPENCLAW_CONFIG_READONLY') = '1') or (GetEnvironmentVariable('OPENCLAW_NIX_MODE') = '1') then
-            Result.BlockReason := 'OpenClaw ist als schreibgeschützt konfiguriert.'
+            Result.BlockReason := DAIText(
+                      'OpenClaw ist als schreibgeschützt konfiguriert.',
+                      'OpenClaw is configured as read-only.',
+                      'OpenClaw est configuré en lecture seule.',
+                      'OpenClaw は読み取り専用に設定されています。')
           else if (Trim(GetEnvironmentVariable('OPENCLAW_CONFIG_PATH')) = '') and
             ((Trim(GetEnvironmentVariable('OPENCLAW_PROFILE')) <> '') or (Trim(GetEnvironmentVariable('OPENCLAW_HOME')) <> '')) then
-            Result.BlockReason := 'Das OpenClaw-Profil ist mehrdeutig; OPENCLAW_CONFIG_PATH explizit setzen.';
+            Result.BlockReason := DAIText(
+                      'Das OpenClaw-Profil ist mehrdeutig; OPENCLAW_CONFIG_PATH explizit setzen.',
+                      'The OpenClaw profile is ambiguous; explicitly set OPENCLAW_CONFIG_PATH.',
+                      'Le profil OpenClaw est ambigu ; définir explicitement OPENCLAW_CONFIG_PATH.',
+                      'OpenClaw のプロファイルを特定できません。OPENCLAW_CONFIG_PATH を明示してください。');
         end;
     end;
     Result.Detected := TDirectory.Exists(Result.MarkerDirectory) or ((Result.FileName <> '') and
       (TFile.Exists(Result.FileName) or TFile.Exists(OwnershipFile(Result))));
   except
     on E: Exception do
-      Result.BlockReason := 'Der Konfigurationspfad ist ungültig oder konnte nicht sicher ermittelt werden.';
+      Result.BlockReason := DAIText(
+          'Der Konfigurationspfad ist ungültig oder konnte nicht sicher ermittelt werden.',
+          'The configuration path is invalid or could not be determined safely.',
+          'Le chemin de configuration est invalide ou n’a pas pu être déterminé de façon sûre.',
+          '設定パスが無効か、安全に特定できませんでした。');
   end;
 end;
 
@@ -592,14 +657,22 @@ begin
     end;
     if (AAction <> 'status') and not AClient.Detected and not AExplicit then
     begin
-      SetStatus(Result, 'not_detected', 'Kein vorhandener Konfigurationsordner erkannt; zur Erstregistrierung den Client ausdrücklich auswählen.', False);
+      SetStatus(Result, 'not_detected', DAIText(
+        'Kein vorhandener Konfigurationsordner erkannt; zur Erstregistrierung den Client ausdrücklich auswählen.',
+        'No existing configuration directory found; explicitly select the client for initial registration.',
+        'Aucun dossier de configuration existant détecté ; sélectionner explicitement le client pour la première inscription.',
+        '既存の設定フォルダーが見つかりません。初回登録ではクライアントを明示的に選択してください。'), False);
       Exit;
     end;
     if AClient.Id = 'codex' then
     begin
       if (AAction = 'register') and not TFile.Exists(BridgeFileName) then
       begin
-        SetStatus(Result, 'missing_bridge', 'DAI.McpBridge.exe fehlt neben dem DAI-Package; den Launcher zuerst bauen bzw. installieren.', False);
+        SetStatus(Result, 'missing_bridge', DAIText(
+          'DAI.McpBridge.exe fehlt neben dem DAI-Package; den Launcher zuerst bauen bzw. installieren.',
+          'DAI.McpBridge.exe is missing beside the DAI package; build or install the launcher first.',
+          'DAI.McpBridge.exe est absent à côté du package DAI ; compiler ou installer d’abord le lanceur.',
+          'DAI パッケージの隣に DAI.McpBridge.exe がありません。先にランチャーをビルドまたはインストールしてください。'), False);
         Exit;
       end;
       if AAction = 'register' then
@@ -613,12 +686,24 @@ begin
       LCodex.TryGetValue<Boolean>('needs_update', LCodexNeedsUpdate);
       Result.AddPair('codex', LCodex);
       if LCodexRegistered and LCodexNeedsUpdate then
-        SetStatus(Result, 'needs_update', 'Die verwaltete Codex-Registrierung passt nicht zu ' + AClient.ServerName + '/' +
-          AClient.LauncherServerName + ', Port, Token oder IDE; erneut registrieren.', True)
+        SetStatus(Result, 'needs_update', DAIText(
+          'Die verwaltete Codex-Registrierung passt nicht zu ',
+          'The managed Codex registration does not match ',
+          'L’inscription Codex gérée ne correspond pas à ',
+          '管理対象の Codex 登録が ') + AClient.ServerName + '/' +
+          AClient.LauncherServerName + DAIText(
+            ', Port, Token oder IDE; erneut registrieren.',
+            ', port, token or IDE; register again.',
+            ', au port, au jeton ou à l’EDI ; réinscrire.',
+            '、ポート、トークン、IDE と一致しません。再登録してください。'), True)
       else if LCodexRegistered then
         SetStatus(Result, 'registered', AClient.Note, True)
       else if AAction = 'unregister' then
-        SetStatus(Result, 'removed', 'Die verwaltete Codex-Registrierung wurde entfernt.', False)
+        SetStatus(Result, 'removed', DAIText(
+          'Die verwaltete Codex-Registrierung wurde entfernt.',
+          'The managed Codex registration was removed.',
+          'L’inscription Codex gérée a été supprimée.',
+          '管理対象の Codex 登録を削除しました。'), False)
       else if not AClient.Detected then
         SetStatus(Result, 'not_detected', AClient.Note, False)
       else
@@ -633,13 +718,21 @@ begin
     LOwnership := TDAIClientSafeFiles.ReadTextIfExists(OwnershipFile(AClient));
     if ((AExpectedConfigHash <> '') and (HashEntry(LText) <> AExpectedConfigHash)) or
       ((AExpectedOwnershipHash <> '') and (HashEntry(LOwnership) <> AExpectedOwnershipHash)) then
-      raise EDAIClientConfigConflict.Create('Die Registrierung wurde seit der Suche geändert; bitte erneut suchen.');
+      raise EDAIClientConfigConflict.Create(DAIText(
+        'Die Registrierung wurde seit der Suche geändert; bitte erneut suchen.',
+        'The registration has changed since the search; search again.',
+        'L’inscription a changé depuis la recherche ; relancer la recherche.',
+        '検索後に登録内容が変更されました。再検索してください。'));
     LStoredHashes := ['', ''];
     LPendingHashes := ['', ''];
     LCurrentHashes := ['', ''];
     LNextHashes := ['', ''];
     if LSidecarExists and not ValidOwnership(AClient, LOwnership, LStoredHashes, LPendingHashes) then
-      raise EDAIClientConfigConflict.Create('Die vorhandene Ownership-Datei ist fremd oder ungültig; sie bleibt erhalten.');
+      raise EDAIClientConfigConflict.Create(DAIText(
+        'Die vorhandene Ownership-Datei ist fremd oder ungültig; sie bleibt erhalten.',
+        'The existing ownership file is foreign or invalid; it is retained.',
+        'Le fichier de propriété existant est étranger ou invalide ; il est conservé.',
+        '既存の所有情報ファイルは他の登録に属するか無効です。そのまま保持します。'));
     LEntryCount := 1;
     LEntries[0].Name := AClient.ServerName;
     LEntries[0].Keys := AClient.Keys;
@@ -666,15 +759,27 @@ begin
       LAllOwned := LAllOwned and LEntries[LIndex].Owned;
       if LEntries[LIndex].Exists and not LEntries[LIndex].Owned then
       begin
-        SetStatus(Result, 'conflict', 'Ein fremder oder nachträglich veränderter ' +
-          LEntries[LIndex].Name + '-Eintrag existiert; beide Einträge bleiben erhalten.', False);
+        SetStatus(Result, 'conflict', DAIText(
+          'Ein fremder oder nachträglich veränderter ',
+          'A foreign or subsequently edited ',
+          'Une entrée étrangère ou modifiée ultérieurement ',
+          '他の登録に属するか後から変更された ') +
+          LEntries[LIndex].Name + DAIText(
+            '-Eintrag existiert; beide Einträge bleiben erhalten.',
+            ' entry exists; both entries are retained.',
+            ' existe ; les deux entrées sont conservées.',
+            ' エントリが存在します。両方のエントリを保持します。'), False);
         Exit;
       end;
     end;
     Result.AddPair('launcher_registered', TJSONBool.Create((LEntryCount = 2) and LEntries[1].Owned));
     if AClient.LauncherSupported and not TFile.Exists(BridgeFileName) and (AAction <> 'unregister') then
     begin
-      SetStatus(Result, 'missing_bridge', 'DAI.McpBridge.exe fehlt neben dem DAI-Package; native Delphi-Bridge zuerst bauen bzw. installieren.', LOwned);
+      SetStatus(Result, 'missing_bridge', DAIText(
+        'DAI.McpBridge.exe fehlt neben dem DAI-Package; native Delphi-Bridge zuerst bauen bzw. installieren.',
+        'DAI.McpBridge.exe is missing beside the DAI package; build or install the native Delphi bridge first.',
+        'DAI.McpBridge.exe est absent à côté du package DAI ; compiler ou installer d’abord la passerelle Delphi native.',
+        'DAI パッケージの隣に DAI.McpBridge.exe がありません。先にネイティブ Delphi ブリッジをビルドまたはインストールしてください。'), LOwned);
       Exit;
     end;
     LRemove := AAction = 'unregister';
@@ -683,8 +788,16 @@ begin
       if LSidecarExists then
         TDAIClientSafeFiles.WriteTextWithBackup(OwnershipFile(AClient),
           OwnershipText(AClient, ['', ''], ['', ''], 'removed'), LOwnership, True);
-      SetStatus(Result, 'unchanged', 'Kein unveränderter eigener ' + AClient.ServerName + '/' +
-        AClient.LauncherServerName + '-Eintrag zu entfernen.', False);
+      SetStatus(Result, 'unchanged', DAIText(
+        'Kein unveränderter eigener ',
+        'No unchanged owned ',
+        'Aucune entrée propre non modifiée ',
+        '削除できる未変更の自分の ') + AClient.ServerName + '/' +
+        AClient.LauncherServerName + DAIText(
+          '-Eintrag zu entfernen.',
+          ' entry to remove.',
+          ' à supprimer.',
+          ' エントリはありません。'), False);
       Exit;
     end;
     LNext := LText;
@@ -707,8 +820,16 @@ begin
         if LAllOwned and (LNext = LText) then
           SetStatus(Result, 'registered', AClient.Note, True)
         else
-          SetStatus(Result, 'needs_update', 'Der verwaltete Eintrag passt nicht zu ' + AClient.ServerName + '/' +
-            AClient.LauncherServerName + ', Port, Token, Bridge oder IDE; erneut registrieren.', True);
+          SetStatus(Result, 'needs_update', DAIText(
+            'Der verwaltete Eintrag passt nicht zu ',
+            'The managed entry does not match ',
+            'L’entrée gérée ne correspond pas à ',
+            '管理対象のエントリが ') + AClient.ServerName + '/' +
+            AClient.LauncherServerName + DAIText(
+              ', Port, Token, Bridge oder IDE; erneut registrieren.',
+              ', port, token, bridge or IDE; register again.',
+              ', au port, au jeton, à la passerelle ou à l’EDI ; réinscrire.',
+              '、ポート、トークン、ブリッジ、IDE と一致しません。再登録してください。'), True);
       end
       else if not AClient.Detected then
         SetStatus(Result, 'not_detected', AClient.Note, False)
@@ -727,7 +848,11 @@ begin
     begin
       if LOwnership <> LCommitted then
         TDAIClientSafeFiles.WriteTextWithBackup(OwnershipFile(AClient), LCommitted, LOwnership, LSidecarExists);
-      SetStatus(Result, 'unchanged', 'Bereits passend registriert.', LAllOwned);
+      SetStatus(Result, 'unchanged', DAIText(
+        'Bereits passend registriert.',
+        'Already registered with matching settings.',
+        'Déjà inscrit avec les paramètres correspondants.',
+        '適切な設定で登録済みです。'), LAllOwned);
       Exit;
     end;
     LPending := OwnershipText(AClient, LCurrentHashes, LNextHashes, 'pending');
@@ -746,20 +871,36 @@ begin
     except
       on E: Exception do
       begin
-        SetStatus(Result, 'configured_pending', 'Konfiguration geschrieben; der Ownership-Abschluss ist offen. Beim nächsten Registrieren erneut versuchen.', LOwned);
+        SetStatus(Result, 'configured_pending', DAIText(
+          'Konfiguration geschrieben; der Ownership-Abschluss ist offen. Beim nächsten Registrieren erneut versuchen.',
+          'Configuration written; ownership finalization is pending. Retry on the next registration.',
+          'Configuration écrite ; la finalisation de la propriété est en attente. Réessayer à la prochaine inscription.',
+          '設定を書き込みましたが、所有情報の確定が未完了です。次回の登録時に再試行してください。'), LOwned);
         Exit;
       end;
     end;
     if LRemove then
-      SetStatus(Result, 'removed', 'Die unveränderten eigenen ' + AClient.ServerName + '/' +
-        AClient.LauncherServerName + '-Einträge wurden entfernt; andere Inhalte bleiben erhalten.', False)
+      SetStatus(Result, 'removed', DAIText(
+        'Die unveränderten eigenen ',
+        'The unchanged owned ',
+        'Les entrées propres non modifiées ',
+        '未変更の自分の ') + AClient.ServerName + '/' +
+        AClient.LauncherServerName + DAIText(
+          '-Einträge wurden entfernt; andere Inhalte bleiben erhalten.',
+          ' entries were removed; other content is retained.',
+          ' ont été supprimées ; les autres contenus sont conservés.',
+          ' エントリを削除しました。他の内容は保持されます。'), False)
     else
       SetStatus(Result, 'configured', AClient.Note, True);
   except
     on E: EDAIClientConfigConflict do
       SetStatus(Result, 'conflict', E.Message, LOwned);
     on E: Exception do
-      SetStatus(Result, 'error', 'Die Konfiguration konnte nicht sicher bearbeitet werden; Pfad und Schreibrechte prüfen.', LOwned);
+      SetStatus(Result, 'error', DAIText(
+        'Die Konfiguration konnte nicht sicher bearbeitet werden; Pfad und Schreibrechte prüfen.',
+        'The configuration could not be edited safely; check the path and write permissions.',
+        'La configuration n’a pas pu être modifiée de façon sûre ; vérifier le chemin et les droits d’écriture.',
+        '設定を安全に編集できませんでした。パスと書き込み権限を確認してください。'), LOwned);
   end;
 end;
 
@@ -781,7 +922,11 @@ var
   LJson: TJSONObject;
 begin
   if not TRegEx.IsMatch(AServerName, '^dai(?:_bds[0-9]+_[0-9]+(?:_p[a-f0-9]{16})?)?$') then
-    raise EDAIClientConfigConflict.Create('Unbekannter DAI-Registrierungsname.');
+    raise EDAIClientConfigConflict.Create(DAIText(
+      'Unbekannter DAI-Registrierungsname.',
+      'Unknown DAI registration name.',
+      'Nom d’inscription DAI inconnu.',
+      '不明な DAI 登録名です。'));
   Result := ABase;
   Result.ServerName := AServerName;
   Result.LauncherServerName := AServerName + '_start';
@@ -825,7 +970,11 @@ begin
   if AServerName <> 'dai' then
     LClient.ConnectionScope := 'ide_profile';
   LStatus := 'conflict';
-  LMessage := 'Die Registrierung ist fremd, verändert oder nicht sicher lesbar; sie bleibt erhalten.';
+  LMessage := DAIText(
+    'Die Registrierung ist fremd, verändert oder nicht sicher lesbar; sie bleibt erhalten.',
+    'The registration is foreign, modified or cannot be read safely; it is retained.',
+    'L’inscription est étrangère, modifiée ou illisible de façon sûre ; elle est conservée.',
+    'この登録は他のアプリに属するか、変更済みか、安全に読み取れません。そのまま保持します。');
   LText := '';
   LOwnership := '';
   LRemovable := False;
@@ -859,7 +1008,11 @@ begin
       begin
         LRemovable := ABase.BlockReason = '';
         LStatus := 'managed';
-        LMessage := 'Unveränderte DAI-Registrierung; kann gezielt entfernt werden.';
+        LMessage := DAIText(
+          'Unveränderte DAI-Registrierung; kann gezielt entfernt werden.',
+          'Unmodified DAI registration; it can be removed individually.',
+          'Inscription DAI non modifiée ; elle peut être supprimée individuellement.',
+          '未変更の DAI 登録です。個別に削除できます。');
         if not LRemovable then
         begin
           LStatus := 'conflict';
@@ -870,7 +1023,11 @@ begin
       begin
         // Successful unregister leaves an ownership tombstone for recovery, not an installed entry.
         LStatus := 'not_registered';
-        LMessage := 'Die Ownership-Datei enthält keinen vorhandenen DAI-Eintrag.';
+        LMessage := DAIText(
+          'Die Ownership-Datei enthält keinen vorhandenen DAI-Eintrag.',
+          'The ownership file contains no existing DAI entry.',
+          'Le fichier de propriété ne contient aucune entrée DAI existante.',
+          '所有情報ファイルに既存の DAI エントリがありません。');
       end;
     end;
   except
@@ -1076,54 +1233,162 @@ begin
   end;
   LText := TStringList.Create;
   try
-    LText.Add('Manuelle MCP-Registrierung');
+    LText.Add(DAIText(
+      'Manuelle MCP-Registrierung',
+      'Manual MCP registration',
+      'Inscription MCP manuelle',
+      'MCP の手動登録'));
     if LClient.Id <> '' then
-      LText.Add('Client: ' + LClient.LabelText);
+      LText.Add(DAIText(
+          'Client: ',
+          'Client: ',
+          'Client : ',
+          'クライアント: ') + LClient.LabelText);
     if AShared then
-      LText.Add('Verbindung: gemeinsam für alle Delphi-Versionen')
+      LText.Add(DAIText(
+          'Verbindung: gemeinsam für alle Delphi-Versionen',
+          'Connection: shared by all Delphi versions',
+          'Connexion : partagée par toutes les versions de Delphi',
+          '接続: すべての Delphi バージョンで共有'))
     else
-      LText.Add('Verbindung: dieses IDE-Profil (' + TDAISettings.Instance.RegistryRoot + ')');
-    LText.Add('Servername: ' + LGeneric.ServerName);
-    LText.Add('Transport: Streamable HTTP, nur lokaler Rechner');
+      LText.Add(DAIText(
+          'Verbindung: dieses IDE-Profil (',
+          'Connection: this IDE profile (',
+          'Connexion : ce profil de l’EDI (',
+          '接続: この IDE プロファイル (') + TDAISettings.Instance.RegistryRoot + ')');
+    LText.Add(DAIText(
+      'Servername: ',
+      'Server name: ',
+      'Nom du serveur : ',
+      'サーバー名: ') + LGeneric.ServerName);
+    LText.Add(DAIText(
+      'Transport: Streamable HTTP, nur lokaler Rechner',
+      'Transport: Streamable HTTP, local computer only',
+      'Transport : Streamable HTTP, ordinateur local uniquement',
+      'トランスポート: Streamable HTTP、ローカルコンピューターのみ'));
     LText.Add('URL: ' + Endpoint(APort));
-    LText.Add('HTTP-Header: Authorization: Bearer ' + AToken);
+    LText.Add(DAIText(
+      'HTTP-Header: Authorization: Bearer ',
+      'HTTP header: Authorization: Bearer ',
+      'En-tête HTTP : Authorization: Bearer ',
+      'HTTP ヘッダー: Authorization: Bearer ') + AToken);
     LText.Add('');
-    LText.Add('Alternativ MCP über STDIO:');
-    LText.Add('Programm: ' + BridgeFileName);
-    LText.Add('Argumente (JSON-Liste): ["--url", ' + JsonString(Endpoint(APort)) + ']');
-    LText.Add('Umgebungsvariable: DAI_MCP_TOKEN=' + AToken);
+    LText.Add(DAIText(
+      'Alternativ MCP über STDIO:',
+      'Alternatively, MCP over STDIO:',
+      'Autre possibilité : MCP via STDIO :',
+      '代替接続: STDIO 経由の MCP:'));
+    LText.Add(DAIText(
+      'Programm: ',
+      'Program: ',
+      'Programme : ',
+      'プログラム: ') + BridgeFileName);
+    LText.Add(DAIText(
+      'Argumente (JSON-Liste): ["--url", ',
+      'Arguments (JSON array): ["--url", ',
+      'Arguments (tableau JSON) : ["--url", ',
+      '引数 (JSON 配列): ["--url", ') + JsonString(Endpoint(APort)) + ']');
+    LText.Add(DAIText(
+      'Umgebungsvariable: DAI_MCP_TOKEN=',
+      'Environment variable: DAI_MCP_TOKEN=',
+      'Variable d’environnement : DAI_MCP_TOKEN=',
+      '環境変数: DAI_MCP_TOKEN=') + AToken);
     LText.Add('');
-    LText.Add('Zusätzlicher Starthelfer (MCP über STDIO): ' + LGeneric.LauncherServerName);
-    LText.Add('Programm: ' + BridgeFileName);
-    LText.Add('Delphi-IDE: ' + TDAICodexRegistration.HostIDEExecutable);
-    LText.Add('Argumente (JSON-Liste): [' + LArguments + ']');
-    LText.Add('Umgebungsvariable: DAI_MCP_TOKEN=' + AToken);
-    LText.Add('Der Starthelfer startet oder beendet Delphi nur auf ausdrücklichen Auftrag und entsprechend der DAI-Option.');
+    LText.Add(DAIText(
+      'Zusätzlicher Starthelfer (MCP über STDIO): ',
+      'Additional launcher (MCP over STDIO): ',
+      'Lanceur supplémentaire (MCP via STDIO) : ',
+      '追加ランチャー (STDIO 経由の MCP): ') + LGeneric.LauncherServerName);
+    LText.Add(DAIText(
+      'Programm: ',
+      'Program: ',
+      'Programme : ',
+      'プログラム: ') + BridgeFileName);
+    LText.Add(DAIText(
+      'Delphi-IDE: ',
+      'Delphi IDE: ',
+      'EDI Delphi : ',
+      'Delphi IDE: ') + TDAICodexRegistration.HostIDEExecutable);
+    LText.Add(DAIText(
+      'Argumente (JSON-Liste): [',
+      'Arguments (JSON array): [',
+      'Arguments (tableau JSON) : [',
+      '引数 (JSON 配列): [') + LArguments + ']');
+    LText.Add(DAIText(
+      'Umgebungsvariable: DAI_MCP_TOKEN=',
+      'Environment variable: DAI_MCP_TOKEN=',
+      'Variable d’environnement : DAI_MCP_TOKEN=',
+      '環境変数: DAI_MCP_TOKEN=') + AToken);
+    LText.Add(DAIText(
+      'Der Starthelfer startet oder beendet Delphi nur auf ausdrücklichen Auftrag und entsprechend der DAI-Option.',
+      'The launcher starts or closes Delphi only on explicit request and according to the DAI option.',
+      'Le lanceur démarre ou ferme Delphi uniquement sur demande explicite et selon l’option DAI.',
+      'ランチャーは明示的な要求があり、DAI の設定で許可されている場合にのみ Delphi を起動または終了します。'));
     LText.Add('');
     if (LClient.Id <> '') and LClient.Supported then
     begin
-      LText.Add('Konfigurationsdatei: ' + LClient.FileName);
-      LText.Add('Format: ' + LClient.Format);
+      LText.Add(DAIText(
+          'Konfigurationsdatei: ',
+          'Configuration file: ',
+          'Fichier de configuration : ',
+          '設定ファイル: ') + LClient.FileName);
+      LText.Add(DAIText(
+          'Format: ',
+          'Format: ',
+          'Format : ',
+          '形式: ') + LClient.Format);
       LConfig := ManualClientConfig(LClient, APort, AToken);
     end
     else
     begin
-      LText.Add('In den MCP-Einstellungen des Clients URL und HTTP-Header oder Programm, Argumente und Umgebung eintragen.');
-      LText.Add('Allgemeines STDIO-Beispiel im mcpServers-Schema; Unterstützung im Client prüfen.');
+      LText.Add(DAIText(
+          'In den MCP-Einstellungen des Clients URL und HTTP-Header oder Programm, Argumente und Umgebung eintragen.',
+          'In the client’s MCP settings, enter the URL and HTTP header or the program, arguments and environment.',
+          'Dans les paramètres MCP du client, saisir l’URL et l’en-tête HTTP ou le programme, les arguments et l’environnement.',
+          'クライアントの MCP 設定に、URL と HTTP ヘッダー、またはプログラム、引数、環境変数を入力します。'));
+      LText.Add(DAIText(
+          'Allgemeines STDIO-Beispiel im mcpServers-Schema; Unterstützung im Client prüfen.',
+          'Generic STDIO example using the mcpServers schema; check client support.',
+          'Exemple STDIO générique au format mcpServers ; vérifier sa prise en charge par le client.',
+          'mcpServers スキーマの汎用 STDIO 設定例です。クライアントが対応しているか確認してください。'));
       LConfig := ManualClientConfig(LGeneric, APort, AToken);
     end;
     if LClient.BlockReason <> '' then
-      LText.Add('Pfadhinweis: ' + LClient.BlockReason);
+      LText.Add(DAIText(
+          'Pfadhinweis: ',
+          'Path note: ',
+          'Remarque sur le chemin : ',
+          'パスに関する注意: ') + LClient.BlockReason);
     if LClient.Note <> '' then
       LText.Add(LClient.Note);
     if LClient.Documentation <> '' then
-      LText.Add('Dokumentation: ' + LClient.Documentation);
+      LText.Add(DAIText(
+          'Dokumentation: ',
+          'Documentation: ',
+          'Documentation : ',
+          'ドキュメント: ') + LClient.Documentation);
     LText.Add('');
-    LText.Add('Die Werte entsprechen der aktuellen Auswahl im Einstellungsfenster. Geänderte Werte zuerst in DAI speichern.');
-    LText.Add('Vorhandene andere MCP-Einträge erhalten; Client danach neu laden oder neu starten.');
-    LText.Add('Es werden keine Konfigurationsdateien geschrieben und keine Registrierungen verändert.');
+    LText.Add(DAIText(
+      'Die Werte entsprechen der aktuellen Auswahl im Einstellungsfenster. Geänderte Werte zuerst in DAI speichern.',
+      'The values reflect the current selection in the settings window. Save changed values in DAI first.',
+      'Les valeurs correspondent au choix actuel dans les paramètres. Enregistrer d’abord les modifications dans DAI.',
+      '設定画面で現在選択されている値です。変更した値は先に DAI で保存してください。'));
+    LText.Add(DAIText(
+      'Vorhandene andere MCP-Einträge erhalten; Client danach neu laden oder neu starten.',
+      'Keep other existing MCP entries; reload or restart the client afterwards.',
+      'Conserver les autres entrées MCP existantes, puis recharger ou redémarrer le client.',
+      '既存の他の MCP エントリは保持し、その後クライアントを再読み込みまたは再起動してください。'));
+    LText.Add(DAIText(
+      'Es werden keine Konfigurationsdateien geschrieben und keine Registrierungen verändert.',
+      'No configuration files are written and no registrations are changed.',
+      'Aucun fichier de configuration n’est écrit et aucune inscription n’est modifiée.',
+      '設定ファイルの書き込みや登録内容の変更は行いません。'));
     LText.Add('');
-    LText.Add('Konfiguration zum Übernehmen:');
+    LText.Add(DAIText(
+      'Konfiguration zum Übernehmen:',
+      'Configuration to copy:',
+      'Configuration à copier :',
+      'コピーする設定:'));
     LText.Add(LConfig);
     Result := LText.Text;
   finally
@@ -1210,7 +1475,11 @@ var
   LRemovable, LRemoved: Boolean;
 begin
   if ACandidate = nil then
-    Exit(RemovalResult(nil, 'conflict', 'Kein Suchtreffer ausgewählt.', False));
+    Exit(RemovalResult(nil, 'conflict', DAIText(
+      'Kein Suchtreffer ausgewählt.',
+      'No search result selected.',
+      'Aucun résultat sélectionné.',
+      '検索結果が選択されていません。'), False));
   System.TMonitor.Enter(GRegistrationLock);
   try
     try
@@ -1229,10 +1498,18 @@ begin
       end;
       if not LBase.Supported or (LBase.FileName = '') or
         not SameText(LBase.FileName, ReadJsonString(ACandidate, 'path')) then
-        Exit(RemovalResult(ACandidate, 'conflict', 'Der Suchtreffer gehört zu keinem bekannten Clientpfad.', False));
+        Exit(RemovalResult(ACandidate, 'conflict', DAIText(
+          'Der Suchtreffer gehört zu keinem bekannten Clientpfad.',
+          'The search result does not belong to a known client path.',
+          'Le résultat ne correspond à aucun chemin de client connu.',
+          '検索結果が既知のクライアントパスに属していません。'), False));
       LServer := ReadJsonString(ACandidate, 'server_name');
       if not TRegEx.IsMatch(LServer, '^dai(?:_bds[0-9]+_[0-9]+(?:_p[a-f0-9]{16})?)?$') then
-        Exit(RemovalResult(ACandidate, 'conflict', 'Unbekannter DAI-Registrierungsname.', False));
+        Exit(RemovalResult(ACandidate, 'conflict', DAIText(
+          'Unbekannter DAI-Registrierungsname.',
+          'Unknown DAI registration name.',
+          'Nom d’inscription DAI inconnu.',
+          '不明な DAI 登録名です。'), False));
       LCurrent := FoundCandidate(LBase, LServer);
       try
         LRemovable := False;
@@ -1247,7 +1524,11 @@ begin
           (ReadJsonString(ACandidate, 'launcher_server') <> ReadJsonString(LCurrent, 'launcher_server')) or
           (ReadJsonString(ACandidate, 'connection_scope') <> ReadJsonString(LCurrent, 'connection_scope')) or
           not SameText(ReadJsonString(ACandidate, 'registry_root'), ReadJsonString(LCurrent, 'registry_root')) then
-          Exit(RemovalResult(LCurrent, 'conflict', 'Die Registrierung wurde seit der Suche geändert; bitte erneut suchen.', False));
+          Exit(RemovalResult(LCurrent, 'conflict', DAIText(
+            'Die Registrierung wurde seit der Suche geändert; bitte erneut suchen.',
+            'The registration has changed since the search; search again.',
+            'L’inscription a changé depuis la recherche ; relancer la recherche.',
+            '検索後に登録内容が変更されました。再検索してください。'), False));
         LDefinition := LBase;
         LDefinition.ServerName := LServer;
         LOwnership := TDAIClientSafeFiles.ReadTextIfExists(OwnershipFile(LDefinition));
@@ -1267,7 +1548,11 @@ begin
       end;
     except
       on E: Exception do
-        Result := RemovalResult(nil, 'conflict', 'Die Registrierung konnte nicht sicher entfernt werden; bitte erneut suchen.', False);
+        Result := RemovalResult(nil, 'conflict', DAIText(
+          'Die Registrierung konnte nicht sicher entfernt werden; bitte erneut suchen.',
+          'The registration could not be removed safely; search again.',
+          'L’inscription n’a pas pu être supprimée de façon sûre ; relancer la recherche.',
+          '登録を安全に削除できませんでした。再検索してください。'), False);
     end;
   finally
     System.TMonitor.Exit(GRegistrationLock);

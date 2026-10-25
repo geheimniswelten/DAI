@@ -40,6 +40,8 @@ type
     class var RowErrors: array[0..3] of string;
     class var JobError: string;
     class var StorageWarning: string;
+    class var ListWarning: string;
+    class var IndexNames: array[0..3] of string;
     class procedure Reset; static;
     class function ListIndexes: TJSONObject; static;
     class function Build(const AScope: string; const AExpectedIdentity: string = ''): TJSONObject; static;
@@ -79,6 +81,7 @@ begin
     SizeBytes[LIndex] := 0;
     SizeKnown[LIndex] := False;
     RowErrors[LIndex] := '';
+    IndexNames[LIndex] := 'Testindex ' + CScopes[LIndex];
   end;
   LastScope := '';
   LastIdentity := '';
@@ -101,6 +104,7 @@ begin
   TotalFiles := 0;
   JobError := '';
   StorageWarning := '';
+  ListWarning := 'Indexstand prüfen; aktuelle und ungespeicherte Änderungen können fehlen.';
 end;
 
 class function TDAISymbolService.ListIndexes: TJSONObject;
@@ -116,14 +120,14 @@ begin
   Result := TJSONObject.Create;
   LIndexes := TJSONArray.Create;
   Result.AddPair('indexes', LIndexes);
-  Result.AddPair('warning', 'Indexstand prüfen; aktuelle und ungespeicherte Änderungen können fehlen.');
+  Result.AddPair('warning', ListWarning);
   for LIndex := Low(CScopes) to High(CScopes) do
   begin
     LRow := TJSONObject.Create;
     LIndexes.AddElement(LRow);
     LRow.AddPair('scope', CScopes[LIndex]);
     LRow.AddPair('identity', 'snapshot-' + CScopes[LIndex]);
-    LRow.AddPair('name', 'Testindex ' + CScopes[LIndex]);
+    LRow.AddPair('name', IndexNames[LIndex]);
     LOwner := 'C:\Test\Owner';
     if ((LIndex = 2) and not GroupAvailable) or ((LIndex = 3) and not ProjectAvailable) then
       LOwner := '';

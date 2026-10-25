@@ -23,6 +23,7 @@ uses
   Vcl.ExtCtrls,
   Vcl.Forms,
   Vcl.StdCtrls,
+  h5u.DAI.Localization,
   h5u.DAI.Symbols.Service;
 
 type
@@ -119,7 +120,10 @@ end;
 procedure RequireMainThread;
 begin
   if GetCurrentThreadId <> MainThreadID then
-    raise EInvalidOperation.Create('Die DAI-Indexverwaltung muss auf dem IDE-Hauptthread geöffnet werden.');
+    raise EInvalidOperation.Create(DAIText('Die DAI-Indexverwaltung muss auf dem IDE-Hauptthread geöffnet werden.',
+      'The DAI index manager must be opened on the IDE main thread.',
+      'Le gestionnaire d’index DAI doit être ouvert sur le thread principal de l’IDE.',
+      'DAI インデックス管理は IDE のメインスレッドで開く必要があります。'));
 end;
 
 function JSONText(const AObject: TJSONObject; const AName: string; const ADefault: string = ''): string;
@@ -184,7 +188,10 @@ end;
 
 function PartialIndexMessage(const AObject: TJSONObject): string;
 begin
-  Result := Format('Teilweise aktualisiert: %s Dateien nicht indiziert — Fehlerdetails …', [CountCaption(IndexErrorCount(AObject))]);
+  Result := Format(DAIText('Teilweise aktualisiert: %s Dateien nicht indiziert — Fehlerdetails …',
+    'Partially updated: %s files not indexed — Error details …',
+    'Mise à jour partielle : %s fichiers non indexés — Détails des erreurs …',
+    '一部を更新しました: %s ファイルが未登録 — エラーの詳細 …'), [CountCaption(IndexErrorCount(AObject))]);
 end;
 
 function IndexDetailsAvailable(const AObject: TJSONObject): Boolean;
@@ -214,33 +221,77 @@ begin
   else if AScope = 'getit' then
     Result := 'GetIt'
   else if AScope = 'group' then
-    Result := 'Projektgruppe'
+    Result := DAIText('Projektgruppe', 'Project group', 'Groupe de projets', 'プロジェクトグループ')
   else if AScope = 'project' then
-    Result := 'Projekt'
+    Result := DAIText('Projekt', 'Project', 'Projet', 'プロジェクト')
   else
     Result := AScope;
+end;
+
+function IndexNameCaption(const AObject: TJSONObject): string;
+begin
+  Result := JSONText(AObject, 'name', ScopeCaption(JSONText(AObject, 'scope')));
+  // Only service-authored defaults are labels; project/file names retain their identity.
+  if Result = 'Projekt' then
+    Result := DAIText('Projekt', 'Project', 'Projet', 'プロジェクト')
+  else if Result = 'Projektgruppe' then
+    Result := DAIText('Projektgruppe', 'Project group', 'Groupe de projets', 'プロジェクトグループ')
+  else if Result = 'Aktuelles Projekt' then
+    Result := DAIText('Aktuelles Projekt', 'Current project', 'Projet actuel', '現在のプロジェクト');
+end;
+
+function IndexWarningCaption(const AWarning: string): string;
+const
+  CDefaultWarning = 'Deklarationsindex: seit der Erfassung geänderte und ungespeicherte Quellen können abweichen oder fehlen. ' +
+    'Vor Verwendung den aktuellen Quelltext lesen. Bedingte Deklarationen sind nicht compilersemantisch aufgelöst.';
+begin
+  if AWarning = CDefaultWarning then
+    Result := DAIText(CDefaultWarning,
+      'Declaration index: sources changed since indexing and unsaved sources may differ or be missing. ' +
+      'Read the current source before use. Conditional declarations are not resolved using compiler semantics.',
+      'Index des déclarations : les sources modifiées depuis l’indexation et les sources non enregistrées peuvent différer ou manquer. ' +
+      'Lisez la source actuelle avant utilisation. Les déclarations conditionnelles ne sont pas résolues selon la sémantique du compilateur.',
+      '宣言インデックス: 作成後に変更されたソースや未保存のソースは、内容が異なるか含まれない場合があります。' +
+      '使用前に現在のソースを確認してください。条件付き宣言はコンパイラーの意味解析では解決されていません。')
+  else
+    Result := AWarning;
+end;
+
+function StorageWarningCaption(const AWarning: string): string;
+const
+  CDefaultWarning = 'Dieser Fehlerbericht konnte nicht vollständig in der Indexdatei gespeichert werden und ist nur für den aktuellen IDE-Lauf verfügbar.';
+begin
+  if AWarning = CDefaultWarning then
+    Result := DAIText(CDefaultWarning,
+      'This error report could not be fully saved in the index file and is available only for the current IDE run.',
+      'Ce rapport d’erreurs n’a pas pu être entièrement enregistré dans le fichier d’index et reste disponible uniquement pour cette session de l’IDE.',
+      'このエラーレポートはインデックスファイルに完全に保存できなかったため、現在の IDE 起動中のみ利用できます。')
+  else
+    Result := AWarning;
 end;
 
 function StateCaption(const AState: string): string;
 begin
   if AState = 'missing' then
-    Result := 'Nicht erstellt'
+    Result := DAIText('Nicht erstellt', 'Not created', 'Non créé', '未作成')
   else if AState = 'ready' then
-    Result := 'Vorhanden'
+    Result := DAIText('Vorhanden', 'Available', 'Disponible', '作成済み')
   else if (AState = 'building') or (AState = 'queued') or (AState = 'running') then
-    Result := 'Wird erstellt'
+    Result := DAIText('Wird erstellt', 'Building', 'Création en cours', '作成中')
   else if AState = 'error' then
-    Result := 'Fehler'
+    Result := DAIText('Fehler', 'Error', 'Erreur', 'エラー')
   else if AState = 'outdated' then
-    Result := 'Aktualisieren erforderlich'
+    Result := DAIText('Aktualisieren erforderlich', 'Update required', 'Mise à jour requise', '更新が必要')
   else if AState = 'incomplete' then
-    Result := 'Unvollständig'
+    Result := DAIText('Unvollständig', 'Incomplete', 'Incomplet', '未完了')
+  else if AState = 'unavailable' then
+    Result := DAIText('Nicht verfügbar', 'Unavailable', 'Indisponible', '利用不可')
   else if AState = 'cancelled' then
-    Result := 'Abgebrochen'
+    Result := DAIText('Abgebrochen', 'Cancelled', 'Annulé', 'キャンセル済み')
   else if AState = 'completed_with_errors' then
-    Result := 'Teilweise aktualisiert'
+    Result := DAIText('Teilweise aktualisiert', 'Partially updated', 'Mise à jour partielle', '一部更新済み')
   else if (AState = 'completed') or (AState = 'done') then
-    Result := 'Abgeschlossen'
+    Result := DAIText('Abgeschlossen', 'Completed', 'Terminé', '完了')
   else
     Result := AState;
 end;
@@ -263,8 +314,10 @@ var
   LButton: TButton;
 begin
   inherited CreateNew(AOwner);
+  if DAILanguage = dlJapanese then
+    Font.Name := 'Yu Gothic UI';
   Name := 'DAISymbolIndexDetailsForm';
-  Caption := 'DAI — Fehlerdetails';
+  Caption := DAIText('DAI — Fehlerdetails', 'DAI — Error details', 'DAI — Détails des erreurs', 'DAI — エラーの詳細');
   Position := poOwnerFormCenter;
   ClientWidth := 900;
   ClientHeight := 480;
@@ -281,13 +334,13 @@ begin
   LButton := TButton.Create(Self);
   LButton.Parent := LPanel;
   LButton.Name := 'CopyIndexErrorsButton';
-  LButton.Caption := 'Alles kopieren';
-  LButton.SetBounds(12, 12, 130, 28);
+  LButton.Caption := DAIText('Alles kopieren', 'Copy all', 'Tout copier', 'すべてコピー');
+  LButton.SetBounds(12, 12, 150, 28);
   LButton.OnClick := CopyClick;
   LButton := TButton.Create(Self);
   LButton.Parent := LPanel;
   LButton.Name := 'CloseIndexErrorsButton';
-  LButton.Caption := 'Schließen';
+  LButton.Caption := DAIText('Schließen', 'Close', 'Fermer', '閉じる');
   LButton.SetBounds(ClientWidth - 112, 12, 100, 28);
   LButton.Anchors := [akTop, akRight];
   LButton.Cancel := True;
@@ -305,7 +358,7 @@ end;
 
 procedure TDAISymbolErrorForm.Display(const ATitle, AText: string);
 begin
-  Caption := 'DAI — Fehlerdetails: ' + ATitle;
+  Caption := DAIText('DAI — Fehlerdetails: ', 'DAI — Error details: ', 'DAI — Détails des erreurs : ', 'DAI — エラーの詳細: ') + ATitle;
   FMemo.Text := AText;
   FMemo.SelStart := 0;
   FMemo.SelLength := 0;
@@ -335,14 +388,21 @@ var
   LHeader: TPanel;
   LActions: TPanel;
   LClose: TButton;
+  LUpdateWidth: Integer;
 
   function AddButton(const AName, ACaption: string; const ALeft, AWidth: Integer; const AClick: TNotifyEvent): TButton;
+  var
+    LWidth: Integer;
   begin
     Result := TButton.Create(Self);
     Result.Parent := LActions;
     Result.Name := AName;
     Result.Caption := ACaption;
-    Result.SetBounds(ALeft, 12, AWidth, 28);
+    Canvas.Font.Assign(Font);
+    LWidth := Canvas.TextWidth(ACaption) + 24;
+    if LWidth < AWidth then
+      LWidth := AWidth;
+    Result.SetBounds(ALeft, 12, LWidth, 28);
     Result.OnClick := AClick;
   end;
 
@@ -358,8 +418,10 @@ var
 
 begin
   inherited CreateNew(AOwner);
+  if DAILanguage = dlJapanese then
+    Font.Name := 'Yu Gothic UI';
   Name := 'DAISymbolIndexForm';
-  Caption := 'DAI — Quelltextindizes';
+  Caption := DAIText('DAI — Quelltextindizes', 'DAI — Source indexes', 'DAI — Index des sources', 'DAI — ソースインデックス');
   Position := poMainFormCenter;
   BorderIcons := [biSystemMenu, biMinimize, biMaximize];
   ClientWidth := 1000;
@@ -384,7 +446,10 @@ begin
   FInformation.AutoSize := True;
   FInformation.WordWrap := True;
   FInformation.ShowAccelChar := False;
-  FInformation.Caption := 'Indizes sind Suchhilfen. Zuletzt geänderte oder ungespeicherte Quellen können abweichen oder fehlen.';
+  FInformation.Caption := DAIText('Indizes sind Suchhilfen. Zuletzt geänderte oder ungespeicherte Quellen können abweichen oder fehlen.',
+    'Indexes assist searches. Recently changed or unsaved sources may differ or be missing.',
+    'Les index facilitent les recherches. Les sources modifiées récemment ou non enregistrées peuvent différer ou manquer.',
+    'インデックスは検索を補助します。最近変更されたソースや未保存のソースは、内容が異なるか含まれない場合があります。');
   FProvider := TDAIWrappedLabel.Create(Self);
   FProvider.Parent := LHeader;
   FProvider.Name := 'IndexProviderLabel';
@@ -411,11 +476,19 @@ begin
   LActions.Align := alTop;
   LActions.Height := 52;
   LActions.BevelOuter := bvNone;
-  FUpdate := AddButton('UpdateIndexButton', 'Aktualisieren', 12, 135, UpdateClick);
-  FDelete := AddButton('DeleteIndexButton', 'Löschen', 155, 100, DeleteClick);
-  FRefresh := AddButton('RefreshIndexListButton', 'Liste neu laden', 263, 125, RefreshClick);
-  FDetails := AddButton('IndexErrorDetailsButton', 'Fehlerdetails …', 396, 135, DetailsClick);
-  LClose := AddButton('CloseIndexManagerButton', 'Schließen', 888, 100, CloseClick);
+  FUpdate := AddButton('UpdateIndexButton', DAIText('Aktualisieren', 'Update', 'Mettre à jour', '更新'), 12, 135, UpdateClick);
+  FDelete := AddButton('DeleteIndexButton', DAIText('Löschen', 'Delete', 'Supprimer', '削除'), 155, 100, DeleteClick);
+  FRefresh := AddButton('RefreshIndexListButton', DAIText('Liste neu laden', 'Reload list', 'Recharger la liste', '一覧を再読み込み'), 263, 125, RefreshClick);
+  FDetails := AddButton('IndexErrorDetailsButton', DAIText('Fehlerdetails …', 'Error details …', 'Détails des erreurs …', 'エラーの詳細 …'), 396, 135, DetailsClick);
+  LClose := AddButton('CloseIndexManagerButton', DAIText('Schließen', 'Close', 'Fermer', '閉じる'), 888, 100, CloseClick);
+  // Reserve both shared-action captions and keep all translated buttons on one row.
+  LUpdateWidth := Canvas.TextWidth(DAIText('Index erstellen', 'Create index', 'Créer l’index', 'インデックスを作成')) + 24;
+  if FUpdate.Width < LUpdateWidth then
+    FUpdate.Width := LUpdateWidth;
+  FDelete.Left := FUpdate.Left + FUpdate.Width + 8;
+  FRefresh.Left := FDelete.Left + FDelete.Width + 8;
+  FDetails.Left := FRefresh.Left + FRefresh.Width + 8;
+  LClose.Left := ClientWidth - LClose.Width - 12;
   LClose.Anchors := [akTop, akRight];
   LClose.Cancel := True;
   FStatus := TDAIWrappedLabel.Create(Self);
@@ -439,13 +512,13 @@ begin
   FList.HideSelection := False;
   FList.OnChange := SelectionChanged;
   FList.OnDblClick := DetailsClick;
-  AddColumn('Index', 220);
-  AddColumn('Bereich', 120);
-  AddColumn('Erstellt / aktualisiert', 160);
-  AddColumn('Dateien', 75, taRightJustify);
-  AddColumn('Deklarationen', 100, taRightJustify);
-  AddColumn('Größe', 80, taRightJustify);
-  AddColumn('Status', 125);
+  AddColumn(DAIText('Index', 'Index', 'Index', 'インデックス'), 220);
+  AddColumn(DAIText('Bereich', 'Scope', 'Portée', '範囲'), 120);
+  AddColumn(DAIText('Erstellt / aktualisiert', 'Created / updated', 'Créé / mis à jour', '作成 / 更新日時'), 160);
+  AddColumn(DAIText('Dateien', 'Files', 'Fichiers', 'ファイル'), 75, taRightJustify);
+  AddColumn(DAIText('Deklarationen', 'Declarations', 'Déclarations', '宣言'), 100, taRightJustify);
+  AddColumn(DAIText('Größe', 'Size', 'Taille', 'サイズ'), 80, taRightJustify);
+  AddColumn(DAIText('Status', 'Status', 'État', '状態'), 125);
   FTimer := TTimer.Create(Self);
   FTimer.Enabled := False;
   FTimer.Interval := 750;
@@ -487,9 +560,9 @@ begin
     LValidTarget := ((LScope = 'delphi') or (LScope = 'getit')) and (Trim(JSONText(LRow, 'database')) <> '');
   FUpdate.Enabled := not FBusy and not LRowBusy and LValidTarget;
   if JSONFlag(LRow, 'exists') then
-    FUpdate.Caption := 'Aktualisieren'
+    FUpdate.Caption := DAIText('Aktualisieren', 'Update', 'Mettre à jour', '更新')
   else
-    FUpdate.Caption := 'Index erstellen';
+    FUpdate.Caption := DAIText('Index erstellen', 'Create index', 'Créer l’index', 'インデックスを作成');
   FDelete.Enabled := not FBusy and not LRowBusy and JSONFlag(LRow, 'exists');
   FRefresh.Enabled := not FBusy;
   FDetails.Enabled := IndexDetailsAvailable(LRow) and not IndexReportUpdating(LRow);
@@ -505,22 +578,30 @@ begin
   LRow := SelectedRow;
   LState := JSONText(LRow, 'state');
   if Trim(JSONText(LRow, 'error')) <> '' then
-    FStatus.Caption := 'Indexfehler: ' + ErrorSummary(JSONText(LRow, 'error')) + ' — Fehlerdetails …'
+    FStatus.Caption := DAIText('Indexfehler: ', 'Index error: ', 'Erreur d’index : ', 'インデックスエラー: ') +
+      ErrorSummary(JSONText(LRow, 'error')) + DAIText(' — Fehlerdetails …', ' — Error details …', ' — Détails des erreurs …', ' — エラーの詳細 …')
   else if (LState = 'incomplete') or (LState = 'cancelled') then
   begin
-    FStatus.Caption := 'Index ' + LowerCase(StateCaption(LState));
+    FStatus.Caption := Format(DAIText('Index %s', 'Index %s', 'Index %s', 'インデックス: %s'), [LowerCase(StateCaption(LState))]);
     if IndexErrorCount(LRow) > 0 then
-      FStatus.Caption := FStatus.Caption + Format(': %s Dateien nicht indiziert', [CountCaption(IndexErrorCount(LRow))]);
+      FStatus.Caption := FStatus.Caption + Format(DAIText(': %s Dateien nicht indiziert', ': %s files not indexed',
+        ' : %s fichiers non indexés', ': %s ファイルが未登録'), [CountCaption(IndexErrorCount(LRow))]);
     if IndexDetailsAvailable(LRow) then
-      FStatus.Caption := FStatus.Caption + ' — Fehlerdetails …';
+      FStatus.Caption := FStatus.Caption + DAIText(' — Fehlerdetails …', ' — Error details …', ' — Détails des erreurs …', ' — エラーの詳細 …');
   end
   else if IndexErrorCount(LRow) > 0 then
     if LState = 'error' then
-      FStatus.Caption := Format('Indexerstellung fehlgeschlagen: %s Dateien nicht indiziert — Fehlerdetails …', [CountCaption(IndexErrorCount(LRow))])
+      FStatus.Caption := Format(DAIText('Indexerstellung fehlgeschlagen: %s Dateien nicht indiziert — Fehlerdetails …',
+        'Index build failed: %s files not indexed — Error details …',
+        'Échec de création de l’index : %s fichiers non indexés — Détails des erreurs …',
+        'インデックスの作成に失敗しました: %s ファイルが未登録 — エラーの詳細 …'), [CountCaption(IndexErrorCount(LRow))])
     else
       FStatus.Caption := PartialIndexMessage(LRow)
   else if IndexDetailsAvailable(LRow) then
-    FStatus.Caption := 'Details zum letzten Indexauftrag verfügbar — Fehlerdetails …'
+    FStatus.Caption := DAIText('Details zum letzten Indexauftrag verfügbar — Fehlerdetails …',
+      'Details of the last index job available — Error details …',
+      'Les détails de la dernière tâche d’indexation sont disponibles — Détails des erreurs …',
+      '前回のインデックス処理の詳細があります — エラーの詳細 …')
   else
     FStatus.Caption := FDefaultStatus;
 end;
@@ -543,9 +624,12 @@ begin
   try
     LIndexes := LResult.GetValue('indexes');
     if not (LIndexes is TJSONArray) then
-      raise EInvalidOperation.Create('Die Indexliste enthält keine gültigen Einträge.');
+      raise EInvalidOperation.Create(DAIText('Die Indexliste enthält keine gültigen Einträge.',
+        'The index list contains no valid entries.',
+        'La liste des index ne contient aucune entrée valide.',
+        'インデックス一覧に有効な項目がありません。'));
     LRows := TJSONArray(LIndexes.Clone);
-    FDefaultStatus := JSONText(LResult, 'warning', 'Bereit.');
+    FDefaultStatus := IndexWarningCaption(JSONText(LResult, 'warning', DAIText('Bereit.', 'Ready.', 'Prêt.', '準備完了。')));
     FRefreshingList := True;
     FList.Items.BeginUpdate;
     try
@@ -566,7 +650,7 @@ begin
         end;
         LItem := FList.Items.Add;
         LItem.Data := LRow;
-        LItem.Caption := JSONText(LRow, 'name', ScopeCaption(LScope));
+        LItem.Caption := IndexNameCaption(LRow);
         LItem.SubItems.Add(ScopeCaption(LScope));
         LItem.SubItems.Add(DateCaption(JSONText(LRow, 'indexed_at')));
         LItem.SubItems.Add(JSONCountCaption(LRow, 'file_count'));
@@ -599,9 +683,15 @@ begin
   try
     // Provider discovery is metadata only; listing indices never sends a model request.
     if JSONFlag(LResult, 'available') then
-      FProvider.Caption := 'Smart CodeInsight: KI-Anbieter aktiviert. Der Deklarationsindex wird lokal ohne KI-Aufruf erstellt.'
+      FProvider.Caption := DAIText('Smart CodeInsight: KI-Anbieter aktiviert. Der Deklarationsindex wird lokal ohne KI-Aufruf erstellt.',
+        'Smart CodeInsight: AI provider enabled. The declaration index is built locally without an AI request.',
+        'Smart CodeInsight : fournisseur d’IA activé. L’index des déclarations est créé localement sans requête à l’IA.',
+        'Smart CodeInsight: AI プロバイダーが有効です。宣言インデックスは AI を呼び出さずにローカルで作成されます。')
     else
-      FProvider.Caption := 'Der Deklarationsindex wird lokal ohne KI-Aufruf erstellt; ein KI-Anbieter ist dafür nicht erforderlich.';
+      FProvider.Caption := DAIText('Der Deklarationsindex wird lokal ohne KI-Aufruf erstellt; ein KI-Anbieter ist dafür nicht erforderlich.',
+        'The declaration index is built locally without an AI request; no AI provider is required.',
+        'L’index des déclarations est créé localement sans requête à l’IA ; aucun fournisseur d’IA n’est nécessaire.',
+        '宣言インデックスは AI を呼び出さずにローカルで作成されます。AI プロバイダーは不要です。');
   finally
     LResult.Free;
   end;
@@ -633,7 +723,7 @@ begin
       FRequestId := JSONText(LResult, 'request_id');
       FBusy := FRequestId <> '';
       FTimer.Enabled := FBusy;
-      FStatus.Caption := JSONText(LResult, 'message', 'Indexerstellung angefordert.');
+      FStatus.Caption := JSONText(LResult, 'message', DAIText('Indexerstellung angefordert.', 'Index build requested.', 'Création de l’index demandée.', 'インデックスの作成を要求しました。'));
     finally
       LResult.Free;
     end;
@@ -675,9 +765,9 @@ begin
     LResult := TDAISymbolService.Delete(LScope, LIdentity);
     try
       if JSONFlag(LResult, 'deleted') then
-        LMessage := 'Index gelöscht.'
+        LMessage := DAIText('Index gelöscht.', 'Index deleted.', 'Index supprimé.', 'インデックスを削除しました。')
       else
-        LMessage := 'Kein Index vorhanden.';
+        LMessage := DAIText('Kein Index vorhanden.', 'No index available.', 'Aucun index disponible.', 'インデックスがありません。');
       LMessage := JSONText(LResult, 'message', LMessage);
     finally
       LResult.Free;
@@ -716,14 +806,17 @@ begin
     Exit;
   LScope := JSONText(LRow, 'scope');
   LIdentity := JSONText(LRow, 'identity');
-  LName := JSONText(LRow, 'name', ScopeCaption(LScope));
+  LName := IndexNameCaption(LRow);
   LText := TStringBuilder.Create;
   try
-    LText.AppendLine('Index: ' + LName);
-    LText.AppendLine('Bereich: ' + ScopeCaption(LScope));
-    LText.AppendLine('Indexstand: ' + DateCaption(JSONText(LRow, 'indexed_at')));
+    LText.AppendLine(DAIText('Index: ', 'Index: ', 'Index : ', 'インデックス: ') + LName);
+    LText.AppendLine(DAIText('Bereich: ', 'Scope: ', 'Portée : ', '範囲: ') + ScopeCaption(LScope));
+    LText.AppendLine(DAIText('Indexstand: ', 'Index date: ', 'Date de l’index : ', 'インデックス日時: ') + DateCaption(JSONText(LRow, 'indexed_at')));
     if Trim(JSONText(LRow, 'error')) <> '' then
-      LText.AppendLine('Fehler aus dem Indexstatus:').AppendLine(JSONText(LRow, 'error')).AppendLine;
+      LText.AppendLine(DAIText('Fehler aus dem Indexstatus:',
+        'Error from the index status:',
+        'Erreur signalée par l’état de l’index :',
+        'インデックス状態のエラー:')).AppendLine(JSONText(LRow, 'error')).AppendLine;
     LOffset := 0;
     LCount := 0;
     LTotal := -1;
@@ -733,64 +826,107 @@ begin
         LPage := TDAISymbolService.IndexErrors(LScope, LIdentity, LOffset, 500);
         try
           if IndexReportUpdating(LPage) then
-            raise EInvalidOperation.Create('Der Fehlerbericht wird noch aktualisiert. Bitte nach Abschluss des Indexauftrags erneut öffnen.');
+            raise EInvalidOperation.Create(DAIText('Der Fehlerbericht wird noch aktualisiert. Bitte nach Abschluss des Indexauftrags erneut öffnen.',
+              'The error report is still being updated. Reopen it after the index job completes.',
+              'Le rapport d’erreurs est en cours de mise à jour. Rouvrez-le une fois la tâche d’indexation terminée.',
+              'エラーレポートは更新中です。インデックス処理の完了後に開き直してください。'));
           LErrors := LPage.GetValue<TJSONArray>('errors', nil);
           if not Assigned(LErrors) then
-            raise EInvalidOperation.Create('Die Fehlerliste enthält keine gültigen Einträge.');
+            raise EInvalidOperation.Create(DAIText('Die Fehlerliste enthält keine gültigen Einträge.',
+              'The error list contains no valid entries.',
+              'La liste des erreurs ne contient aucune entrée valide.',
+              'エラー一覧に有効な項目がありません。'));
           if LTotal < 0 then
           begin
             LTotal := LPage.GetValue<Integer>('total_count', LErrors.Count);
             LReportId := JSONText(LPage, 'request_id');
-            LText.AppendLine('Letzter Indexauftrag: ' + StateCaption(JSONText(LPage, 'state')));
-            LText.AppendLine('Begonnen: ' + DateCaption(JSONText(LPage, 'started_at')));
-            LText.AppendLine('Beendet: ' + DateCaption(JSONText(LPage, 'finished_at')));
+            LText.AppendLine(DAIText('Letzter Indexauftrag: ', 'Last index job: ', 'Dernière tâche d’indexation : ', '前回のインデックス処理: ') + StateCaption(JSONText(LPage, 'state')));
+            LText.AppendLine(DAIText('Begonnen: ', 'Started: ', 'Début : ', '開始日時: ') + DateCaption(JSONText(LPage, 'started_at')));
+            LText.AppendLine(DAIText('Beendet: ', 'Finished: ', 'Fin : ', '終了日時: ') + DateCaption(JSONText(LPage, 'finished_at')));
             if JSONText(LPage, 'storage_warning') <> '' then
-              LText.AppendLine(JSONText(LPage, 'storage_warning')).AppendLine;
+              LText.AppendLine(StorageWarningCaption(JSONText(LPage, 'storage_warning'))).AppendLine;
             if JSONText(LPage, 'error') <> '' then
             begin
               if JSONText(LPage, 'error') <> JSONText(LRow, 'error') then
-                LText.AppendLine('Allgemeiner Fehler / Grund:').AppendLine(JSONText(LPage, 'error'));
+                LText.AppendLine(DAIText('Allgemeiner Fehler / Grund:', 'General error / reason:',
+                  'Erreur générale / cause :', '全般的なエラー / 理由:')).AppendLine(JSONText(LPage, 'error'));
             end
             else if Trim(JSONText(LRow, 'error')) = '' then
             begin
               if JSONText(LPage, 'state') = 'incomplete' then
-                LText.AppendLine('Der letzte Indexauftrag wurde nicht vollständig abgeschlossen. Ein genauerer Fehlergrund wurde nicht aufgezeichnet.')
+                LText.AppendLine(DAIText('Der letzte Indexauftrag wurde nicht vollständig abgeschlossen. Ein genauerer Fehlergrund wurde nicht aufgezeichnet.',
+                  'The last index job did not finish completely. No more specific error reason was recorded.',
+                  'La dernière tâche d’indexation est incomplète. Aucune cause d’erreur plus précise n’a été enregistrée.',
+                  '前回のインデックス処理は完了しませんでした。詳しいエラーの理由は記録されていません。'))
               else if JSONText(LPage, 'state') = 'error' then
-                LText.AppendLine('Der Indexauftrag ist fehlgeschlagen. Ein genauerer Fehlergrund wurde nicht aufgezeichnet.')
+                LText.AppendLine(DAIText('Der Indexauftrag ist fehlgeschlagen. Ein genauerer Fehlergrund wurde nicht aufgezeichnet.',
+                  'The index job failed. No more specific error reason was recorded.',
+                  'La tâche d’indexation a échoué. Aucune cause d’erreur plus précise n’a été enregistrée.',
+                  'インデックス処理に失敗しました。詳しいエラーの理由は記録されていません。'))
               else if JSONText(LPage, 'state') = 'cancelled' then
-                LText.AppendLine('Der Indexauftrag wurde abgebrochen. Ein genauerer Grund wurde nicht aufgezeichnet.');
+                LText.AppendLine(DAIText('Der Indexauftrag wurde abgebrochen. Ein genauerer Grund wurde nicht aufgezeichnet.',
+                  'The index job was cancelled. No more specific reason was recorded.',
+                  'La tâche d’indexation a été annulée. Aucune cause plus précise n’a été enregistrée.',
+                  'インデックス処理はキャンセルされました。詳しい理由は記録されていません。'));
             end;
             LText.AppendLine;
-            LText.AppendLine('Dateien und Gründe für die fehlende Indizierung:').AppendLine;
+            LText.AppendLine(DAIText('Dateien und Gründe für die fehlende Indizierung:',
+              'Files and reasons for missing indexing:',
+              'Fichiers et causes de l’absence d’indexation :',
+              '未登録のファイルとその理由:')).AppendLine;
           end
           else if (LTotal <> LPage.GetValue<Integer>('total_count', LTotal)) or (LReportId <> JSONText(LPage, 'request_id')) then
-            raise EInvalidOperation.Create('Die Fehlerliste wurde während des Lesens geändert. Bitte die Liste neu laden und erneut öffnen.');
+            raise EInvalidOperation.Create(DAIText('Die Fehlerliste wurde während des Lesens geändert. Bitte die Liste neu laden und erneut öffnen.',
+              'The error list changed while reading. Reload the list and reopen it.',
+              'La liste des erreurs a changé pendant la lecture. Rechargez la liste et rouvrez-la.',
+              '読み取り中にエラー一覧が変更されました。一覧を再読み込みして開き直してください。'));
           for LValue in LErrors do
           begin
             if not (LValue is TJSONObject) then
-              raise EInvalidOperation.Create('Die Fehlerliste enthält einen ungültigen Eintrag.');
+              raise EInvalidOperation.Create(DAIText('Die Fehlerliste enthält einen ungültigen Eintrag.',
+                'The error list contains an invalid entry.',
+                'La liste des erreurs contient une entrée invalide.',
+                'エラー一覧に無効な項目があります。'));
             LError := TJSONObject(LValue);
             Inc(LCount);
-            LText.AppendLine(CountCaption(LCount) + '. ' + JSONText(LError, 'file', '(Dateipfad nicht verfügbar)'));
-            LText.AppendLine(JSONText(LError, 'error', '(Fehlergrund nicht verfügbar)')).AppendLine;
+            LText.AppendLine(CountCaption(LCount) + '. ' + JSONText(LError, 'file', DAIText('(Dateipfad nicht verfügbar)',
+              '(File path unavailable)',
+              '(Chemin du fichier indisponible)',
+              '（ファイルパスを取得できません）')));
+            LText.AppendLine(JSONText(LError, 'error', DAIText('(Fehlergrund nicht verfügbar)',
+              '(Error reason unavailable)',
+              '(Cause de l’erreur indisponible)',
+              '（エラーの理由を取得できません）'))).AppendLine;
           end;
           LMore := JSONFlag(LPage, 'has_more');
           if LMore and (LErrors.Count = 0) then
-            raise EInvalidOperation.Create('Die Fehlerliste konnte nicht vollständig geladen werden. Bitte erneut öffnen.');
+            raise EInvalidOperation.Create(DAIText('Die Fehlerliste konnte nicht vollständig geladen werden. Bitte erneut öffnen.',
+              'The complete error list could not be loaded. Reopen it.',
+              'Impossible de charger toute la liste des erreurs. Rouvrez-la.',
+              'エラー一覧を完全に読み込めませんでした。開き直してください。'));
           Inc(LOffset, LErrors.Count);
         finally
           LPage.Free;
         end;
       until not LMore;
       if LCount <> LTotal then
-        raise EInvalidOperation.Create('Die Fehlerliste konnte nicht vollständig geladen werden. Bitte die Liste neu laden und erneut öffnen.');
+        raise EInvalidOperation.Create(DAIText('Die Fehlerliste konnte nicht vollständig geladen werden. Bitte die Liste neu laden und erneut öffnen.',
+          'The complete error list could not be loaded. Reload the list and reopen it.',
+          'Impossible de charger toute la liste des erreurs. Rechargez la liste et rouvrez-la.',
+          'エラー一覧を完全に読み込めませんでした。一覧を再読み込みして開き直してください。'));
       if LCount > 0 then
-        LText.AppendLine(Format('%s Dateien nicht indiziert.', [CountCaption(LCount)]))
+        LText.AppendLine(Format(DAIText('%s Dateien nicht indiziert.', '%s files not indexed.', '%s fichiers non indexés.', '%s ファイルが未登録。'), [CountCaption(LCount)]))
       else
-        LText.AppendLine('Keine einzelnen Dateifehler aufgezeichnet.');
+        LText.AppendLine(DAIText('Keine einzelnen Dateifehler aufgezeichnet.',
+          'No individual file errors recorded.',
+          'Aucune erreur de fichier individuelle enregistrée.',
+          '個別のファイルエラーは記録されていません。'));
     except
       on E: Exception do
-        LText.AppendLine('Fehler beim Laden der Details:').AppendLine(E.Message);
+        LText.AppendLine(DAIText('Fehler beim Laden der Details:',
+          'Error loading details:',
+          'Erreur lors du chargement des détails :',
+          '詳細の読み込みエラー:')).AppendLine(E.Message);
     end;
     if not Assigned(FDetailsForm) then
       FDetailsForm := TDAISymbolErrorForm.Create(Self);
@@ -815,25 +951,28 @@ begin
       LMessage := JSONText(LResult, 'message');
       if LMessage = '' then
         if LState = 'completed' then
-          LMessage := 'Index aktualisiert.'
+          LMessage := DAIText('Index aktualisiert.', 'Index updated.', 'Index mis à jour.', 'インデックスを更新しました。')
         else if LState = 'completed_with_errors' then
           LMessage := PartialIndexMessage(LResult)
         else if LState = 'error' then
-          LMessage := 'Indexerstellung fehlgeschlagen.'
+          LMessage := DAIText('Indexerstellung fehlgeschlagen.', 'Index build failed.', 'Échec de création de l’index.', 'インデックスの作成に失敗しました。')
         else if LState = 'cancelled' then
-          LMessage := 'Indexerstellung abgebrochen.'
+          LMessage := DAIText('Indexerstellung abgebrochen.',
+            'Index build cancelled.',
+            'Création de l’index annulée.',
+            'インデックスの作成はキャンセルされました。')
         else
           LMessage := StateCaption(LState) + ': ' + JSONCountCaption(LResult, 'processed_files') + ' / ' +
-            JSONCountCaption(LResult, 'total_files') + ' Dateien';
+            JSONCountCaption(LResult, 'total_files') + DAIText(' Dateien', ' files', ' fichiers', ' ファイル');
       if (LState = 'completed_with_errors') and (IndexErrorCount(LResult) > 0) then
         LMessage := PartialIndexMessage(LResult);
       if ((LState = 'error') or (LState = 'cancelled')) and (Trim(JSONText(LResult, 'error')) <> '') then
       begin
         if LState = 'error' then
-          LMessage := 'Indexerstellung fehlgeschlagen'
+          LMessage := DAIText('Indexerstellung fehlgeschlagen', 'Index build failed', 'Échec de création de l’index', 'インデックスの作成に失敗しました')
         else
-          LMessage := 'Indexerstellung abgebrochen';
-        LMessage := LMessage + ': ' + ErrorSummary(JSONText(LResult, 'error')) + ' — Fehlerdetails …';
+          LMessage := DAIText('Indexerstellung abgebrochen', 'Index build cancelled', 'Création de l’index annulée', 'インデックスの作成はキャンセルされました');
+        LMessage := LMessage + ': ' + ErrorSummary(JSONText(LResult, 'error')) + DAIText(' — Fehlerdetails …', ' — Error details …', ' — Détails des erreurs …', ' — エラーの詳細 …');
       end;
       FStatus.Caption := LMessage;
       if (LState = 'ready') or (LState = 'completed') or (LState = 'completed_with_errors') or (LState = 'done') or (LState = 'error') or (LState = 'cancelled') then
@@ -845,7 +984,10 @@ begin
           RefreshList;
         except
           on E: Exception do
-            LMessage := LMessage + sLineBreak + 'Die Indexliste konnte nicht aktualisiert werden: ' + ErrorSummary(E.Message);
+            LMessage := LMessage + sLineBreak + DAIText('Die Indexliste konnte nicht aktualisiert werden: ',
+              'The index list could not be refreshed: ',
+              'Impossible d’actualiser la liste des index : ',
+              'インデックス一覧を更新できませんでした: ') + ErrorSummary(E.Message);
         end;
         FStatus.Caption := LMessage;
       end;

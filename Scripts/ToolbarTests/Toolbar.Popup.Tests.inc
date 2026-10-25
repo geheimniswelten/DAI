@@ -362,9 +362,75 @@ begin
   TDAISymbolService.Reset;
 end;
 
+procedure TestLocalizedToolbar;
+const
+  CInactive: array[TDAILanguage] of string = ('DAI inactive', 'DAI inaktiv', 'DAI inactif', 'DAI 停止中');
+  CStart: array[TDAILanguage] of string = ('&Start server', 'Server &starten', '&Démarrer le serveur', 'サーバーを起動');
+  CManage: array[TDAILanguage] of string = ('Manage indexes …', 'Indizes verwalten …', 'Gérer les index …', 'インデックスの管理 …');
+  CGroup: array[TDAILanguage] of string =
+    ('Index: Project group', 'Index: Projektgruppe', 'Index : Groupe de projets', 'インデックス: プロジェクトグループ');
+  CRead: array[TDAILanguage] of string = ('IDE : read', 'IDE : lesen', 'IDE : lecture', 'IDE : 読み取り');
+  CNoProject: array[TDAILanguage] of string =
+    ('Project : no project', 'Projekt : kein Projekt', 'Projet : aucun projet', 'プロジェクト : プロジェクトなし');
+  CFull: array[TDAILanguage] of string = ('IDE : full access', 'IDE : Vollzugriff', 'IDE : accès complet', 'IDE : フルアクセス');
+  CHealth: array[TDAILanguage] of string =
+    ('Update the registration or launcher.', 'Registrierung oder Starthelfer aktualisieren.',
+    'Mettez à jour l’inscription ou le lanceur.', '登録または起動ヘルパーを更新してください。');
+var
+  LPopup: TPopupMenu;
+  LInfo: TMenuItemInfo;
+  LNativeText: array[0..255] of Char;
+begin
+  try
+    for var LLanguage := Low(TDAILanguage) to High(TDAILanguage) do
+    begin
+      DAISetLanguageForTests(LLanguage);
+      NewHost;
+      TDAISymbolService.Reset;
+      TDAIIDEToolbar.Install;
+      TDAIIDEToolbar.Refresh;
+      LPopup := GHost.DAIButton.DropdownMenu;
+      Check(GHost.DAIAction.Caption = CInactive[LLanguage], 'Toolbar state uses the selected language');
+      Check(LPopup.Items[0].Caption = CStart[LLanguage], 'The server menu command uses the selected language');
+      Check(LPopup.Items[4].Caption = CRead[LLanguage], 'Known permission summaries are localized for display');
+      Check(LPopup.Items[5].Caption = CNoProject[LLanguage], 'The absent-project permission caption is localized');
+      Check(LPopup.Items[9].Caption = CGroup[LLanguage], 'Index scope menu labels use the selected language');
+      Check(LPopup.Items[11].Caption = CManage[LLanguage], 'The index manager menu command is localized');
+      Check(TDAISymbolService.ListCount = 0, 'Localized toolbar installation performs no index scan');
+      LPopup.OnPopup(LPopup);
+      LPopup.Items[7].Click;
+      Check(TDAISymbolIndexDialog.LastScope = 'delphi', 'Localized navigation retains the technical scope token');
+      Check(TDAISymbolService.BuildCount = 0, 'Localized menu navigation never builds an index');
+      LInfo := Default(TMenuItemInfo);
+      LInfo.cbSize := SizeOf(LInfo);
+      LInfo.fMask := MIIM_STRING;
+      LInfo.dwTypeData := @LNativeText[0];
+      LInfo.cch := Length(LNativeText);
+      Check(GetMenuItemInfo(LPopup.Handle, 11, True, LInfo), 'The localized command has a native menu item');
+      Check(string(LNativeText) = CManage[LLanguage], 'The native menu retains the complete Unicode caption');
+      Check(Pos(#$FFFD, GHost.DAIAction.Hint) = 0, 'Localized status hints contain valid Unicode text');
+      TDAIPermissionManager.IDESummary := 'Vollzugriff';
+      Inc(TDAIPermissionManager.Version);
+      TDAIClientRegistration.HealthDetails := 'Claude Desktop: Registrierung oder Starthelfer aktualisieren.';
+      TDAIClientRegistration.HealthState := rhUpdateRecommended;
+      Inc(TDAIClientRegistration.Version);
+      TDAIIDEToolbar.Refresh;
+      Check(LPopup.Items[4].Caption = CFull[LLanguage], 'Changed effective permission summaries keep localized captions');
+      Check(TDAIPermissionManager.IDESummary = 'Vollzugriff', 'Localization does not change permission data');
+      Check(Pos('Claude Desktop: ' + CHealth[LLanguage], GHost.DAIAction.Hint) > 0,
+        'Authored registration hints are localized while the technical client name is preserved');
+      TDAIIDEToolbar.Shutdown;
+    end;
+  finally
+    TDAIIDEToolbar.Shutdown;
+    DAISetLanguageForTests(dlGerman);
+  end;
+end;
+
 procedure TestToolbarPopup;
 begin
   TestIndexMenu;
+  TestLocalizedToolbar;
   TestPopupTracking(False, False);
   TestPopupTracking(False, True);
   TestPopupTracking(True, True);

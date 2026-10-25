@@ -35,6 +35,7 @@ uses
   System.UITypes,
   Vcl.Dialogs,
   ToolsAPI,
+  h5u.DAI.Localization,
   h5u.DAI.OTA.Creators,
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
@@ -102,13 +103,29 @@ begin
     LDialog.Flags := [tfAllowDialogCancellation, tfUseCommandLinks];
 
     LButton := TTaskDialogButtonItem(LDialog.Buttons.Add);
-    LButton.Caption := 'Fortfahren';
-    LButton.CommandLinkHint := 'Die angeforderte Projektoperation jetzt ausführen.';
+    LButton.Caption := DAIText(
+      'Fortfahren',
+      'Continue',
+      'Continuer',
+      '続行');
+    LButton.CommandLinkHint := DAIText(
+      'Die angeforderte Projektoperation jetzt ausführen.',
+      'Perform the requested project operation now.',
+      'Exécuter maintenant l’opération demandée sur le projet.',
+      '要求されたプロジェクト操作を実行します。');
     LButton.ModalResult := mrYes;
 
     LButton := TTaskDialogButtonItem(LDialog.Buttons.Add);
-    LButton.Caption := 'Abbrechen';
-    LButton.CommandLinkHint := 'Geöffnete Projekte und die Projektgruppe unverändert lassen.';
+    LButton.Caption := DAIText(
+      'Abbrechen',
+      'Cancel',
+      'Annuler',
+      'キャンセル');
+    LButton.CommandLinkHint := DAIText(
+      'Geöffnete Projekte und die Projektgruppe unverändert lassen.',
+      'Leave open projects and the project group unchanged.',
+      'Conserver les projets ouverts et le groupe de projets inchangés.',
+      '開いているプロジェクトとプロジェクトグループを変更しません。');
     LButton.ModalResult := mrCancel;
     LButton.Default := True;
 
@@ -616,23 +633,20 @@ begin
   RequireWritableModule(LProject);
 
   if not ConfirmWorkspaceChange(
-    'Projekt aus Projektgruppe entfernen',
-    Format(
-      {$IF CompilerVersion >= 36.0}  // Delphi 12+
-      '''
-      Projekt:
-      %s
-
-      Das Projekt wird nur aus der aktuellen Projektgruppe entfernt. Dateien auf dem Datenträger werden nicht gelöscht.
-      ''', [LProjectFileName]
-      {$ELSE}
-      'Projekt:' + sLineBreak +
-      '%s' + sLineBreak +
-      '' + sLineBreak +
-      'Das Projekt wird nur aus der aktuellen Projektgruppe entfernt. Dateien auf dem Datenträger werden nicht gelöscht.'
-      , [LProjectFileName]
-      {$IFEND}
-    )
+    DAIText(
+      'Projekt aus Projektgruppe entfernen',
+      'Remove project from project group',
+      'Retirer le projet du groupe de projets',
+      'プロジェクトグループからプロジェクトを削除'),
+    Format(DAIText(
+      'Projekt:' + sLineBreak + '%s' + sLineBreak + sLineBreak +
+        'Das Projekt wird nur aus der aktuellen Projektgruppe entfernt. Dateien auf dem Datenträger werden nicht gelöscht.',
+      'Project:' + sLineBreak + '%s' + sLineBreak + sLineBreak +
+        'The project is removed only from the current project group. Files on disk are not deleted.',
+      'Projet :' + sLineBreak + '%s' + sLineBreak + sLineBreak +
+        'Le projet est retiré uniquement du groupe de projets actuel. Les fichiers sur disque ne sont pas supprimés.',
+      'プロジェクト:' + sLineBreak + '%s' + sLineBreak + sLineBreak +
+        '現在のプロジェクトグループからのみ削除します。ディスク上のファイルは削除されません。'), [LProjectFileName])
   ) then
     raise EAbort.Create('Das Entfernen des Projekts wurde durch den Benutzer abgebrochen.');
 

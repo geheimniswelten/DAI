@@ -14,6 +14,8 @@ uses
   Vcl.Forms,
   Vcl.ExtCtrls,
   Vcl.StdCtrls,
+  Vcl.Graphics,
+  Vcl.Imaging.pngimage,
   Winapi.Messages,
   Winapi.Windows,
   h5u.DAI.Clients.Registration in 'OptionsTests\h5u.DAI.Clients.Registration.pas',
@@ -27,8 +29,15 @@ uses
   h5u.DAI.Registry.Editor in 'OptionsTests\h5u.DAI.Registry.Editor.pas',
   h5u.DAI.Settings in 'OptionsTests\h5u.DAI.Settings.pas',
   h5u.DAI.Consts,
+  h5u.DAI.Localization,
   h5u.DAI.Types,
   h5u.DAI.Options.Frame in '..\Source\h5u.DAI.Options.Frame.pas';
+
+const
+  CManualTitles: array[TDAILanguage] of string = ('DAI – Manual client registration', 'DAI – Manuelle Client-Registrierung',
+    'DAI – Inscription manuelle du client', 'DAI – クライアントの手動登録');
+  CCopyCaptions: array[TDAILanguage] of string = ('Copy details', 'Angaben kopieren', 'Copier les informations', '詳細をコピー');
+  CCloseCaptions: array[TDAILanguage] of string = ('Close', 'Schließen', 'Fermer', '閉じる');
 
 type
   TCatalogProbe = class
@@ -492,9 +501,11 @@ begin
     Check(Assigned(LDialog), 'Manual registration opens a native modal form');
     Check(LDialog.Name = 'DAIManualRegistrationDialog', 'Manual registration opens its intended isolated dialog');
     Seen := True;
+    Check(LDialog.Caption = CManualTitles[DAILanguage], 'Manual dialog title follows the IDE language');
     LMemo := LDialog.FindComponent('DAIManualRegistrationMemo') as TMemo;
     LCopy := LDialog.FindComponent('DAIManualRegistrationCopyButton') as TButton;
     Check(Assigned(LMemo) and Assigned(LCopy), 'Manual registration memo and explicit copy button are named');
+    Check(LCopy.Caption = CCopyCaptions[DAILanguage], 'Manual copy action follows the IDE language');
     Check(LMemo.ReadOnly, 'Registration preview cannot edit connection details');
     Check(LMemo.ScrollBars = ssBoth, 'Manual registration text supports both scrollbars');
     Check(not LMemo.WordWrap, 'Manual registration preserves configuration formatting');
@@ -509,6 +520,9 @@ begin
         if TButton(LComponent).Cancel then
           LClose := TButton(LComponent);
     Check(Assigned(LClose), 'Manual registration dialog offers an Escape-enabled close button');
+    Check(LClose.Caption = CCloseCaptions[DAILanguage], 'Manual close action follows the IDE language');
+    Check(Pos('{"mcpServers":{"dai":{"type":"http"}}}', LMemo.Text) > 0, 'Manual dialog preserves the exact JSON example');
+    Check(Pos('C:\Synthetic\日本語\client.json', LMemo.Text) > 0, 'Manual dialog preserves Unicode configuration paths');
     Check(LClose.ModalResult <> mrNone, 'Manual registration close button has a modal result');
     LClose.Click;
     Check(LDialog.ModalResult <> mrNone, 'Close button exits the actual modal loop');
@@ -1357,6 +1371,169 @@ begin
   end;
 end;
 
+procedure SaveOptionsPreview(const AHost: TForm; const AFrame: TDAIOptionsFrame; const APPI: Integer);
+var
+  LBitmap: Vcl.Graphics.TBitmap;
+  LPNG: TPngImage;
+  LComponent: TComponent;
+  LContentBottom: Integer;
+  LDirectory: string;
+begin
+  AFrame.VertScrollBar.Position := 0;
+  AHost.Constraints.MaxHeight := 12000;
+  AHost.ScaleForPPI(APPI);
+  AHost.ClientWidth := MulDiv(820, APPI, 96);
+  LContentBottom := 0;
+  for LComponent in AFrame do
+    if LComponent is TControl then
+      if TControl(LComponent).Top + TControl(LComponent).Height > LContentBottom then
+        LContentBottom := TControl(LComponent).Top + TControl(LComponent).Height;
+  AHost.ClientHeight := LContentBottom + MulDiv(20, APPI, 96);
+  AHost.Realign;
+  AFrame.Realign;
+  AFrame.HandleNeeded;
+  Check((GetWindowLongPtr(AFrame.Handle, GWL_STYLE) and WS_VSCROLL) = 0,
+    Format('Expanded preview fits the full content (PPI=%d, bottom=%d, host=%d, frame=%d, range=%d)',
+      [APPI, LContentBottom, AHost.ClientHeight, AFrame.ClientHeight, AFrame.VertScrollBar.Range]));
+  Check((AFrame.PixelsPerInch = APPI) and (AHost.PixelsPerInch = APPI), 'Native preview uses its requested DPI');
+  // Only this test-owned fixture becomes showing, offscreen and unable to activate.
+  // GetFormImage uses VCL's native painting; no desktop or IDE pixels are read.
+  SetWindowPos(AHost.Handle, HWND_BOTTOM, -20000, -20000, 0, 0, SWP_NOSIZE or SWP_NOACTIVATE);
+  SetWindowLongPtr(AHost.Handle, GWL_EXSTYLE, GetWindowLongPtr(AHost.Handle, GWL_EXSTYLE) or WS_EX_NOACTIVATE or WS_EX_TOOLWINDOW);
+  AFrame.Visible := True;
+  AHost.Visible := True;
+  try
+    AHost.Update;
+    LBitmap := AHost.GetFormImage;
+    try
+      LPNG := TPngImage.Create;
+      try
+        LPNG.Assign(LBitmap);
+        LDirectory := IncludeTrailingPathDelimiter(ExtractFileDir(ParamStr(0))) + 'Preview';
+        ForceDirectories(LDirectory);
+        LPNG.SaveToFile(IncludeTrailingPathDelimiter(LDirectory) + Format('options-%s-%dppi.png', [DAILanguageCode, APPI]));
+      finally
+        LPNG.Free;
+      end;
+    finally
+      LBitmap.Free;
+    end;
+  finally
+    AHost.Visible := False;
+  end;
+end;
+
+procedure CheckOptionsLanguages;
+const
+  CStartCaptions: array[TDAILanguage] of string = ('Start server', 'Server starten', 'Démarrer le serveur', 'サーバーを開始');
+  CManualCaptions: array[TDAILanguage] of string = ('Register manually…', 'Manuell registrieren…', 'Inscription manuelle…', '手動で登録…');
+  CAllClients: array[TDAILanguage] of string = ('All detected clients', 'Alle erkannten Clients',
+    'Tous les clients détectés', '検出されたすべてのクライアント');
+  CAlwaysCaptions: array[TDAILanguage] of string = ('Always allow', 'Immer erlauben', 'Toujours autoriser', '常に許可');
+  CStatusLines: array[TDAILanguage] of string = ('    Status: registered', '    Status: registriert',
+    '    État : inscrit', '    状態: 登録済み');
+var
+  LLanguage: TDAILanguage;
+  LHost: TForm;
+  LFrame: TDAIOptionsFrame;
+  LApplicationHandle: HWND;
+  LProbe: TManualRegistrationProbe;
+  LButton: TButton;
+  LClients: TComboBox;
+  LComponent: TComponent;
+  LMemo: TMemo;
+  LStatus: TJSONObject;
+  LStatusClients: TJSONArray;
+  LPort: Integer;
+  LToken: string;
+begin
+  TestStage := 'OptionsLanguages';
+  TDAIRuntime.Reset;
+  TDAISettings.Reset;
+  TDAIPermissionManager.Reset;
+  TDAIClientRegistration.RegisterCount := 0;
+  TDAIClientRegistration.UnregisterCount := 0;
+  LPort := TDAISettings.Instance.Port;
+  LToken := TDAISettings.Instance.Token;
+  LStatus := TJSONObject.Create;
+  LStatusClients := TJSONArray.Create;
+  LStatus.AddPair('clients', LStatusClients);
+  LStatusClients.AddElement(TJSONObject.Create
+    .AddPair('label', 'Codex').AddPair('status', 'registered').AddPair('server_name', 'dai_bds37_0')
+    .AddPair('launcher_server', 'dai_bds37_0_start').AddPair('path', 'C:\Synthetic\日本語\client.json')
+    .AddPair('message', 'Original Unicode ✓'));
+  TDAIClientRegistration.StatusJSON := LStatus.ToJSON;
+  LHost := TForm.CreateNew(nil);
+  LFrame := nil;
+  LProbe := TManualRegistrationProbe.Create;
+  LProbe.Timer := TTimer.Create(nil);
+  LApplicationHandle := Application.Handle;
+  try
+    LHost.Visible := False;
+    Application.Handle := LHost.Handle;
+    LHost.ClientWidth := 820;
+    LHost.ClientHeight := 600;
+    LProbe.Timer.Enabled := False;
+    LProbe.Timer.Interval := 25;
+    LProbe.Timer.OnTimer := LProbe.InspectDialog;
+    for LLanguage := Low(TDAILanguage) to High(TDAILanguage) do
+    begin
+      DAISetLanguageForTests(LLanguage);
+      LHost.ScaleForPPI(96);
+      LHost.ClientWidth := 820;
+      LHost.ClientHeight := 600;
+      LFrame := TDAIOptionsFrame.Create(LHost);
+      LFrame.Parent := LHost;
+      LFrame.LoadFromSettings;
+      Check(Assigned(ButtonControl(LFrame, CStartCaptions[LLanguage])), 'Server action uses the selected IDE language');
+      LButton := LFrame.FindComponent('DAIManualRegistrationButton') as TButton;
+      Check(LButton.Caption = CManualCaptions[LLanguage], 'Manual registration action uses the selected IDE language');
+      LClients := LFrame.FindComponent('DAIClientComboBox') as TComboBox;
+      Check(LClients.Items[0] = CAllClients[LLanguage], 'All-clients choice is localized');
+      Check((LClients.Items[1] = 'Codex') and (LClients.Items[2] = 'Claude Code (CLI / VS Code)'), 'Product names remain unchanged');
+      Check(PermissionCombo(LFrame, 'Global', pcCompile).Items[5] = CAlwaysCaptions[LLanguage], 'Permission levels are localized');
+      Check(PermissionCombo(LFrame, 'Project', pcCompile).ItemIndex = 6, 'Localized inheritance retains its semantic index');
+      LMemo := nil;
+      for LComponent in LFrame do
+        if (LComponent is TMemo) and TMemo(LComponent).ReadOnly then
+          LMemo := TMemo(LComponent);
+      Check(Assigned(LMemo) and (LMemo.Lines[1] = CStatusLines[LLanguage]), 'Client state uses localized presentation text');
+      Check((Pos('dai_bds37_0_start', LMemo.Text) > 0) and (Pos('日本語', LMemo.Text) > 0),
+        'Technical server names and Unicode paths remain intact');
+      Check(Pos('Original Unicode ✓', LMemo.Text) > 0, 'Backend and user-provided text remains intact');
+      EditControl(LFrame, True).Text := '7457';
+      EditControl(LFrame, False).Text := 'synthetic-日本語-token';
+      LClients.ItemIndex := 3;
+      LProbe.Seen := False;
+      LProbe.Failure := '';
+      LProbe.Timer.Enabled := True;
+      LButton.Click;
+      LProbe.Timer.Enabled := False;
+      Check(LProbe.Seen and (LProbe.Failure = ''), 'Localized manual dialog inspection: ' + LProbe.Failure);
+      Check(TDAIClientRegistration.LastManualClient = 'claude-desktop', 'Client index maps to a stable protocol identifier in every language');
+      Check(TDAIClientRegistration.LastManualToken = 'synthetic-日本語-token', 'Unicode draft values reach manual preview unchanged');
+      Check((EditControl(LFrame, True).Text = '7457') and (EditControl(LFrame, False).Text = 'synthetic-日本語-token'),
+        'Opening localized instructions preserves unsaved connection drafts');
+      CheckNoPersistence;
+      SaveOptionsPreview(LHost, LFrame, 96);
+      SaveOptionsPreview(LHost, LFrame, 192);
+      CheckNoPersistence;
+      FreeAndNil(LFrame);
+    end;
+    Check((TDAISettings.Instance.Port = LPort) and (TDAISettings.Instance.Token = LToken), 'Language changes do not modify saved connection values');
+    CheckNoPersistence;
+  finally
+    DAISetLanguageForTests(dlGerman);
+    TDAIClientRegistration.StatusJSON := '';
+    LStatus.Free;
+    LProbe.Timer.Free;
+    LProbe.Free;
+    LFrame.Free;
+    Application.Handle := LApplicationHandle;
+    LHost.Free;
+  end;
+end;
+
 procedure CheckOptionsScrolling;
 var
   LScrollBoxHost: Boolean;
@@ -1574,6 +1751,7 @@ end;
 
 begin
   try
+    DAISetLanguageForTests(dlGerman);
     Application.Initialize;
     Application.ShowMainForm := False;
     RunChecks;
@@ -1583,6 +1761,7 @@ begin
     CheckRegistrationHealthRefresh;
     CheckManualRegistrationOptions;
     CheckOptionsScrolling;
+    CheckOptionsLanguages;
     Writeln('PASS: ', CheckCount, ' native options-frame UI checks');
   except
     on E: Exception do

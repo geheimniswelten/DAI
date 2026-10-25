@@ -445,5 +445,38 @@ class ChangelogVersionTests(unittest.TestCase):
                 self.assertTrue(any("CHANGELOG.md" in error for error in errors), errors)
 
 
+class LocalizedOptionsLayoutTests(unittest.TestCase):
+    def check_frame(self, content: str) -> list[str]:
+        original_read = verify.read_project_text
+        def read(path):
+            return content if path.name == "h5u.DAI.Options.Frame.pas" else original_read(path)
+        errors: list[str] = []
+        with patch.object(verify, "read_project_text", side_effect=read):
+            verify.check_options_frame_layout(errors)
+        return errors
+
+    def frame(self) -> str:
+        return verify.read_project_text(verify.SOURCE / "h5u.DAI.Options.Frame.pas").replace("\r\n", "\n")
+
+    def test_localized_port_and_split_restart_notice_pass(self) -> None:
+        self.assertEqual(self.check_frame(self.frame()), [])
+
+    def test_localized_port_label_still_requires_the_configurable_default(self) -> None:
+        errors = self.check_frame(self.frame().replace("[CDAIDefaultPort]", "[7331]"))
+        self.assertTrue(any("CDAIDefaultPort" in error for error in errors), errors)
+
+    def test_localized_restart_notice_still_belongs_below_registration(self) -> None:
+        content = self.frame()
+        marker = content.index("'Betroffene KI-Clients müssen ihre MCP-Verbindung")
+        start = content.rfind("  LInfoLabel := NewLabel(", 0, marker)
+        end = content.index("  Inc(LTop, 76);", marker) + len("  Inc(LTop, 76);")
+        block = content[start:end]
+        content = content[:start] + content[end:]
+        target = content.index("  FUnregisterButton := TButton.Create(Self);")
+        errors = self.check_frame(content[:target] + block + "\n" + content[target:])
+        self.assertTrue(any("ganz unten" in error for error in errors), errors)
+        self.assertFalse(any("Neustart der Codex-App fehlt" in error for error in errors), errors)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
