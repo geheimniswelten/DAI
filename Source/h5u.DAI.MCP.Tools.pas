@@ -54,6 +54,7 @@ uses
   h5u.DAI.OTA.Threads,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
+  h5u.DAI.Symbols.Service,
   h5u.DAI.Source.Search,
   h5u.DAI.Windows.Inspection,
   h5u.DAI.UI;
@@ -441,6 +442,50 @@ begin
     end);
 end;
 
+procedure AddIndexContext(const AResult: TJSONObject);
+var
+  LSummary: TJSONValue;
+begin
+  try
+    LSummary := TDAISymbolService.ContextSummary;
+  except
+    // Optional discovery metadata must not break the IDE's basic status response.
+    LSummary := TJSONNull.Create;
+  end;
+  AResult.AddPair('indexes', LSummary);
+end;
+
+procedure AddProjectIndexSummaries(const AProjects: TJSONArray);
+var
+  LValue, LFileValue, LSummary: TJSONValue;
+  LProject: TJSONObject;
+  LFileName: string;
+begin
+  if AProjects = nil then
+    Exit;
+  for LValue in AProjects do
+  begin
+    if not (LValue is TJSONObject) then
+      Continue;
+    LProject := TJSONObject(LValue);
+    LFileValue := LProject.GetValue('file');
+    LFileName := '';
+    if LFileValue is TJSONString then
+      LFileName := LFileValue.Value;
+    LSummary := nil;
+    if Trim(LFileName) <> '' then
+      try
+        LSummary := TDAISymbolService.IndexSummary('project', LFileName);
+      except
+        // Preserve all project metadata even when its optional index cannot be inspected.
+        LSummary := nil;
+      end;
+    if LSummary = nil then
+      LSummary := TJSONNull.Create;
+    LProject.AddPair('index', LSummary);
+  end;
+end;
+
 function ToolStatus(const AContext: TDAIRequestContext): TJSONObject;
 var
   LPermissions, LLifecycle: TJSONObject;
@@ -487,6 +532,7 @@ begin
   LLifecycle.AddPair('allowed', TJSONBool.Create(LAllowed));
   LLifecycle.AddPair('reason', LReason);
   LLifecycle.AddPair('scope', 'windows_user');
+  AddIndexContext(Result);
 end;
 
 function ContextForArguments(const AArguments: TJSONObject; const AContext: TDAIRequestContext): TDAIRequestContext;
@@ -587,9 +633,56 @@ begin
   Result.TimeoutMs := StrictArgumentInteger(AArguments, 'timeout_ms', 5000, 100, 30000);
 end;
 
+function RequireIndexAccess(const AScope: string; const AWrite: Boolean; const AContext: TDAIRequestContext): string;
+var
+  LSnapshot: TJSONObject;
+  LProjects: TJSONArray;
+  LContext: TDAIRequestContext;
+  LProject: TJSONValue;
+
+  procedure RequireCurrent;
+  begin
+    if LProjects.Count = 0 then
+    begin
+      RequirePermission(pcReferenceRead, 'Delphi-/GetIt-Deklarationsindex lesen', '', LContext);
+      if AWrite then
+        RequirePermission(pcIDEOptions, 'Gemeinsamen DAI-Deklarationsindex erstellen, aktualisieren oder löschen', '', LContext);
+    end
+    else
+    begin
+      RequirePermission(pcProjectRead, 'Deklarationsindex und seine Projektquellen lesen', '', LContext);
+      if AWrite then
+        RequirePermission(pcProjectWrite, 'Projekt-Deklarationsindex erstellen, aktualisieren oder löschen', '', LContext);
+    end;
+  end;
+
+begin
+  LSnapshot := TDAISymbolService.PermissionSnapshot(AScope);
+  try
+    Result := LSnapshot.GetValue<string>('identity', '');
+    LProjects := LSnapshot.GetValue<TJSONArray>('projects');
+    LContext := AContext;
+    if LProjects.Count = 0 then
+    begin
+      LContext.ProjectKey := '';
+      RequireCurrent;
+    end
+    else
+      for LProject in LProjects do
+      begin
+        LContext.ProjectKey := LProject.Value;
+        RequireCurrent;
+      end;
+  finally
+    LSnapshot.Free;
+  end;
+end;
+
 class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
 var
   LAction: string;
+  LIndexScope, LIndexIdentity: string;
+  LIndexParameters: TJSONObject;
   LBuildFirst: Boolean;
   LCompileResult: TJSONObject;
   LCursorResult: TJSONObject;
@@ -626,6 +719,51 @@ begin
   begin
     RequirePermission(pcReferenceRead, 'Status der Delphi-IDE lesen', '', LContext);
     Exit(ToolStatus(LContext));
+  end;
+
+  if SameText(AName, 'ide_ai_status') then
+  begin
+    RequirePermission(pcReferenceRead, 'Verfügbare OTA-KI-Provider lesen', '', LContext);
+    Exit(TDAISymbolService.AIStatus);
+  end;
+
+  if SameText(AName, 'project_index_status') then
+  begin
+    RequirePermission(pcReferenceRead, 'Status der Deklarationsindizes lesen', '', LContext);
+    LRequestId := StrictArgumentString(AArguments, 'request_id');
+    if LRequestId <> '' then
+    begin
+      Result := TDAISymbolService.JobStatus(LRequestId);
+      // Public project status is metadata only; project error texts may contain source details.
+      if not SameText(Result.GetValue<string>('scope', ''), 'delphi') and not SameText(Result.GetValue<string>('scope', ''), 'getit') then
+      begin
+        Result.RemovePair('errors').Free;
+        Result.RemovePair('error').Free;
+        Result.AddPair('error_details_omitted', TJSONBool.Create(True));
+      end;
+      Exit;
+    end;
+    Exit(TDAISymbolService.ListIndexes);
+  end;
+
+  if SameText(AName, 'project_index_build') or SameText(AName, 'project_index_delete') or
+    SameText(AName, 'symbols_search') or SameText(AName, 'symbols_query') then
+  begin
+    LIndexScope := StrictArgumentString(AArguments, 'scope', 'group');
+    LIndexIdentity := RequireIndexAccess(LIndexScope,
+      SameText(AName, 'project_index_build') or SameText(AName, 'project_index_delete'), LContext);
+    if SameText(AName, 'project_index_build') then
+      Exit(TDAISymbolService.Build(LIndexScope, LIndexIdentity));
+    if SameText(AName, 'project_index_delete') then
+      Exit(TDAISymbolService.Delete(LIndexScope, LIndexIdentity));
+    if SameText(AName, 'symbols_search') then
+      Exit(TDAISymbolService.Search(LIndexScope, RequiredArgumentString(AArguments, 'query'),
+        StrictArgumentString(AArguments, 'visibility', 'all'), ArgumentInteger(AArguments, 'maximum_results', 100), LIndexIdentity));
+    LIndexParameters := AArguments.GetValue<TJSONObject>('parameters', nil);
+    if Assigned(AArguments.GetValue('parameters')) and not Assigned(LIndexParameters) then
+      raise EArgumentException.Create('parameters muss ein JSON-Objekt sein.');
+    Exit(TDAISymbolService.Query(LIndexScope, RequiredArgumentString(AArguments, 'sql'), LIndexParameters,
+      ArgumentInteger(AArguments, 'maximum_rows', 100), LIndexIdentity));
   end;
 
   if SameText(AName, 'ide_window_control') then
@@ -713,6 +851,8 @@ begin
     RequirePermission(pcReferenceRead, 'Projekte und Projektpfade der aktuellen Projektgruppe lesen', '', LContext);
     Result := TJSONObject.Create;
     Result.AddPair('projects', TDAIFileService.Projects);
+    AddIndexContext(Result);
+    AddProjectIndexSummaries(Result.GetValue<TJSONArray>('projects'));
     Exit;
   end;
 
@@ -1471,7 +1611,40 @@ class function TDAIMCPTools.ListTools: TJSONArray;
 begin
   Result := TJSONArray.Create;
 
-  AddTool(Result, 'ide_status', 'Liefert Server-, IDE-, Projekt-, Chat- und Berechtigungsstatus.', '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'ide_ai_status',
+    'Liest registrierte OTA-KI-Provider und deren aktivierte Chat-/Instruction-Funktionen; sendet keine Modellanfrage.',
+    '{"type":"object","additionalProperties":false}', True);
+
+  AddTool(Result, 'project_index_status',
+    'Listet Deklarationsindizes mit Pfad, Datum und Zustand; request_id fragt einen gestarteten Auftrag ab.',
+    '{"type":"object","properties":{"request_id":{"type":"string"}},"additionalProperties":false}', True);
+
+  AddTool(Result, 'project_index_build',
+    'Erstellt/aktualisiert den Deklarationsindex ausdrücklich als Hintergrundauftrag; kein automatischer Aufbau bei Suchen.',
+    '{"type":"object","properties":{"scope":{"type":"string","enum":["project","group","delphi","getit"],"default":"group"}},' +
+    '"additionalProperties":false}', False);
+
+  AddTool(Result, 'project_index_delete',
+    'Löscht ausschließlich den gewählten DAI-Index samt SQLite-Nebendateien. Laufende Indexaufträge verhindern Löschen.',
+    '{"type":"object","properties":{"scope":{"type":"string","enum":["project","group","delphi","getit"],"default":"group"}},' +
+    '"additionalProperties":false}', False);
+
+  AddTool(Result, 'symbols_search',
+    'Durchsucht vorhandene Deklarationsindizes. Meldet fehlenden Index und mögliche veraltete Quellen; liest keine aktuellen Quelldateien.',
+    '{"type":"object","properties":{"scope":{"type":"string","enum":["project","group","delphi","getit"],"default":"group"},' +
+    '"query":{"type":"string","minLength":1,"maxLength":512},"visibility":{"type":"string","enum":["all","public","published",' +
+    '"protected","private"],"default":"all"},"maximum_results":{"type":"integer","minimum":1,"maximum":1000,"default":100}},' +
+    '"required":["query"],"additionalProperties":false}', True);
+
+  AddTool(Result, 'symbols_query',
+    'Führt eine begrenzte schreibgeschützte SELECT/WITH-Abfrage auf dem gewählten Index aus; Parameter als JSON-Objekt.',
+    '{"type":"object","properties":{"scope":{"type":"string","enum":["project","group","delphi","getit"],"default":"group"},' +
+    '"sql":{"type":"string","minLength":1,"maxLength":65536},"parameters":{"type":"object"},"maximum_rows":{"type":"integer",' +
+    '"minimum":1,"maximum":1000,"default":100}},"required":["sql"],"additionalProperties":false}', True);
+
+  AddTool(Result, 'ide_status',
+    'Liefert Server-, IDE-, Projekt-, Chat- und Berechtigungsstatus sowie kompakte Indexhinweise.',
+    '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'ide_window_control', 'Minimiert/restauriert die IDE, fordert Vorder-/Hintergrund an oder schließt normal mit Speicherrückfragen.',
     {$IF CompilerVersion >= 36.0}  // Delphi 12+
     '''
@@ -1577,7 +1750,7 @@ begin
     False);
   AddTool(Result, 'open_files_list', 'Listet aktuell in der IDE geöffnete Dateien.', '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'projects_list',
-    'Liefert kompakte Projektinfos mit Typ, Framework, aktivem Buildziel, DPROJ-Format und Package-Metadaten/-Status.',
+    'Liefert kompakte Projektinfos mit Typ, Framework, aktivem Buildziel, DPROJ-Format, Package-Status und Indexhinweisen.',
     '{"type":"object","additionalProperties":false}', True);
 
   AddTool(

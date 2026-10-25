@@ -14,6 +14,7 @@ type
 
   IOTAEditReader = interface
     ['{36E34912-E6DF-4AEB-A0A9-1F020A0F4DEB}']
+    function GetText(Position: Longint; Buffer: PAnsiChar; Count: Longint): Longint;
   end;
 
   IOTASourceEditor = interface(IOTAEditor)

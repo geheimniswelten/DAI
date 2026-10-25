@@ -59,9 +59,9 @@ end;
 
 function IsQuietDefault(const AName: string): Boolean;
 const
-  CQuietNames: array[0..13] of string = (
+  CQuietNames: array[0..15] of string = (
     'clients_registration_status', 'code_insight_status', 'codex_registration_status', 'debugger_status',
-    'directory_files_list', 'ide_status', 'open_files_list', 'package_is_installed', 'project_directory_files_list',
+    'ide_ai_status', 'project_index_status', 'directory_files_list', 'ide_status', 'open_files_list', 'package_is_installed', 'project_directory_files_list',
     'project_files_list', 'project_options_configurations', 'projects_list', 'reference_files_list', 'reference_roots_list'
   );
 var

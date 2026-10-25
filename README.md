@@ -100,8 +100,12 @@ laufen; Status erneut prüfen. Auch ohne Token funktionieren die lokalen Prozess
 Manueller Aufruf (der Client kommuniziert anschließend über STDIN/STDOUT):
 
 ```text
-DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.35
+DAI.McpBridge.exe --launcher --url http://127.0.0.1:7331/mcp --ide "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\bds.exe" --dai-version 1.2.36
 ```
+
+Alle automatisch registrierten Starthelfer und die Angaben für die manuelle Registrierung enthalten mit `--dai-version` die DAI-Version der registrierenden IDE.
+Der normale STDIO-Bridge-Aufruf verwendet ausschließlich `--url` und startet keine IDE. Die tatsächlich laufende Serverversion meldet DAI selbst beim MCP-Verbindungsaufbau.
+Die HTTP-Einträge benötigen ebenfalls keine Versionsangabe. Die registrierte Version des Starthelfers bleibt von der aktuell erreichbaren DAI-Version getrennt.
 
 ## Gemeinsame Verbindungsdaten
 
@@ -224,6 +228,85 @@ Laufzustand. Bei einem laufenden Server werden Port- und Tokenänderungen mit ei
 Win32 und Win64 verwenden bei gleichem BDS-Benutzerprofil weiterhin dieselben DAI-Einstellungen für Port und Token. Andere Delphi-Versionen bzw. eigene
 IDE-Profile können andere Einstellungen besitzen. Nach einem Wechsel müssen die Clientregistrierungen zum Port, Token und Bridge-Pfad der neuen aktiven IDE passen.
 `ide_status` zeigt dazu `active`, `ide_architecture`, `ide_process_id`, `ide_executable`, `package_file` und `package_registry_key`.
+
+Beim Öffnen des DAI-Iconmenüs werden sichtbare und wartende Hints abgebrochen und der sichtbare Mauszeiger auf den Pfeil gesetzt.
+Die Cursorwahl der IDE bleibt dabei unverändert; spätere Mausnachrichten bestimmen wieder den passenden Zeiger.
+
+## Deklarationsindizes
+
+`ide_status` und `projects_list` enthalten unter `indexes` kompakte Hinweise für `delphi`, `getit`, `group` und das aktive `project`.
+Jede Projektzeile in `projects_list` enthält zusätzlich unter `index` den Status ihres eigenen Projektindexes, auch bei inaktiven Projekten.
+Die Hinweise umfassen `exists`, `state`, `indexed_at` und `freshness: "unknown"`; vorhandene Quellen werden dabei nicht auf Änderungen geprüft.
+Ungespeicherte Projektzeilen oder nicht abfragbare Zusatzinformationen können `null` liefern; ein fehlgeschlagener Indexzugriff verhindert die Basisantwort nicht.
+Die Abfragen erstellen keinen Index, zählen keine Deklarationen und lesen keine Quelltexte. Ausführliche Angaben bleiben über `project_index_status` verfügbar.
+
+Das DAI-Iconmenü enthält ganz unten, nach den IDE-/Projektberechtigungen und einem eigenen Trennstrich, Einträge für Delphi/ToolsAPI, GetIt, Projektgruppe und aktuelles Projekt.
+Fehlende Projekt-/Gruppenindizes sind deaktiviert; **Indizes verwalten …** bleibt zum Erstellen erreichbar. Das nicht modale Fenster
+zeigt Datum, Zustand, Datei-/Symbolanzahl und die Größe der SQLite-Indexdatei in KB oder MB. Zahlen verwenden die regionalen
+Tausendertrennzeichen. Die ausgewählte Zeile bestimmt das Ziel aller Indexaktionen. Der gemeinsame Button heißt bei fehlendem Index
+**Index erstellen**, bei vorhandenem Index **Aktualisieren**. Eine zusätzliche Bereichsauswahl ist nicht erforderlich.
+Ohne gespeichertes Projekt-/Gruppenziel sowie während eines Aufbaus bleiben Änderungen gesperrt.
+Erstellen/Aktualisieren starten ausdrücklich Hintergrundaufträge; Suchen und IDE-Start tun dies nicht.
+
+**Fehlerdetails …** oder ein Doppelklick auf den Index öffnen einen lesbaren, kopierbaren Bericht mit vollständigen Dateipfaden und Gründen.
+Die Berichte liegen dauerhaft in der jeweiligen SQLite-Datei: auch Abschlusszustand, allgemeiner Fehler-/Abbruchgrund sowie Start-/Endzeit
+bleiben nach einem IDE-Neustart erhalten. Ein unerwartet unterbrochener Aufbau ohne aufgezeichnete Ursache wird entsprechend erklärt.
+Für alte Aufbauten lassen sich damals nicht gespeicherte Fehlerursachen nicht nachträglich wiederherstellen; die nächste Aktualisierung erfasst sie.
+Fehlerberichte werden erst beim Öffnen geladen und während eines laufenden Aufbaus gesperrt, damit keine unterschiedlichen Stände vermischt werden.
+Globale Fehler nennen die Verarbeitungsphase und den ursprünglichen Ausnahmegrund. Konnte der aktuelle Bericht nicht gespeichert werden,
+zeigen die Details die noch verfügbaren Daten des IDE-Laufs mit einem entsprechenden Hinweis; ältere Berichte verdrängen diesen Fehler nicht.
+
+Projektindizes liegen in `.dai` neben der Projekt-/Gruppendatei: `{Projektname}.projectindex.{Kennung}.sqlite` beziehungsweise
+`{Gruppenname}.groupindex.{Kennung}.sqlite`. Punkte im Basisnamen bleiben erhalten. Die Kennung sind die ersten 16 Zeichen des SHA-256-Hashes
+über den normalisierten, kleingeschriebenen vollständigen Pfad der Projekt-/Gruppendatei. Diese generierten Daten sollten im jeweiligen Repository
+ignoriert werden. Das Unterverzeichnis entsteht erst beim ausdrücklich angeforderten Aufbau; `{Projektname}.dai.permissions.json` bleibt neben der Projektdatei.
+Vorhandene Dateien nach dem früheren Namensschema bleiben unberührt; DAI verwendet für neue Aufbauten und Abfragen das neue Schema.
+SDK-/GetIt-Indizes liegen unter `%LOCALAPPDATA%\DelphiAI\DAI\Indexes`, getrennt nach Quellverzeichnissen. Quellen bleiben unverändert. Gemeinsame Dateien werden anhand des Pfades dedupliziert; Aktualisierung verarbeitet nur geänderte
+Inhaltshashes erneut. Aktuelle Editorpuffer haben Vorrang. Unterbrochene oder teilweise fehlgeschlagene Aufbauten bleiben als `incomplete` erkennbar.
+
+Die Verarbeitung bündelt bis zu 32 Dateien: Ein kurzer IDE-Aufruf erfasst Berechtigungen und aktuelle Editorpuffer;
+Dateilesen, Decodierung, Hash und Parser laufen im Hintergrund. SQLite bestätigt die Ergebnisse je Paket statt je Datei.
+Eine fehlerhafte Datei wird innerhalb des Pakets einzeln zurückgerollt; abgeschlossene Pakete bleiben bei Abbruch erhalten.
+Interne Schreibbefehle laufen direkt im Indexthread. Die Zwei-Sekunden-Grenze gilt weiterhin für frei übergebene SQL-Abfragen;
+deren Autorisierung und SQLite-Abbruchprüfung bleiben aktiv.
+FireDAC-LockWait aktiviert die konfigurierte SQLite-Sperrwartezeit von fünf Sekunden, damit kurze parallele Lesezugriffe einen Commit nicht sofort abbrechen.
+Das frühere zusätzliche 2-MiB-Indexlimit entfällt. Es gilt das gemeinsame Textlimit von 16 MiB pro Datei; große Dateien werden einzeln gelesen.
+Kleine Dateien werden nach einem Speicherbudget gebündelt; auch stark vergrößerte ungespeicherte Editorpuffer begrenzen das Paket.
+
+Der lokale Parser erfasst Unit-Interface-Deklarationen mit Dateihash, Signatur, Anfangs-/Endzeile und vier Textfeldern:
+`members_private`, `members_protected`, `members_public`, `members_published`. `strict` wird bei der Gruppierung ignoriert.
+Methodenparameter bleiben zusammenhängende Signaturen; Properties behalten Name, Indizes und Typ ohne Getter-/Setter-Namen.
+Der Index ist lexikalisch: Präprozessorzweige, Includes und unterschiedliche Projekt-Defines werden nicht compilergetreu aufgelöst.
+Jede Suche warnt deshalb vor möglichen späteren oder ungespeicherten Änderungen. Vor Verwendung den aktuellen Quelltext lesen.
+Ändert sich die Projektzuordnung einer Gruppe, erhält der vorhandene Index den Zustand `outdated` mit `requires_update: true`.
+Suchen und SQL-Abfragen verlangen dann eine ausdrückliche Aktualisierung; Daten entfernter Projekte werden nicht weiter zurückgegeben.
+
+Projekt-/Gruppenindizes verwenden die Leserechte aller betroffenen Projekte, Aufbau und Löschen zusätzlich deren Schreibrechte.
+Delphi-/GetIt-Indizes sind frei lesbare Referenzen; Änderungen an diesen gemeinsamen DAI-Caches benötigen globale IDE-/DAI-Änderungsrechte.
+Die Statusübersicht und der OTA-KI-Providerstatus bleiben frei lesbare Metadaten.
+Projekt-/Gruppen-Auftragsstatus über MCP enthält Fehlerzahlen, aber keine Dateilisten oder Fehlertexte aus dem Projekt.
+Die vollständigen gespeicherten Fehlerberichte sind über die lokale Indexverwaltung zugänglich.
+
+| MCP-Werkzeug | Zweck |
+| --- | --- |
+| `project_index_status` | Bereiche mit Pfad/Datum/Zustand und Dateigröße (`size_bytes`); mit `request_id` Auftrag abfragen. |
+| `project_index_build` | Ausdrücklicher Aufbau oder Aktualisierung; `scope`: `project`, `group`, `delphi`, `getit`. |
+| `project_index_delete` | Gewählten Index samt SQLite-Nebendateien löschen. Laufende Aufträge sperren Löschen. |
+| `symbols_search` | Namen, Signaturen und gewünschte Sichtbarkeit durchsuchen; begrenzte Ergebniszahl. |
+| `symbols_query` | Parameterisierte, ausschließlich lesende SELECT/WITH-Abfrage; maximal 1.000 Zeilen und zwei Sekunden Laufzeit. |
+| `ide_ai_status` | OTA-KI-Provider und aktivierte Chat-/Instruction-Funktionen lesen. Keine Modellanfrage. |
+
+Fehlende Indizes melden `index_missing` und den möglichen Aufbauaufruf. Die KI entscheidet, ob sich ein Aufbau lohnt.
+Direkte SQLite-Zugriffe dürfen den gemeldeten Pfad ausschließlich lesend verwenden. Erstellen, Ändern und Löschen erfolgen über DAI.
+SQLite wird über Standard-FireDAC-Pakete statisch eingebunden; eine separate SQLite-DLL oder Diagrammkomponente ist nicht erforderlich.
+
+Der OTA-KI-Statusadapter nutzt in Delphi13 `ToolsAPI.AI` und erkennt aktivierte Smart-CodeInsight-Verbindungen. Der lokale Parser benötigt
+keinen KI-Provider und sendet keine Quellen an einen Modelldienst. Delphi11/12-Builds melden den Statusadapter als nicht unterstützt.
+Ein separater DelphiLSP13-Test bestätigt `textDocument/documentSymbol` für Struktur, Signaturen und Bereiche; Sichtbarkeit und Vorfahren fehlen.
+`workspaceSymbolProvider` wird nicht angeboten. Ein produktiver LSP-Indexadapter ist noch nicht angeschlossen.
+Die reproduzierbare Probe `Scripts/Test.DelphiLSP.py` verwendet eine virtuelle Unit und verändert keine IDE-/Projektkonfiguration.
+Siehe [unabhängiger DelphiLSP-Betrieb](https://docwiki.embarcadero.com/RADStudio/Florence/en/Using_DelphiLSP_Code_Insight_with_Other_Editors)
+und [LSP Document Symbols](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol).
 
 ## Lokale Nutzungszähler
 

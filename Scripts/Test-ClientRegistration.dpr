@@ -28,6 +28,50 @@ begin
   Inc(GCount);
 end;
 
+procedure CheckLauncherVersion(const AArguments: TJSONArray; const AName: string);
+var
+  LIndex, LMatches: Integer;
+begin
+  Check(Assigned(AArguments), AName + ' argument array present');
+  LMatches := 0;
+  for LIndex := 0 to AArguments.Count - 1 do
+    if AArguments.Items[LIndex].Value = '--dai-version' then
+    begin
+      Inc(LMatches);
+      Check((LIndex + 1 < AArguments.Count) and (AArguments.Items[LIndex + 1].Value = CDAIVersion),
+        AName + ' registered version matches current DAI');
+    end;
+  Check(LMatches = 1, AName + ' version argument occurs exactly once');
+end;
+
+procedure CheckTextLauncherVersion(const AText, APrefix, AName: string);
+var
+  LLine: string;
+  LValue: TJSONValue;
+begin
+  for LLine in AText.Split([#10]) do
+    if LLine.Trim.StartsWith(APrefix) then
+    begin
+      LValue := TJSONObject.ParseJSONValue(Copy(LLine.Trim, Length(APrefix) + 1, MaxInt));
+      try
+        Check(LValue is TJSONArray, AName + ' argument array parses');
+        CheckLauncherVersion(TJSONArray(LValue), AName);
+      finally
+        LValue.Free;
+      end;
+      Exit;
+    end;
+  Check(False, AName + ' arguments present');
+end;
+
+procedure CheckBridgeArguments(const AArguments: TJSONArray; const AURL, AName: string);
+begin
+  Check(Assigned(AArguments), AName + ' argument array present');
+  Check(AArguments.Count = 2, AName + ' plain bridge accepts exactly two arguments');
+  Check(AArguments.Items[0].Value = '--url', AName + ' plain bridge URL option');
+  Check(AArguments.Items[1].Value = AURL, AName + ' plain bridge target');
+end;
+
 procedure ExpectConflict(const AText, AFormat: string; const AName: string);
 var
   LEntry: string;
@@ -379,6 +423,7 @@ begin
       Check(Pos('http_headers = { Authorization = ', LConfig) > 0, 'manual Codex HTTP header native schema');
       Check(Pos('env = { DAI_MCP_TOKEN = ', LConfig) > 0, 'manual Codex launcher environment native schema');
       Check(Pos('\"quoted\"', LConfig) > 0, 'manual Codex TOML escapes token quotes');
+      CheckTextLauncherVersion(LConfig, 'args = ', 'manual Codex launcher');
       Continue;
     end;
     if LClient = 'hermes' then
@@ -394,6 +439,7 @@ begin
       LKeys[High(LKeys)] := LScopeName + '_start';
       Check(TDAIClientConfigText.ExtractEntry(LConfig, 'yaml', LKeys, LLauncher), 'manual Hermes launcher YAML parses');
       Check(Pos('DAI_MCP_TOKEN: ', LLauncher) > 0, 'manual Hermes launcher environment native schema');
+      CheckTextLauncherVersion(LLauncher, 'args: ', 'manual Hermes launcher');
       Continue;
     end;
     Check(TDAIClientConfigText.ExtractEntry(LConfig, 'json', LKeys, LEntry), LClient + ' manual native JSON parses');
@@ -408,6 +454,7 @@ begin
       begin
         Check(LJson.GetValue<string>('command') = TDAICodexRegistration.BridgeFileName, LClient + ' manual STDIO bridge path');
         Check(LJson.GetValue<TJSONObject>('env').GetValue<string>('DAI_MCP_TOKEN') = CToken, LClient + ' manual STDIO token roundtrips');
+        CheckBridgeArguments(LJson.GetValue<TJSONArray>('args'), 'http://127.0.0.1:18475/mcp', LClient + ' manual bridge');
       end;
     finally
       LJson.Free;
@@ -417,6 +464,7 @@ begin
     LJson := TJSONObject.ParseJSONValue(LLauncher) as TJSONObject;
     try
       LArgs := LJson.GetValue<TJSONArray>('args');
+      CheckLauncherVersion(LArgs, LClient + ' manual launcher');
       Check(LArgs.Items[0].Value = '--launcher', LClient + ' manual launcher uses launcher mode');
       Check(LArgs.Items[2].Value = 'http://127.0.0.1:18475/mcp', LClient + ' manual launcher uses draft URL');
       Check(LJson.GetValue<TJSONObject>('env').GetValue<string>('DAI_MCP_TOKEN') = CToken, LClient + ' manual launcher token roundtrips');
@@ -547,6 +595,7 @@ begin
         LLauncher := TJSONObject(LValue);
         Check(LLauncher.GetValue<string>('command') = TDAICodexRegistration.BridgeFileName, LClient + ' adjacent bridge path');
         LArguments := LLauncher.GetValue<TJSONArray>('args');
+        CheckLauncherVersion(LArguments, LClient + ' registered launcher');
         Check(LArguments.Count = Length(LExpectedArguments), LClient + ' launcher argument count');
         for LIndex := 0 to LArguments.Count - 1 do
           Check(LArguments.Items[LIndex].Value = LExpectedArguments[LIndex], LClient + ' launcher argument ' + IntToStr(LIndex));
@@ -559,11 +608,21 @@ begin
       finally
         LValue.Free;
       end;
-    end;
+    end
+    else
+      CheckTextLauncherVersion(LEntry, 'args: ', LClient + ' registered launcher');
     LKeys[High(LKeys)] := 'dai';
     Check(TDAIClientConfigText.ExtractEntry(LText, LFormat, LKeys, LEntry), LClient + ' original dai retained');
     if LClient = 'claude-desktop' then
-      Check((Pos('--launcher', LEntry) = 0) and (Pos('--url', LEntry) > 0), 'Desktop dai remains plain STDIO bridge')
+    begin
+      LValue := TJSONObject.ParseJSONValue(LEntry);
+      try
+        Check(LValue is TJSONObject, 'Desktop dai plain bridge JSON object');
+        CheckBridgeArguments(TJSONObject(LValue).GetValue<TJSONArray>('args'), 'http://127.0.0.1:7331/mcp', 'Desktop registered bridge');
+      finally
+        LValue.Free;
+      end;
+    end
     else
       Check((Pos('7331', LEntry) > 0) and (Pos('Authorization', LEntry) > 0), LClient + ' dai remains HTTP');
     LJson := TDAIClientRegistration.UnregisterFiles(LClient);
@@ -739,6 +798,7 @@ begin
     Check((Pos('[mcp_servers.dai]', LText) > 0) and (Pos('[mcp_servers.dai_start]', LText) > 0),
       'Codex managed block has HTTP and launcher');
     Check((Pos('--launcher', LText) > 0) and (Pos('DAI_MCP_TOKEN', LText) > 0), 'Codex launcher command/environment');
+    CheckTextLauncherVersion(LText, 'args = ', 'Codex registered launcher');
     LJson := TDAICodexRegistration.Status;
     try
       Check(LJson.GetValue<Boolean>('launcher_entry_registered') and not LJson.GetValue<Boolean>('needs_update'),

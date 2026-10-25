@@ -13,6 +13,13 @@ SOURCE = ROOT / "Source"
 MAX_LINE_LENGTH = 180
 
 REQUIRED_TOOLS = {
+    "ide_ai_status",
+    "project_index_status",
+    "project_index_build",
+    "project_index_delete",
+    "symbols_search",
+    "symbols_query",
+
     "source_search",
     "ide_windows_list",
     "ide_window_control",
@@ -336,7 +343,8 @@ def check_no_getit_dependencies(errors: list[str]) -> None:
     """DAI uses its own MCP implementation and the Delphi/Indy standard packages."""
     dpk, _ = strip_pascal_strings_and_comments(read_project_text(ROOT / "DAI.dpk"))
     match = re.search(r"\brequires\s+(.*?);", dpk, flags=re.IGNORECASE | re.DOTALL)
-    expected = {"rtl", "vcl", "vclimg", "vclie", "designide", "xmlrtl", "indysystem", "indycore", "indyprotocols"}
+    expected = {"rtl", "vcl", "vclimg", "vclie", "designide", "xmlrtl", "indysystem", "indycore", "indyprotocols",
+                "dbrtl", "firedac", "firedaccommon", "firedaccommondriver", "firedacsqlitedriver"}
     actual = {name.strip().lower() for name in match.group(1).split(",")} if match else set()
     if actual != expected:
         fail(errors, "DAI.dpk: ausschließlich die dokumentierten Delphi-/Indy-Standardpakete sind erlaubt")
@@ -955,26 +963,8 @@ def check_code_insight_integration(errors: list[str]) -> None:
 
 def check_options_frame_layout(errors: list[str]) -> None:
     content = read_project_text(SOURCE / "h5u.DAI.Options.Frame.pas")
-    stripped, _ = strip_pascal_strings_and_comments(content)
-
-    for forbidden in ("FScrollBox", "TScrollBox", "VertScrollBar.Range", "Align := alClient"):
-        if forbidden in stripped:
-            fail(errors, f"h5u.DAI.Options.Frame.pas: eigene ScrollBox beziehungsweise alClient-Layout ist nicht erlaubt: {forbidden}")
-
-    if "vcl.extctrls" in direct_used_units(content) and "TLinkLabel" not in stripped:
-        fail(errors, "h5u.DAI.Options.Frame.pas: Vcl.ExtCtrls darf nicht nur für eine eigene ScrollBox eingebunden werden")
-
-    build_match = re.search(
-        r"(?is)procedure\s+TDAIOptionsFrame\.BuildControls\s*;.*?begin(.*?)end\s*;",
-        stripped,
-    )
-    if not build_match:
-        fail(errors, "h5u.DAI.Options.Frame.pas: BuildControls-Implementierung fehlt")
-        return
-
-    body = build_match.group(1)
-    if not re.search(r"Align\s*:=\s*alTop\s*;\s*Height\s*:=\s*LTop\s*;\s*$", body, flags=re.IGNORECASE):
-        fail(errors, "h5u.DAI.Options.Frame.pas: BuildControls muss mit Align := alTop und Height := LTop enden")
+    # Scrolling and host integration are exercised by the native VCL tests in Test.Options.dpr.
+    # Do not require a host-owned scrollbar or a particular frame alignment here.
 
     if "Format('Standard: %d', [CDAIDefaultPort])" not in content:
         fail(errors, "h5u.DAI.Options.Frame.pas: der konfigurierbare Port muss den Standardport aus CDAIDefaultPort anzeigen")
@@ -991,9 +981,9 @@ def check_options_frame_layout(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.Options.Frame.pas: Hinweis zum erforderlichen Neustart der Codex-App fehlt")
     notice_position = content.find(restart_notice)
     unregister_position = content.find("FUnregisterButton.OnClick := UnregisterClicked")
-    align_position = content.find("Align := alTop", unregister_position)
-    if unregister_position < 0 or align_position < 0 or not (unregister_position < notice_position < align_position):
-        fail(errors, "h5u.DAI.Options.Frame.pas: Neustart-Hinweis muss ganz unten zwischen Registrierungsbuttons und Frame-Ausrichtung stehen")
+    height_position = content.find("Height := LTop", unregister_position)
+    if unregister_position < 0 or height_position < 0 or not (unregister_position < notice_position < height_position):
+        fail(errors, "h5u.DAI.Options.Frame.pas: Neustart-Hinweis muss ganz unten vor dem Ende des Optionsinhalts stehen")
 
     settings = read_project_text(SOURCE / "h5u.DAI.Settings.pas")
     public_part = re.split(r"(?im)^\s*implementation\s*$", settings, maxsplit=1)[0]
@@ -1005,7 +995,7 @@ def check_options_frame_layout(errors: list[str]) -> None:
 
 
 def check_version_consistency(errors: list[str]) -> None:
-    expected = "1.2.35"
+    expected = "1.2.36"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
     dproj = read_project_text(ROOT / "DAI.dproj")
     test_client = read_project_text(ROOT / "Test-MCP.ps1")

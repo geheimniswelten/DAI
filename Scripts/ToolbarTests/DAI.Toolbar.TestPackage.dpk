@@ -14,6 +14,8 @@ contains
   h5u.DAI.OTA.Helpers in 'h5u.DAI.OTA.Helpers.pas',
   h5u.DAI.Permissions.Manager in 'h5u.DAI.Permissions.Manager.pas',
   h5u.DAI.Log in 'h5u.DAI.Log.pas',
+  h5u.DAI.Symbols.Dialog in 'h5u.DAI.Symbols.Dialog.pas',
+  h5u.DAI.Symbols.Service in 'h5u.DAI.Symbols.Service.pas',
   ToolsAPI in 'ToolsAPI.pas';
 
 end.

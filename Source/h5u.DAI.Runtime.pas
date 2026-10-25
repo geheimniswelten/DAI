@@ -36,6 +36,8 @@ uses
   h5u.DAI.Options.Navigation,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
+  h5u.DAI.Symbols.Dialog,
+  h5u.DAI.Symbols.Service,
   h5u.DAI.UI;
 
 class function TDAIRuntime.ApplySettings: Boolean;
@@ -189,6 +191,8 @@ begin
   FStopping := True;
   try
     // Close debugger and navigation callbacks before draining workers and modal UI loops.
+    TDAISymbolIndexDialog.Shutdown;
+    TDAISymbolService.Shutdown;
     TDAILog.Shutdown;
     TDAIEvaluationService.Shutdown;
     TDAIExpressionUIService.Shutdown;

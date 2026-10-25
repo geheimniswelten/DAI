@@ -55,7 +55,13 @@ type
     function CreateReader: IOTAEditReader;
   end;
 
-  TTestReader = class(TInterfacedObject, IOTAEditReader);
+  TTestReader = class(TInterfacedObject, IOTAEditReader)
+  private
+    FBytes: TBytes;
+    FLoaded: Boolean;
+  public
+    function GetText(Position: Longint; Buffer: PAnsiChar; Count: Longint): Longint;
+  end;
 
   TTestActions = class(TInterfacedObject, IOTAActionServices)
     function OpenFile(const AFileName: string): Boolean;
@@ -70,6 +76,23 @@ end;
 function TTestEditor.CreateReader: IOTAEditReader;
 begin
   Result := TTestReader.Create;
+end;
+
+function TTestReader.GetText(Position: Longint; Buffer: PAnsiChar; Count: Longint): Longint;
+begin
+  if not FLoaded then
+  begin
+    Inc(TDAIOTA.ReadCount);
+    FBytes := TEncoding.UTF8.GetBytes(TDAIOTA.Buffer);
+    FLoaded := True;
+  end;
+  Result := 0;
+  if (Position < 0) or (Position >= Length(FBytes)) or (Count <= 0) or (Buffer = nil) then
+    Exit;
+  Result := Length(FBytes) - Position;
+  if Result > Count then
+    Result := Count;
+  Move(FBytes[Position], Buffer^, Result);
 end;
 
 function TTestActions.OpenFile(const AFileName: string): Boolean;

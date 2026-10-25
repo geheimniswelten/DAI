@@ -27,7 +27,7 @@ type
 const
   // Keep this catalog explicit: an unrecognized client-supplied name must never become a persistent usage key.
   // Test.ToolUsage verifies exact coverage of the production ListTools catalog.
-  CToolUsageDefinitions: array[0..80] of TDAIToolUsageDefinition = (
+  CToolUsageDefinitions: array[0..86] of TDAIToolUsageDefinition = (
     (Name: 'breakpoint_remove'; Activity: taActive),
     (Name: 'breakpoint_set'; Activity: taActive),
     (Name: 'breakpoints_list'; Activity: taActive),
@@ -69,6 +69,7 @@ const
     (Name: 'form_show_as_text'; Activity: taActive),
     (Name: 'form_show_designer'; Activity: taActive),
     (Name: 'form_unit_create'; Activity: taActive),
+    (Name: 'ide_ai_status'; Activity: taQuiet),
     (Name: 'ide_dialog_click'; Activity: taActive),
     (Name: 'ide_dialog_close'; Activity: taActive),
     (Name: 'ide_dialog_inspect'; Activity: taActive),
@@ -91,6 +92,9 @@ const
     (Name: 'project_file_remove'; Activity: taActive),
     (Name: 'project_files_list'; Activity: taQuiet),
     (Name: 'project_group_compile'; Activity: taActive),
+    (Name: 'project_index_build'; Activity: taActive),
+    (Name: 'project_index_delete'; Activity: taActive),
+    (Name: 'project_index_status'; Activity: taQuiet),
     (Name: 'project_open'; Activity: taActive),
     (Name: 'project_option_remove'; Activity: taActive),
     (Name: 'project_option_set'; Activity: taActive),
@@ -105,6 +109,8 @@ const
     (Name: 'reference_files_list'; Activity: taDirectory),
     (Name: 'reference_roots_list'; Activity: taQuiet),
     (Name: 'source_search'; Activity: taActive),
+    (Name: 'symbols_query'; Activity: taActive),
+    (Name: 'symbols_search'; Activity: taActive),
     (Name: 'ui_balloon_hint'; Activity: taActive),
     (Name: 'ui_input_box'; Activity: taActive),
     (Name: 'ui_message_box'; Activity: taActive),

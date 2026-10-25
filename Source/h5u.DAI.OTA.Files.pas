@@ -8,6 +8,10 @@ uses
   System.JSON;
 
 type
+  TDAIIndexFileText = record
+    FileName, Content, Sha256, Source, ErrorText: string;
+  end;
+
   TDAIFileService = class sealed
   public
     class function OpenFiles: TJSONArray; static;
@@ -18,6 +22,7 @@ type
       const ACaseSensitive: Boolean = False; const AWholeWord: Boolean = False): TJSONArray; static;
     class function ReferenceRoots: TJSONArray; static;
     class function ReadFile(const AFileName: string; const AMaximumCharacters: Integer; const AInterfacesOnly: Boolean = True): TJSONObject; static;
+    class function ReadIndexFiles(const AFileNames: TArray<string>; const AMaximumBytes: Integer): TArray<TDAIIndexFileText>; static;
     class function WriteFile(const AFileName: string; const AContent: string; const AExpectedSha256: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean):
       TJSONObject; static;
   end;
@@ -643,6 +648,131 @@ begin
   Result.AddPair('original_characters', TJSONNumber.Create(LOriginalLength));
   Result.AddPair('truncated', TJSONBool.Create(LTruncated));
   Result.AddPair('read_only_reference', TJSONBool.Create(TDAIOTA.IsReadOnlyReferenceFile(LFileName)));
+end;
+
+function ReadIndexEditorBytes(const AEditor: IOTASourceEditor; const AMaximumCharacters: Integer): TBytes;
+var
+  LReader: IOTAEditReader;
+  LStream: TMemoryStream;
+  LChunk: array[0..8191] of AnsiChar;
+  LRead: Integer;
+  LMaximumBytes: Integer;
+begin
+  LReader := AEditor.CreateReader;
+  if not Assigned(LReader) then
+    raise EInvalidOperation.Create('Der aktuelle Editorpuffer ist nicht lesbar.');
+  // UTF-8 needs at most three bytes per UTF-16 code unit, plus a possible terminal NUL.
+  LMaximumBytes := AMaximumCharacters * 3 + 1;
+  LStream := TMemoryStream.Create;
+  try
+    repeat
+      LRead := LReader.GetText(LStream.Size, @LChunk[0], Length(LChunk));
+      if (LRead < 0) or (LRead > Length(LChunk)) then
+        raise EReadError.Create('Der Editor lieferte eine ungültige Textlänge.');
+      if LStream.Size + LRead > LMaximumBytes then
+        raise EInvalidOperation.CreateFmt('Der Editorpuffer überschreitet das Textlimit von %d Zeichen.', [AMaximumCharacters]);
+      if LRead > 0 then
+        LStream.WriteBuffer(LChunk[0], LRead);
+    until LRead < Length(LChunk);
+    SetLength(Result, LStream.Size);
+    if Length(Result) > 0 then
+      Move(LStream.Memory^, Result[0], Length(Result));
+  finally
+    LStream.Free;
+  end;
+end;
+
+class function TDAIFileService.ReadIndexFiles(const AFileNames: TArray<string>; const AMaximumBytes: Integer): TArray<TDAIIndexFileText>;
+const
+  CEditorSnapshotBudget = 2 * 1024 * 1024;
+var
+  LFiles: TArray<TDAIIndexFileText>;
+  LEditorBytes: TArray<TBytes>;
+  LFormat: TDAITextFileFormat;
+  LIndex, LCaptured, LDecodedCharacters: Integer;
+begin
+  if (AMaximumBytes <= 0) or (AMaximumBytes > CDAIMaxTextFileBytes) then
+    raise EArgumentOutOfRangeException.Create('Ungültiges Dateigrößenlimit für den Index.');
+  if Length(AFileNames) > 32 then
+    raise EArgumentOutOfRangeException.Create('Ein Index-Lesebatch darf höchstens 32 Dateien enthalten.');
+  SetLength(LFiles, Length(AFileNames));
+  SetLength(LEditorBytes, Length(AFileNames));
+  LCaptured := 0;
+  if Length(LFiles) = 0 then
+    Exit(LFiles);
+  // Return a prefix if unsaved buffers exhaust the batch budget; the caller resumes at its returned length.
+  TDAIOTA.RunOnMainThread(
+    procedure
+    var
+      LFileIndex, LSnapshotBytes: Integer;
+      LEditor: IOTASourceEditor;
+    begin
+      LSnapshotBytes := 0;
+      for LFileIndex := 0 to High(LFiles) do
+      begin
+        LFiles[LFileIndex].FileName := AFileNames[LFileIndex];
+        try
+          LFiles[LFileIndex].FileName := TDAISettings.Instance.ExpandPath(AFileNames[LFileIndex]);
+          if not FileAllowedForRead(LFiles[LFileIndex].FileName) then
+            raise EDAIAccessDenied.Create('Lesezugriff ist nur auf Workspace- und freigegebene Referenzdateien erlaubt.');
+          LEditor := TDAIOTA.FindSourceEditor(LFiles[LFileIndex].FileName);
+          if Assigned(LEditor) then
+          begin
+            LEditorBytes[LFileIndex] := ReadIndexEditorBytes(LEditor, AMaximumBytes);
+            Inc(LSnapshotBytes, Length(LEditorBytes[LFileIndex]));
+            LFiles[LFileIndex].Source := 'editor_buffer';
+          end
+          else
+            LFiles[LFileIndex].Source := 'disk';
+        except
+          on E: Exception do
+            LFiles[LFileIndex].ErrorText := E.Message;
+        end;
+        LEditor := nil;
+        Inc(LCaptured);
+        if LSnapshotBytes >= CEditorSnapshotBudget then
+          Break;
+      end;
+    end);
+  SetLength(LFiles, LCaptured);
+  // Only the worker decodes and hashes the copied UTF-8 buffer or reads from disk.
+  LDecodedCharacters := 0;
+  for LIndex := 0 to High(LFiles) do
+  begin
+    if LFiles[LIndex].ErrorText = '' then
+      try
+        if LFiles[LIndex].Source = 'disk' then
+        begin
+          RequireNoReparseReadPath(LFiles[LIndex].FileName);
+          LFiles[LIndex].Content := TDAITextEncoding.ReadFile(LFiles[LIndex].FileName, LFormat, AMaximumBytes);
+        end
+        else
+        begin
+          LFiles[LIndex].Content := TEncoding.UTF8.GetString(LEditorBytes[LIndex]);
+          LEditorBytes[LIndex] := nil;
+          if LFiles[LIndex].Content.EndsWith(#0) then
+            Delete(LFiles[LIndex].Content, Length(LFiles[LIndex].Content), 1);
+        end;
+        if Length(LFiles[LIndex].Content) > AMaximumBytes then
+          raise EInvalidOperation.CreateFmt('Der Quelltext überschreitet das Textlimit von %d Zeichen.', [AMaximumBytes]);
+        LFiles[LIndex].Sha256 := THashSHA2.GetHashString(LFiles[LIndex].Content);
+      except
+        on E: Exception do
+        begin
+          LFiles[LIndex].ErrorText := E.Message;
+          LFiles[LIndex].Content := '';
+          LFiles[LIndex].Sha256 := '';
+          LEditorBytes[LIndex] := nil;
+        end;
+      end;
+    Inc(LDecodedCharacters, Length(LFiles[LIndex].Content));
+    if LDecodedCharacters >= CEditorSnapshotBudget then
+    begin
+      SetLength(LFiles, LIndex + 1);
+      Break;
+    end;
+  end;
+  Result := LFiles;
 end;
 
 class function TDAIFileService.ReferenceRoots: TJSONArray;

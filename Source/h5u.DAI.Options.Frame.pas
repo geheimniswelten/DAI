@@ -412,7 +412,7 @@ end;
 constructor TDAIOptionsFrame.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-  AutoScroll := False;
+  AutoScroll := True;
   FLoadedAllowIDEStartStop := True;
   BuildControls;
 end;
@@ -780,7 +780,7 @@ begin
   LInfoLabel.Font.Color := clGrayText;
   Inc(LTop, 76);
 
-  Align := alTop;
+  Align := alClient;
   Height := LTop;
 end;
 

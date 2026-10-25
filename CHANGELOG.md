@@ -1,5 +1,32 @@
 ﻿# Änderungsprotokoll
 
+## 1.2.36
+
+- Beim Öffnen des DAI-Menüs wird neben dem Hint auch der sichtbare Mauszeiger auf den Pfeil zurückgesetzt, vor und nach der Indexabfrage. Der globale VCL-Cursor bleibt unverändert, damit der Textcursor nach der Rückkehr in den Editor wieder regulär funktioniert.
+- Die Indexverwaltung erstellt und aktualisiert jeden Index über denselben Button anhand der ausgewählten Zeile. Fehlende Projekt-/Gruppenindizes können dort direkt erstellt werden; die zusätzliche Combobox und der separate Projektindex-Button entfallen. Der Aktionsbereich benötigt nur noch eine Zeile.
+- Projekt-/Gruppenindexdateien heißen jetzt `.dai\{Name}.projectindex.{Kennung}.sqlite` beziehungsweise `.dai\{Name}.groupindex.{Kennung}.sqlite`. Die bisherigen Pfadkennungen bleiben erhalten; alte Indexdateien werden nicht verändert. Die Berechtigungsdatei bleibt neben der Projektdatei.
+- ide_status und projects_list liefern kompakte Indexhinweise für Delphi, GetIt, Projektgruppe und aktives Projekt. Jede Projektzeile enthält zusätzlich ihren eigenen Indexstatus, auch bei inaktiven Projekten. Die Abfragen lesen nur Indexmetadaten und starten keinen Aufbau.
+- Die Einstellungsseite scrollt ihren Inhalt selbst innerhalb der verfügbaren IDE-Seitenfläche. Auch bei kleinen Optionsfenstern bleiben die unteren Einstellungen erreichbar; das Scrollen hängt nicht mehr von einer zusätzlichen ScrollBox des IDE-Hosts ab.
+- SQLite-Verbindungen aktivieren FireDAC LockWait ausdrücklich. Dadurch wirkt die bereits konfigurierte Wartezeit von fünf Sekunden; kurzzeitige parallele Lesezugriffe lassen Index-Commits nicht mehr sofort mit „database is locked“ abbrechen.
+- Globale Indexfehler zeigen ihre konkrete Ausnahme und Verarbeitungsphase. Aufbau-Beginn und Fehlerbericht werden gemeinsam veröffentlicht; scheitert dies, bleibt der vorherige Indexstatus erhalten. Nicht gespeicherte aktuelle Fehler bleiben in den lokalen Details verfügbar, ohne private Texte in freie MCP-Metadaten aufzunehmen.
+- Die Indexverwaltung zeigt die Größe jeder SQLite-Indexdatei in KB oder MB. Datei-, Deklarations- und Fortschrittszahlen verwenden die regionalen Tausendertrennzeichen.
+- „Fehlerdetails …“ und ein Doppelklick auf den Index öffnen vollständige, kopierbare Dateipfade und Fehlergründe. Dateifehler, letzter Abschlusszustand, allgemeine Fehler-/Abbruchgründe und Zeitpunkte bleiben in SQLite erhalten. Alte unterbrochene Aufbauten ohne aufgezeichneten Grund werden ausdrücklich als unbekannt erklärt.
+- Das zusätzliche 2-MiB-Limit des Indexers entfällt; es gilt der gemeinsame 16-MiB-Textschutz. Große Quellen werden einzeln verarbeitet; begrenzte UTF-8-Editorsnapshots und Speicherbudgets verhindern große gleichzeitige Lesepakete. MSHTML.pas mit 3,8 MiB wurde vollständig geprüft.
+- Freie MCP-Statusabfragen zu Projekt-/Gruppenaufträgen zeigen Fehlerzahlen, aber keine möglicherweise privaten Dateifehlertexte. Die vollständigen Berichte bleiben in der lokalen Indexverwaltung zugänglich.
+- Die Indexverwaltung misst die Höhe umgebrochener Hinweis- und Statustexte nach Fensterbreite, Schrift und DPI. Der untere Status bleibt vollständig sichtbar; die Hinweise oben stehen mit kompaktem Abstand untereinander.
+- Interne SQLite-Schreibbefehle verwenden den direkten FireDAC-Ausführungsweg statt des zusätzlichen Timeout-Workers je SQL-Befehl. Öffentliche SQL-Abfragen bleiben auf zwei Sekunden begrenzt; getrennte SQLite-Caches erhalten lesende Zugriffe während Schreibpaketen.
+- Indexaufbau bündelt IDE-Leseabfragen und SQLite-Transaktionen für bis zu 32 Dateien. Offene Editorpuffer bleiben maßgeblich; Datei-I/O, Decodierung, Hash und Parser laufen im Hintergrund. Fehlerhafte Dateien werden einzeln zurückgerollt.
+- Alle registrierten Starthelfer erhalten weiterhin zentral die aktuelle DAI-Version; die README und zusätzliche Tests unterscheiden diesen Aufruf von der normalen STDIO-Brücke.
+- Der Suchindex-Stash wurde mit den aktuellen Berechtigungen, manueller Clientregistrierung und Hint-Abbruch zusammengeführt. Die Indexeinträge stehen ganz unten im DAI-Menü, nach den IDE-/Projektrechten.
+- Das Iconmenü listet nach einem Trennstrich die Deklarationsindizes. Fehlende Projekt-/Gruppenindizes sind deaktiviert; die Indexverwaltung bleibt zum Erstellen erreichbar.
+- Eine nicht modale Indexverwaltung zeigt Datum, Zustand und Umfang. Erstellen/Aktualisieren laufen ausdrücklich als Hintergrundauftrag; Löschen betrifft nur den gewählten Index. Projektwechsel werden über gebundene Identitäten erkannt.
+- Nach geänderter Projektgruppenzuordnung verlangen Indexsuchen und SQL-Abfragen eine Aktualisierung. Erfolgreiche Builds speichern die gebundene Projektliste; unvollständige Builds geben keine Daten entfernter Projekte frei.
+- SQLite-Indizes erfassen Deklarationen mit Zeilenbereichen, Signaturen und vier Sichtbarkeitstexten. `strict` wird normalisiert; Getter-/Setter-Namen werden ausgelassen. Gemeinsame Dateien sind dedupliziert, Aktualisierung erfolgt anhand des Inhaltshashes.
+- project_index_status/build/delete, symbols_search/query und ide_ai_status ergänzen MCP. Fehlende/veraltbare Indizes lösen keinen automatischen Aufbau aus; aktuelle Quellen bleiben maßgeblich. Berechtigungen werden für alle Projekte der Gruppe geprüft.
+- SQLite verwendet Standard-FireDAC-Pakete mit statischem Treiber. SQL ist lesend, parameterisiert, zeilenbegrenzt und nach zwei Sekunden unterbrechbar. Unterbrochene Indizes bleiben als unvollständig erkennbar.
+- Der Delphi13-OTA-KI-Statusadapter erkennt Provider ohne Modellanfrage. In der laufenden IDE wurden OpenAI mit Chat/Instruction erfolgreich erkannt; keine Zugangsdaten verändert oder gelesen.
+- Ein separater DelphiLSP13-Test bestätigt documentSymbol mit Struktur/Signaturen/Bereichen, ohne workspaceSymbolProvider. Der produktive Index nutzt zunächst den lokalen Parser; LSP wurde als alternative Quelle geprüft.
+
 ## 1.2.35
 
 - Das eigene Popupmenü des DAI-Buttons ruft im OnPopup Application.CancelHint auf. Bereits sichtbare sowie noch wartende VCL-Hints werden vor dem Öffnen abgebrochen, damit sie das Menü nicht verdecken.

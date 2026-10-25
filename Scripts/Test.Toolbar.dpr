@@ -28,7 +28,9 @@ uses
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
-  h5u.DAI.Settings;
+  h5u.DAI.Settings,
+  h5u.DAI.Symbols.Dialog,
+  h5u.DAI.Symbols.Service;
 
 type
   TForeignToolButton = class(TToolButton)
@@ -393,7 +395,7 @@ begin
   TDAIIDEToolbar.Install;
   TDAIIDEToolbar.Refresh;
   LPopup := GHost.DAIButton.DropdownMenu;
-  Check(LPopup.Items.Count = 6, 'The status dropdown includes two permission shortcuts after a native separator');
+  Check(LPopup.Items.Count = 12, 'The status dropdown preserves permission shortcuts before the final index section');
   Check(LPopup.Items[3].Caption = '-', 'Permission shortcuts follow the requested native separator');
   Check(LPopup.Items[4].Caption = 'IDE : lesen', 'The IDE shortcut shows the effective read access');
   Check(LPopup.Items[5].Caption = 'Projekt : kein Projekt', 'An absent project never claims project access');

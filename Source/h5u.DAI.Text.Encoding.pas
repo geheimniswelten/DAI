@@ -58,12 +58,13 @@ type
     class function LineEndingName(const ALineEndingKind: TDAILineEndingKind): string; static;
     class function PrepareText(const AFileName, AText: string; const APreferredLineEndingKind: TDAILineEndingKind): string; static;
     class function PrepareWrite(const AFileName: string; const AText: string; out AWrittenText: string; out AFormat: TDAITextFileFormat): TBytes; static;
-    class function ReadFile(const AFileName: string; out AFormat: TDAITextFileFormat): string; static;
+    class function ReadFile(const AFileName: string; out AFormat: TDAITextFileFormat; const AMaximumBytes: Integer = 0): string; static;
   end;
 
 implementation
 
 uses
+  System.Classes,
   System.IOUtils;
 
 class function TDAITextEncoding.ApplyLineEnding(const AText: string; const ALineEndingKind: TDAILineEndingKind): string;
@@ -417,11 +418,32 @@ begin
   Result := EncodeBytes(AWrittenText, AFormat.EncodingKind);
 end;
 
-class function TDAITextEncoding.ReadFile(const AFileName: string; out AFormat: TDAITextFileFormat): string;
+class function TDAITextEncoding.ReadFile(const AFileName: string; out AFormat: TDAITextFileFormat; const AMaximumBytes: Integer): string;
 var
   LBytes: TBytes;
+  LStream: TFileStream;
+  LSize: Int64;
 begin
-  LBytes := TFile.ReadAllBytes(AFileName);
+  if AMaximumBytes < 0 then
+    raise EArgumentOutOfRangeException.Create('Das Dateigrößenlimit darf nicht negativ sein.');
+  if AMaximumBytes = 0 then
+    LBytes := TFile.ReadAllBytes(AFileName)
+  else
+  begin
+    LStream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyNone);
+    try
+      LSize := LStream.Size;
+      if LSize > AMaximumBytes then
+        raise EInvalidOperation.CreateFmt('Die Quelldatei überschreitet das Textlimit von %d Byte.', [AMaximumBytes]);
+      SetLength(LBytes, LSize);
+      if Length(LBytes) > 0 then
+        LStream.ReadBuffer(LBytes[0], Length(LBytes));
+      if LStream.Size > AMaximumBytes then
+        raise EInvalidOperation.Create('Die Quelldatei ist während des Lesens über das Textlimit gewachsen.');
+    finally
+      LStream.Free;
+    end;
+  end;
   AFormat.EncodingKind := DetectEncoding(AFileName, LBytes);
   Result := DecodeBytes(LBytes, AFormat.EncodingKind);
   AFormat.LineEndingKind := DetectLineEnding(Result);

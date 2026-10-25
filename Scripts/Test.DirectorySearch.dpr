@@ -5,6 +5,7 @@
 uses
   System.Classes,
   System.Generics.Collections,
+  System.Hash,
   System.IOUtils,
   System.JSON,
   System.SysUtils,
@@ -215,9 +216,136 @@ begin
   end;
 end;
 
+procedure CheckIndexBatches;
+var
+  LFiles: TArray<string>;
+  LTexts: TArray<TDAIIndexFileText>;
+  LCalls: Integer;
+  LFirstHash: string;
+  LLock: TFileStream;
+  LIndex: Integer;
+begin
+  LFiles := [Path('Workspace\Alpha1.pas'), Path('Encoding\Ansi.pas'), Path('Encoding\Utf16.txt'),
+    Path('Encoding\Utf8NoBOM.txt'), Path('References\Reference.pas'), Path('Outside\Outside.pas'),
+    Path('Workspace\Missing.pas'), Path('UnsupportedEncoding\UTF32.txt'), Path('Errors\Oversized.big')];
+  LCalls := TDAIOTA.TestMainThreadCallCount;
+  LTexts := TDAIFileService.ReadIndexFiles(LFiles, 4096);
+  Check(TDAIOTA.TestMainThreadCallCount - LCalls = 1, 'One IDE snapshot serves a complete index read batch');
+  Check(Length(LTexts) = Length(LFiles), 'Every index request has an ordered result, including failed sources');
+  for LIndex := 0 to 4 do
+  begin
+    Check(LTexts[LIndex].ErrorText = '', 'Allowed disk and reference sources are read successfully');
+    Check(LTexts[LIndex].FileName = LFiles[LIndex], 'Batch result retains its source path');
+    Check(LTexts[LIndex].Source = 'disk', 'Closed source uses the disk reader');
+    Check(LTexts[LIndex].Sha256 = THashSHA2.GetHashString(LTexts[LIndex].Content), 'Hash covers exactly the indexed text');
+  end;
+  Check(LTexts[1].Content = 'Caf' + #$00E9, 'Index batches preserve ANSI decoding');
+  Check(LTexts[2].Content = 'Caf' + #$00E9, 'Index batches preserve UTF-16 decoding');
+  Check(LTexts[3].Content = 'Caf' + #$00E9, 'Index batches preserve UTF-8 without BOM decoding');
+  for LIndex := 5 to High(LTexts) do
+  begin
+    Check(LTexts[LIndex].ErrorText <> '', 'Denied, missing, unsupported and oversized sources fail independently');
+    Check(LTexts[LIndex].Content = '', 'Failed reads return no partial source text');
+    Check(LTexts[LIndex].Sha256 = '', 'Failed reads return no successful source hash');
+  end;
+
+  SetBuffer('Workspace\Alpha1.pas', 'UNSAVED index version 1', 'editor_buffer');
+  SetBuffer('Workspace\NewUnsaved.pas', 'unit NewUnsaved; interface implementation end.', 'editor_buffer');
+  LLock := TFileStream.Create(Path('Workspace\Alpha1.pas'), fmOpenReadWrite or fmShareExclusive);
+  try
+    LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas'), Path('Workspace\NewUnsaved.pas')], 4096);
+    Check(LTexts[0].ErrorText = '', 'An open buffer is indexed even while its disk file is locked');
+    Check(LTexts[0].Content = 'UNSAVED index version 1', 'Unsaved text takes precedence over disk content');
+    Check(LTexts[0].Source = 'editor_buffer', 'Open buffer origin is recorded');
+    Check(LTexts[1].ErrorText = '', 'An open source can be indexed before its first save');
+    Check(not TFile.Exists(Path('Workspace\NewUnsaved.pas')), 'Index reading does not save new editor buffers');
+    LFirstHash := LTexts[0].Sha256;
+    SetBuffer('Workspace\Alpha1.pas', 'UNSAVED index version 2', 'editor_buffer');
+    LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas')], 4096);
+    Check(LTexts[0].Content = 'UNSAVED index version 2', 'A later batch captures the latest editor text');
+    Check(LTexts[0].Sha256 <> LFirstHash, 'Changed buffer text invalidates the previous content hash');
+  finally
+    LLock.Free;
+  end;
+  SetBuffer('Workspace\Alpha1.pas', '', 'editor_buffer', False);
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas'), Path('Workspace\Other.pas')], 4096);
+  Check(LTexts[0].ErrorText <> '', 'An unreadable editor reader fails instead of indexing stale disk content');
+  Check(LTexts[0].Content = '', 'An unreadable editor reader exposes no stale content');
+  Check(LTexts[1].ErrorText = '', 'A reader error does not prevent subsequent file reads');
+  SetBuffer('Workspace\Alpha1.pas', 'unreadable', 'editor_buffer', True, True);
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas')], 4096);
+  Check(LTexts[0].ErrorText <> '', 'Editor read exceptions are reported without disk fallback');
+  SetBuffer('Workspace\Alpha1.pas', StringOfChar('x', 4097), 'editor_buffer');
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas')], 4096);
+  Check(LTexts[0].ErrorText <> '', 'Oversized editor text is rejected without a partial index');
+  TDAIOTA.TestBuffers.Clear;
+  Check(Pos('MARK_IMPL', TFile.ReadAllText(Path('Workspace\Alpha1.pas'), TEncoding.UTF8)) > 0,
+    'Index snapshots leave saved source unchanged');
+  Check(TDAIOTA.WriteCount = 0, 'Index snapshots never write editor buffers');
+  Check(TDAIOTA.SaveCount = 0, 'Index snapshots never save editor buffers');
+end;
+
+procedure CheckLargeIndexSources;
+const
+  CMiB = 1024 * 1024;
+var
+  LContent: string;
+  LTexts: TArray<TDAIIndexFileText>;
+  LStream: TFileStream;
+begin
+  LContent := 'unit LargeIndex; interface type TLarge = class end; {' + StringOfChar('x', 3 * CMiB) + '} implementation end.';
+  WriteFixture('Workspace\LargeIndex.pas', LContent);
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\LargeIndex.pas'), Path('Workspace\Other.pas')], CDAIMaxTextFileBytes);
+  Check(Length(LTexts) = 1, 'A large disk source is returned as one bounded prefix instead of retaining the entire batch');
+  Check(LTexts[0].ErrorText = '', 'A real source larger than the former 2 MiB index limit is accepted');
+  Check(LTexts[0].Content = LContent, 'Large disk sources are returned completely without truncation');
+  Check(LTexts[0].Sha256 = THashSHA2.GetHashString(LContent), 'Large disk source hashes cover the complete content');
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Other.pas')], CDAIMaxTextFileBytes);
+  Check(LTexts[0].ErrorText = '', 'The caller can continue with the unread suffix after a large disk source');
+  Check(LTexts[0].Content = 'Other ALL_FILES', 'Prefix continuation does not duplicate or lose the next source');
+
+  SetBuffer('Workspace\Alpha1.pas', LContent, 'editor_buffer');
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas'), Path('Workspace\Other.pas')], CDAIMaxTextFileBytes);
+  Check(Length(LTexts) = 1, 'A large unsaved buffer limits the snapshot even when its disk file is small');
+  Check(LTexts[0].Content = LContent, 'An unsaved buffer larger than 2 MiB remains authoritative and complete');
+  Check(LTexts[0].Source = 'editor_buffer', 'Large unsaved sources retain their editor origin');
+  Check(LTexts[0].Sha256 = THashSHA2.GetHashString(LContent), 'Chunked UTF-8 snapshots preserve the large buffer hash');
+  LContent := StringOfChar(#$20AC, (2 * CMiB div 3) + 1000);
+  SetBuffer('Workspace\Alpha1.pas', LContent, 'editor_buffer');
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas'), Path('Workspace\Other.pas')], CDAIMaxTextFileBytes);
+  Check(Length(LTexts) = 1, 'Snapshot memory accounting includes UTF-8 bytes of multibyte characters');
+  Check(LTexts[0].Content = LContent, 'UTF-8 characters split across reader chunks are decoded without loss');
+
+  LContent := StringOfChar(#$20AC, 4096);
+  SetBuffer('Workspace\Alpha1.pas', LContent, 'editor_buffer');
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas')], 4096);
+  Check(LTexts[0].ErrorText = '', 'A valid UTF-16 character limit permits the corresponding multibyte UTF-8 snapshot');
+  Check(LTexts[0].Content = LContent, 'Exactly limited multibyte buffer content remains complete');
+  SetBuffer('Workspace\Alpha1.pas', LContent + #0, 'editor_buffer');
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas')], 4096);
+  Check(LTexts[0].Content = LContent, 'An optional editor terminal NUL does not consume the source text limit');
+  SetBuffer('Workspace\Alpha1.pas', LContent + #$20AC, 'editor_buffer');
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas')], 4096);
+  Check(LTexts[0].ErrorText <> '', 'A UTF-8 snapshot exceeding the bounded allocation is rejected');
+  Check(LTexts[0].Content = '', 'A rejected snapshot exposes no partially decoded source');
+  TDAIOTA.TestBuffers.Clear;
+
+  LStream := TFileStream.Create(Path('Workspace\TooLargeForText.pas'), fmCreate);
+  try
+    LStream.Size := CDAIMaxTextFileBytes + 1;
+  finally
+    LStream.Free;
+  end;
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\TooLargeForText.pas'), Path('Workspace\Other.pas')], CDAIMaxTextFileBytes);
+  Check(LTexts[0].ErrorText <> '', 'The shared 16 MiB text protection still rejects an oversized disk allocation');
+  Check(Pos(IntToStr(CDAIMaxTextFileBytes), LTexts[0].ErrorText) > 0, 'The error identifies the actual remaining text limit');
+  Check(LTexts[1].ErrorText = '', 'A failed large disk read does not hide a following small source');
+end;
+
 procedure CheckJunctions;
 var
   LResult: TJSONArray;
+  LTexts: TArray<TDAIIndexFileText>;
 begin
   if ParamCount = 0 then
     Exit;
@@ -230,6 +358,9 @@ begin
     LResult := TDAIFileService.DirectoryFiles(TPath.Combine(ParamStr(1), 'Alias'), '*.pas', False, 5000, '', 'MARK_OUTSIDE');
     LResult.Free;
   end, EDAIAccessDenied, 'Reparse', 'selected junction is rejected before content reads');
+  LTexts := TDAIFileService.ReadIndexFiles([TPath.Combine(ParamStr(1), 'Alias\Outside.pas')], 4096);
+  Check(LTexts[0].ErrorText <> '', 'Index disk reads also reject a junction into foreign sources');
+  Check(LTexts[0].Content = '', 'Rejected index junction reads expose no source content');
 end;
 
 procedure CreateFixtures;
@@ -307,6 +438,8 @@ begin
       CheckFilters;
       CheckBuffers;
       CheckErrors;
+      CheckIndexBatches;
+      CheckLargeIndexSources;
       CheckJunctions;
       Writeln('PASS: ', CheckCount, ' isolated directory search checks; real file service/regex/encoding, no live IDE or client settings.');
     finally

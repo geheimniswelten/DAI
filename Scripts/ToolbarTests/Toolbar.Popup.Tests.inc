@@ -298,8 +298,73 @@ begin
   TDAIIDEToolbar.Shutdown;
 end;
 
+procedure TestIndexMenu;
+var
+  LPopup: TPopupMenu;
+  LIndex: Integer;
+  LShowCount: Integer;
+  LScreenCursor: TCursor;
+  LNativeCursor: HCURSOR;
+begin
+  NewHost;
+  TDAISymbolService.Reset;
+  TDAIIDEToolbar.Install;
+  TDAIIDEToolbar.Refresh;
+  LPopup := GHost.DAIButton.DropdownMenu;
+  Check(LPopup.Items.Count = 12, 'Index entries follow the existing commands and permission shortcuts at the bottom');
+  Check(LPopup.Items[3].IsLine, 'Permission shortcuts retain their own separator');
+  Check(LPopup.Items[4].Caption = 'IDE : lesen', 'The IDE permission shortcut precedes the index section');
+  Check(LPopup.Items[5].Caption = 'Projekt : kein Projekt', 'The project permission shortcut precedes the index section');
+  Check(LPopup.Items[6].IsLine, 'Index entries begin with their own separator after the permission shortcuts');
+  Check(LPopup.Items[7].Caption = 'Index: Delphi / ToolsAPI', 'The final index section starts with Delphi sources');
+  Check(LPopup.Items[11].Caption = 'Indizes verwalten …', 'Index management remains the last menu entry');
+  Check(Assigned(LPopup.OnPopup), 'Index availability is refreshed only when opening the menu');
+  Check(TDAISymbolService.ListCount = 0, 'Toolbar installation performs no index IO');
+  PumpFor(650);
+  Check(TDAISymbolService.ListCount = 0, 'The 500-ms status timer performs no index IO');
+  LScreenCursor := Screen.Cursor;
+  LNativeCursor := Winapi.Windows.GetCursor;
+  try
+    Winapi.Windows.SetCursor(Screen.Cursors[crIBeam]);
+    LPopup.OnPopup(LPopup);
+    Check(Winapi.Windows.GetCursor = Screen.Cursors[crArrow], 'Opening replaces a native editor text cursor with the menu arrow');
+    Check(Screen.Cursor = LScreenCursor, 'Opening preserves the global VCL cursor policy');
+  finally
+    Winapi.Windows.SetCursor(LNativeCursor);
+  end;
+  Check(TDAISymbolService.ListCount = 1, 'Opening the popup reads one index snapshot');
+  Check(LPopup.Items[7].Enabled and LPopup.Items[8].Enabled, 'Reference index managers can be opened before creating their indices');
+  Check(not LPopup.Items[9].Enabled and not LPopup.Items[10].Enabled, 'Missing project and group indices have disabled individual entries');
+  Check(LPopup.Items[11].Enabled, 'Index manager remains available for explicit creation');
+  TDAISymbolService.Existing[2] := True;
+  TDAISymbolService.Existing[3] := True;
+  LPopup.OnPopup(LPopup);
+  Check(LPopup.Items[9].Enabled and LPopup.Items[10].Enabled, 'Existing project and group indices can be selected');
+  LShowCount := TDAISymbolIndexDialog.ShowCount;
+  for LIndex := 7 to 10 do
+  begin
+    LPopup.Items[LIndex].Click;
+    Check(TDAISymbolIndexDialog.ShowCount = LShowCount + LIndex - 6, 'Clicking an index opens the modeless manager once');
+    case LIndex of
+      7: Check(TDAISymbolIndexDialog.LastScope = 'delphi', 'Delphi entry selects its scope');
+      8: Check(TDAISymbolIndexDialog.LastScope = 'getit', 'GetIt entry selects its scope');
+      9: Check(TDAISymbolIndexDialog.LastScope = 'group', 'Group entry selects its scope');
+      10: Check(TDAISymbolIndexDialog.LastScope = 'project', 'Project entry selects its scope');
+    end;
+  end;
+  LPopup.Items[11].Click;
+  Check(TDAISymbolIndexDialog.LastScope = '', 'General manager entry preserves its previous selection');
+  Check(TDAISymbolService.BuildCount = 0, 'Menu navigation never creates an index');
+  TDAISymbolService.FailListing := True;
+  LPopup.OnPopup(LPopup);
+  Check(LPopup.Items[11].Enabled, 'The index manager remains accessible after a listing error');
+  Check(not LPopup.Items[9].Enabled and not LPopup.Items[10].Enabled, 'A failed refresh clears stale project index availability');
+  TDAISymbolService.Reset;
+end;
+
 procedure TestToolbarPopup;
 begin
+  TestIndexMenu;
   TestPopupTracking(False, False);
   TestPopupTracking(False, True);
   TestPopupTracking(True, True);

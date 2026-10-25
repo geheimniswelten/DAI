@@ -746,6 +746,13 @@ begin
 
     ## Units, Typen und Funktionen finden
 
+    - `project_index_status` listet vorhandene Indizes oder fragt einen Auftrag mit `request_id` ab. Ein Index ist optional und kann veraltet sein.
+    - `project_index_build` startet nur ausdrücklich einen Aufbau; `scope`: `project`, `group`, `delphi`, `getit`. Danach den Auftrag abfragen.
+    - Für kleine Projekte oft direkt suchen. `symbols_search` nutzt vorhandene Indizes; ein fehlender Index löst keinen automatischen Aufbau aus.
+    - Nach Indextreffern aktuelle Quellen mit `file_read` prüfen: spätere und ungespeicherte Änderungen können fehlen. IFDEF wird nicht semantisch aufgelöst.
+    - `symbols_query` erlaubt nur begrenzte SELECT/WITH-Abfragen mit `parameters`. Schreiben ausschließlich über DAI; direkte SQLite-Zugriffe nur lesend.
+    - `project_index_delete` löscht ausdrücklich den gewählten Index; Quellen und andere Indizes bleiben erhalten.
+    - `ide_ai_status` liest OTA-KI-Provider und Features. Aktiviert bedeutet keine durch eine Modellanfrage bestätigte API-Verbindung.
     - Ermittle mit `projects_list` und `project_files_list` die Dateien des Projekts bzw. der Gruppe; beachte zusätzlich `open_files_list`.
     - `reference_roots_list` liefert die tatsächlichen schreibgeschützten Delphi-, ToolsAPI-, Samples-, GetIt- und zusätzlichen Referenzpfade.
     - `%%BDS%%\Samples` ist ein Alias auf das öffentliche Samplesverzeichnis; verwende die gemeldeten Pfade statt eines vermuteten BDS-Unterordners.
@@ -962,6 +969,13 @@ begin
     '' + sLineBreak +
     '## Units, Typen und Funktionen finden' + sLineBreak +
     '' + sLineBreak +
+    '- `project_index_status` listet vorhandene Indizes oder fragt einen Auftrag mit `request_id` ab. Ein Index ist optional und kann veraltet sein.' + sLineBreak +
+    '- `project_index_build` startet nur ausdrücklich einen Aufbau; `scope`: `project`, `group`, `delphi`, `getit`. Danach den Auftrag abfragen.' + sLineBreak +
+    '- Für kleine Projekte oft direkt suchen. `symbols_search` nutzt vorhandene Indizes; ein fehlender Index löst keinen automatischen Aufbau aus.' + sLineBreak +
+    '- Nach Indextreffern aktuelle Quellen mit `file_read` prüfen: spätere und ungespeicherte Änderungen können fehlen. IFDEF wird nicht semantisch aufgelöst.' + sLineBreak +
+    '- `symbols_query` erlaubt nur begrenzte SELECT/WITH-Abfragen mit `parameters`. Schreiben ausschließlich über DAI; direkte SQLite-Zugriffe nur lesend.' + sLineBreak +
+    '- `project_index_delete` löscht ausdrücklich den gewählten Index; Quellen und andere Indizes bleiben erhalten.' + sLineBreak +
+    '- `ide_ai_status` liest OTA-KI-Provider und Features. Aktiviert bedeutet keine durch eine Modellanfrage bestätigte API-Verbindung.' + sLineBreak +
     '- Ermittle mit `projects_list` und `project_files_list` die Dateien des Projekts bzw. der Gruppe; beachte zusätzlich `open_files_list`.' + sLineBreak +
     '- `reference_roots_list` liefert die tatsächlichen schreibgeschützten Delphi-, ToolsAPI-, Samples-, GetIt- und zusätzlichen Referenzpfade.' + sLineBreak +
     '- `%%BDS%%\Samples` ist ein Alias auf das öffentliche Samplesverzeichnis; verwende die gemeldeten Pfade statt eines vermuteten BDS-Unterordners.' + sLineBreak +

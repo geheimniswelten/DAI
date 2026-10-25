@@ -38,7 +38,12 @@ requires
   designide,
   IndySystem,
   IndyCore,
-  IndyProtocols;
+  IndyProtocols,
+  dbrtl,
+  FireDAC,
+  FireDACCommon,
+  FireDACCommonDriver,
+  FireDACSqliteDriver;
 
 contains
   h5u.DAI.OTA.Threads in 'Source\h5u.DAI.OTA.Threads.pas',
@@ -59,6 +64,11 @@ contains
   h5u.DAI.Codex.Registration in 'Source\h5u.DAI.Codex.Registration.pas',
   h5u.DAI.Consts in 'Source\h5u.DAI.Consts.pas',
   h5u.DAI.Usage in 'Source\h5u.DAI.Usage.pas',
+  h5u.DAI.Symbols.Parser in 'Source\h5u.DAI.Symbols.Parser.pas',
+  h5u.DAI.Symbols.Store in 'Source\h5u.DAI.Symbols.Store.pas',
+  h5u.DAI.Symbols.Service in 'Source\h5u.DAI.Symbols.Service.pas',
+  h5u.DAI.Symbols.Dialog in 'Source\h5u.DAI.Symbols.Dialog.pas',
+  h5u.DAI.OTA.AI in 'Source\h5u.DAI.OTA.AI.pas',
   h5u.DAI.MCP.ToolUsage in 'Source\h5u.DAI.MCP.ToolUsage.pas',
   h5u.DAI.Registry.Editor in 'Source\h5u.DAI.Registry.Editor.pas',
   h5u.DAI.IDE.Notifier in 'Source\h5u.DAI.IDE.Notifier.pas',

@@ -22,6 +22,7 @@ implementation
 uses
   System.Actions,
   System.Classes,
+  System.JSON,
   System.SysUtils,
   System.Types,
   Winapi.CommCtrl,
@@ -41,7 +42,9 @@ uses
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
-  h5u.DAI.Settings;
+  h5u.DAI.Settings,
+  h5u.DAI.Symbols.Dialog,
+  h5u.DAI.Symbols.Service;
 
 type
   TDAIServerGlyphState = (sgInactive, sgActive, sgError, sgRecentAccess, sgEarlierAccess, sgNotRegistered, sgRegistrationUpdate, sgUpdateAvailable);
@@ -122,6 +125,8 @@ type
     FResetItem: TMenuItem;
     FIDEPermissionItem: TMenuItem;
     FProjectPermissionItem: TMenuItem;
+    FIndexItems: array[0..3] of TMenuItem;
+    FManageIndexesItem: TMenuItem;
     FImages: array[TDAIServerGlyphState] of Integer;
     FCallbackDepth: Integer;
     FBusy: Boolean;
@@ -163,6 +168,7 @@ type
     procedure ToggleServer(Sender: TObject);
     procedure OpenOptions(Sender: TObject);
     procedure ResetSessionPermissions(Sender: TObject);
+    procedure OpenIndexes(Sender: TObject);
   protected
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
   public
@@ -569,6 +575,11 @@ begin
     FIDEPermissionItem := nil;
   if AComponent = FProjectPermissionItem then
     FProjectPermissionItem := nil;
+  for var LIndex := Low(FIndexItems) to High(FIndexItems) do
+    if AComponent = FIndexItems[LIndex] then
+      FIndexItems[LIndex] := nil;
+  if AComponent = FManageIndexesItem then
+    FManageIndexesItem := nil;
 end;
 
 procedure TDAIToolbarController.RemoveUI;
@@ -749,6 +760,13 @@ begin
     FIDEPermissionItem.OnClick := nil;
   if Assigned(FProjectPermissionItem) then
     FProjectPermissionItem.OnClick := nil;
+  if Assigned(FPopup) then
+    FPopup.OnPopup := nil;
+  for var LIndex := Low(FIndexItems) to High(FIndexItems) do
+    if Assigned(FIndexItems[LIndex]) then
+      FIndexItems[LIndex].OnClick := nil;
+  if Assigned(FManageIndexesItem) then
+    FManageIndexesItem.OnClick := nil;
   // StopServer may pump synchronized workers. A reentrant IDE shutdown must
   // not destroy this receiver while one of its UI callbacks is still running.
   if FCallbackDepth = 0 then
@@ -937,8 +955,11 @@ begin
 end;
 
 procedure TDAIToolbarController.CreatePopup;
+const
+  LIndexCaptions: array[0..3] of string = ('Index: Delphi / ToolsAPI', 'Index: GetIt', 'Index: Projektgruppe', 'Index: Projekt');
 var
   LSeparator: TMenuItem;
+  LIndex: Integer;
 begin
   // AddToolButton requires dropdown ownership to match its returned button.
   FPopup := TPopupMenu.Create(FButton.Owner);
@@ -972,10 +993,38 @@ begin
   FProjectPermissionItem.FreeNotification(Self);
   FProjectPermissionItem.OnClick := OpenOptions;
   FPopup.Items.Add(FProjectPermissionItem);
+  LSeparator := TMenuItem.Create(FPopup);
+  LSeparator.Caption := '-';
+  FPopup.Items.Add(LSeparator);
+  for LIndex := Low(FIndexItems) to High(FIndexItems) do
+  begin
+    FIndexItems[LIndex] := TMenuItem.Create(FPopup);
+    FIndexItems[LIndex].FreeNotification(Self);
+    FIndexItems[LIndex].Caption := LIndexCaptions[LIndex];
+    FIndexItems[LIndex].Tag := LIndex;
+    FIndexItems[LIndex].Enabled := LIndex < 2;
+    FIndexItems[LIndex].OnClick := OpenIndexes;
+    FPopup.Items.Add(FIndexItems[LIndex]);
+  end;
+  FManageIndexesItem := TMenuItem.Create(FPopup);
+  FManageIndexesItem.FreeNotification(Self);
+  FManageIndexesItem.Caption := 'Indizes verwalten …';
+  FManageIndexesItem.Tag := -1;
+  FManageIndexesItem.OnClick := OpenIndexes;
+  FPopup.Items.Add(FManageIndexesItem);
   FButton.DropdownMenu := FPopup;
 end;
 
 procedure TDAIToolbarController.PopupOpening(Sender: TObject);
+const
+  LScopes: array[0..3] of string = ('delphi', 'getit', 'group', 'project');
+var
+  LResult: TJSONObject;
+  LValue: TJSONValue;
+  LIndexes: TJSONValue;
+  LScope: string;
+  LExists: Boolean;
+  LIndex: Integer;
 begin
   if FShuttingDown then
     Exit;
@@ -983,6 +1032,60 @@ begin
   try
     // Cancel both a visible hint and its pending show timer before native menu tracking.
     Application.CancelHint;
+    // Reset the visible editor caret cursor without installing a global Screen.Cursor override.
+    Winapi.Windows.SetCursor(Screen.Cursors[crArrow]);
+    // Query only while opening the popup, never from the toolbar status timer.
+    // Keep item identities fixed throughout native menu tracking.
+    for LIndex := Low(FIndexItems) to High(FIndexItems) do
+      if Assigned(FIndexItems[LIndex]) then
+        FIndexItems[LIndex].Enabled := LIndex < 2;
+    try
+      LResult := TDAISymbolService.ListIndexes;
+      try
+        LIndexes := LResult.GetValue('indexes');
+        if LIndexes is TJSONArray then
+          for LValue in TJSONArray(LIndexes) do
+            if LValue is TJSONObject then
+            begin
+              LScope := TJSONObject(LValue).GetValue<string>('scope', '');
+              LExists := TJSONObject(LValue).GetValue<Boolean>('exists', False);
+              for LIndex := Low(FIndexItems) to High(FIndexItems) do
+                if (LScope = LScopes[LIndex]) and Assigned(FIndexItems[LIndex]) then
+                  FIndexItems[LIndex].Enabled := (LIndex < 2) or LExists;
+            end;
+      finally
+        LResult.Free;
+      end;
+    except
+      on E: Exception do
+        TDAILog.Error('DAI-Indexliste konnte nicht gelesen werden: ' + E.Message);
+    end;
+    // Index queries can change the cursor; restore the menu arrow immediately before tracking starts.
+    Winapi.Windows.SetCursor(Screen.Cursors[crArrow]);
+  finally
+    LeaveCallback;
+  end;
+end;
+
+procedure TDAIToolbarController.OpenIndexes(Sender: TObject);
+const
+  LScopes: array[0..3] of string = ('delphi', 'getit', 'group', 'project');
+var
+  LScope: string;
+  LTag: NativeInt;
+begin
+  if FShuttingDown then
+    Exit;
+  Inc(FCallbackDepth);
+  try
+    LScope := '';
+    if Sender is TMenuItem then
+    begin
+      LTag := TMenuItem(Sender).Tag;
+      if (LTag >= Low(LScopes)) and (LTag <= High(LScopes)) then
+        LScope := LScopes[LTag];
+    end;
+    TDAISymbolIndexDialog.Show(LScope);
   finally
     LeaveCallback;
   end;

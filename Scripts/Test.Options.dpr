@@ -14,6 +14,7 @@ uses
   Vcl.Forms,
   Vcl.ExtCtrls,
   Vcl.StdCtrls,
+  Winapi.Messages,
   Winapi.Windows,
   h5u.DAI.Clients.Registration in 'OptionsTests\h5u.DAI.Clients.Registration.pas',
   h5u.DAI.Codex.Registration in 'OptionsTests\h5u.DAI.Codex.Registration.pas',
@@ -1222,6 +1223,150 @@ begin
   end;
 end;
 
+procedure CheckScrollableOptionsHost(const AScrollBoxHost: Boolean; const APPI: Integer);
+var
+  LHost: TForm;
+  LViewport: TWinControl;
+  LFrame: TDAIOptionsFrame;
+  LApplicationHandle: HWND;
+  LWarning: TLabel;
+  LManualRegistration: TCheckBox;
+  LComponent: TComponent;
+  LPortEdit, LTokenEdit: TEdit;
+  LContentHeight, LSaveCount, LPermissionWrites: Integer;
+  LScrollInfo: TScrollInfo;
+
+  function HasNativeBar(const AControl: TWinControl; const AStyle: NativeInt): Boolean;
+  begin
+    Result := (GetWindowLong(AControl.Handle, GWL_STYLE) and AStyle) <> 0;
+  end;
+
+  procedure CheckSingleScrollOwner;
+  begin
+    Check(not HasNativeBar(LHost, WS_VSCROLL), 'The outer form does not add a second vertical scrollbar');
+    if AScrollBoxHost then
+    begin
+      Check(TScrollBox(LViewport).VertScrollBar.Range = 0, 'An outer ScrollBox excludes the client-aligned frame from its range');
+      Check(not HasNativeBar(LViewport, WS_VSCROLL), 'The old ScrollBox host does not add a second vertical scrollbar');
+    end;
+  end;
+
+  procedure ResizeViewport(const ALogicalHeight: Integer);
+  begin
+    LHost.ClientHeight := MulDiv(ALogicalHeight, APPI, 96);
+    LHost.Realign;
+    LViewport.Realign;
+    LFrame.Realign;
+    Check((LFrame.Top = 0) and (LFrame.Height = LViewport.ClientHeight), 'Frame height follows the available host viewport');
+  end;
+
+  procedure CheckSmallViewport(const ALogicalHeight: Integer);
+  begin
+    ResizeViewport(ALogicalHeight);
+    Check(LFrame.VertScrollBar.Range > LFrame.ClientHeight, 'The complete options content has a vertical scroll range');
+    Check(HasNativeBar(LFrame, WS_VSCROLL), 'A native vertical scrollbar is visible on the frame');
+    FillChar(LScrollInfo, SizeOf(LScrollInfo), 0);
+    LScrollInfo.cbSize := SizeOf(LScrollInfo);
+    LScrollInfo.fMask := SIF_RANGE or SIF_PAGE or SIF_POS;
+    Check(GetScrollInfo(LFrame.Handle, SB_VERT, LScrollInfo), 'The native scrollbar exposes its range and viewport');
+    Check((LScrollInfo.nMax >= LContentHeight - 1) and (LScrollInfo.nPage > 0), 'The native scrollbar includes the final options controls');
+    LFrame.Perform(WM_VSCROLL, SB_BOTTOM, 0);
+    Check(LFrame.VertScrollBar.Position > 0, 'The native bottom-scroll action moves the options content');
+    Check((LWarning.Top >= 0) and (LWarning.Top + LWarning.Height <= LFrame.ClientHeight), 'The full final warning is reachable at the bottom');
+    Check((LManualRegistration.Top >= 0) and (LManualRegistration.Top + LManualRegistration.Height <= LFrame.ClientHeight),
+      'The last editable option remains fully reachable');
+    LFrame.Perform(WM_VSCROLL, SB_TOP, 0);
+    Check(LFrame.VertScrollBar.Position = 0, 'The native top-scroll action restores the content origin');
+    LFrame.ScrollInView(LManualRegistration);
+    Check((LManualRegistration.Top >= 0) and (LManualRegistration.Top + LManualRegistration.Height <= LFrame.ClientHeight),
+      'VCL ScrollInView can bring the final editable option into view');
+    CheckSingleScrollOwner;
+  end;
+
+begin
+  TestStage := Format('ScrollableOptionsHost ScrollBox=%s PPI=%d', [BoolToStr(AScrollBoxHost, True), APPI]);
+  TDAIRuntime.Reset;
+  TDAISettings.Reset;
+  TDAIPermissionManager.Reset;
+  LHost := TForm.CreateNew(nil);
+  LApplicationHandle := Application.Handle;
+  try
+    // Native windows remain hidden; all settings and dependencies are the existing in-memory test doubles.
+    LHost.AutoScroll := False;
+    // The fit-all-content case may exceed the monitor height after virtual DPI scaling.
+    LHost.Constraints.MaxHeight := 12000;
+    LHost.ClientWidth := 900;
+    LHost.ClientHeight := 600;
+    Application.Handle := LHost.Handle;
+    if AScrollBoxHost then
+    begin
+      LViewport := TScrollBox.Create(LHost);
+      TScrollBox(LViewport).AutoScroll := True;
+      TScrollBox(LViewport).BorderStyle := bsNone;
+    end
+    else
+    begin
+      LViewport := TPanel.Create(LHost);
+      TPanel(LViewport).BevelOuter := bvNone;
+    end;
+    LViewport.Parent := LHost;
+    LViewport.Align := alClient;
+    LFrame := TDAIOptionsFrame.Create(LHost);
+    LFrame.Parent := LViewport;
+    LFrame.LoadFromSettings;
+    LWarning := nil;
+    for LComponent in LFrame do
+      if (LComponent is TLabel) and StartsText('Betroffene KI-Clients', TLabel(LComponent).Caption) then
+        LWarning := TLabel(LComponent);
+    Check(Assigned(LWarning), 'The final multiline options warning exists');
+    LManualRegistration := TCheckBox(LFrame.FindComponent('DAIManualClientRegistrationCheckBox'));
+    Check(Assigned(LManualRegistration), 'The final editable option exists');
+    LPortEdit := EditControl(LFrame, True);
+    LTokenEdit := EditControl(LFrame, False);
+    LPortEdit.Text := '7654';
+    LTokenEdit.Text := 'synthetic-unsaved-scroll-draft';
+    LManualRegistration.Checked := not LManualRegistration.Checked;
+    LSaveCount := TDAISettings.Instance.SaveCount;
+    LPermissionWrites := TDAIPermissionManager.Instance.WriteCount;
+    LViewport.HandleNeeded;
+    LFrame.HandleNeeded;
+    LHost.ScaleForPPI(APPI);
+    Check(LHost.PixelsPerInch = APPI, 'The isolated host uses the requested VCL DPI');
+    Check(LFrame.AutoScroll and (LFrame.Align = alClient), 'The options frame owns scrolling inside its available viewport');
+    LFrame.VertScrollBar.Position := 0;
+    LContentHeight := LWarning.Top + LWarning.Height;
+    CheckSmallViewport(600);
+    CheckSmallViewport(400);
+    LHost.ClientHeight := LContentHeight + MulDiv(48, APPI, 96);
+    LHost.Realign;
+    LViewport.Realign;
+    LFrame.Realign;
+    Check(not HasNativeBar(LFrame, WS_VSCROLL), Format('The frame removes its native scrollbar when all content fits (range=%d, client=%d, content=%d)',
+      [LFrame.VertScrollBar.Range, LFrame.ClientHeight, LContentHeight]));
+    Check(LFrame.VertScrollBar.Position = 0, 'Enlarging the viewport resets the previous scroll position');
+    Check((LWarning.Top >= 0) and (LWarning.Top + LWarning.Height <= LFrame.ClientHeight), 'All final options content fits in the enlarged viewport');
+    CheckSingleScrollOwner;
+    CheckSmallViewport(400);
+    Check((LPortEdit.Text = '7654') and (LTokenEdit.Text = 'synthetic-unsaved-scroll-draft'), 'Scrolling and resizing preserve unsaved connection drafts');
+    Check((TDAISettings.Instance.SaveCount = LSaveCount) and (TDAIPermissionManager.Instance.WriteCount = LPermissionWrites),
+      'Scrolling, native navigation and DPI changes never save options or permissions');
+    Check(not LHost.Visible, 'Scroll regression checks never display an IDE or fixture window');
+  finally
+    Application.Handle := LApplicationHandle;
+    LHost.Free;
+  end;
+end;
+
+procedure CheckOptionsScrolling;
+var
+  LScrollBoxHost: Boolean;
+  LPPI: Integer;
+begin
+  for LScrollBoxHost := False to True do
+    for LPPI in [96, 144, 192] do
+      CheckScrollableOptionsHost(LScrollBoxHost, LPPI);
+end;
+
 procedure CheckPermissionColumns;
 var
   LFrame: TDAIOptionsFrame;
@@ -1437,6 +1582,7 @@ begin
     CheckPermissionColumns;
     CheckRegistrationHealthRefresh;
     CheckManualRegistrationOptions;
+    CheckOptionsScrolling;
     Writeln('PASS: ', CheckCount, ' native options-frame UI checks');
   except
     on E: Exception do

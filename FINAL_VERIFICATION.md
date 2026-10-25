@@ -1,4 +1,158 @@
-﻿# DAI 1.2.35 – Hint beim Popupöffnen abbrechen, 24. Oktober 2026
+﻿# DAI 1.2.36 – Suchindex-Stash integriert, 24. Oktober 2026
+
+Nachtrag zum Mauszeiger beim Öffnen des DAI-Menüs, 25. Oktober 2026:
+PopupOpening setzt nach CancelHint und nach der Indexabfrage den sichtbaren Cursor nativ über SetCursor(Screen.Cursors[crArrow]).
+Screen.Cursor bleibt unverändert; die VCL kann nach dem Menü wieder den normalen Cursor des jeweiligen Controls auswählen.
+Die installierten VCL-Quellen bestätigen: crDefault setzt bei unverändertem Wert keinen Cursor; beim Wechsel fragt es das Fenster unter der Maus ab.
+Eine bestehende native Popup-Prüfung startet mit einem IBeam und bestätigt den Pfeil sowie unveränderten globalen Screen.Cursor nach OnPopup.
+Test.Toolbar -Focus Popup besteht mit 6117 Prüfungen unter Win32 und 6237 unter Win64, einschließlich nativer Menüverfolgung und bestehender Statusänderungen.
+Release-Package und Bridge wurden erfolgreich für Win32/Win64 gebaut. Die Tests verwenden ausschließlich die isolierte Toolbar-Fixture.
+Keine Benutzerprojekte, Editorpuffer oder IDE-Optionen geändert; unabhängige Änderungen an DAI.dproj bleiben unberührt.
+Whitespaceprüfung der für diese Korrektur bearbeiteten Quell-, Test- und Dokumentationsdateien sauber. Kein IDE-Neustart oder automatisches Package-Neuladen.
+
+Nachtrag zur einheitlichen Indexaktion, 25. Oktober 2026:
+Die Auswahl der Listenzeile bestimmt Erstellen, Aktualisieren und Löschen. Der gemeinsame Button erstellt auch fehlende Projekt-/Gruppenindizes.
+Die redundante Combobox und der separate Projektindex-Erstellen-Button samt zugehöriger Logik wurden entfernt.
+Gespeicherte Projekt-/Gruppenziele sind Voraussetzung; queued/building/running und ein aktiver eigener Auftrag sperren Änderungen.
+Der direkte Click-Handler respektiert den gesperrten Zustand. Scope und angezeigte Identität werden weiterhin an den Service übergeben.
+Der Footer enthält nur eine Aktionszeile; Statusumbruch, gemessene Texthöhe und DPI-Skalierung bleiben erhalten.
+SymbolDialog besteht je Win32/Win64 mit 753 Prüfungen für alle vier Scopes, Erstellung/Aktualisierung, Löschen, Ziel-/Busy-Sperren und Fehlerdetails.
+Die vorhandenen Layoutprüfungen umfassen 900/1200 Pixel bei 96/144/192 PPI; Ansichten bei 96 und 192 PPI wurden visuell geprüft.
+Release-Package und Bridge wurden erfolgreich für beide Architekturen gebaut. Keine Benutzerindizes oder IDE-Einstellungsentwürfe verändert.
+Die laufende IDE wurde weder neu gestartet noch das Package automatisch neu geladen.
+
+Nachtrag zum Dateinamensschema der Projektindizes, 25. Oktober 2026:
+Projekt-/Gruppenindexdateien heißen .dai\{Basisname}.projectindex.{Kennung}.sqlite beziehungsweise .dai\{Basisname}.groupindex.{Kennung}.sqlite.
+Eine gemeinsame Namensfunktion versorgt aktive/inaktive Projektabfragen und Gruppenabfragen; die bestehende 16-stellige Pfadkennung bleibt erhalten.
+Projektzuordnung, SDK-/GetIt-Ablage und ausdrücklich angeforderter Aufbau bleiben unverändert. Die Berechtigungsdatei bleibt neben der Projektdatei.
+Dateien nach dem bisherigen Schema werden weder verändert noch automatisch übernommen; ein ausdrücklicher Neuaufbau verwendet den neuen Namen.
+SymbolService besteht je Win32/Win64 mit 343 Prüfungen, einschließlich Basisnamen mit Punkten, beider Namensschemata und unberührter Altdateien.
+Release-Package und Bridge wurden erfolgreich für Win32/Win64 gebaut. Die blockierte Win32-BPL wurde durch das vorhandene Buildverfahren umbenannt.
+Keine Benutzerindizes erstellt oder verändert und keine IDE neu gestartet.
+
+Nachtrag zu kompakten Indexhinweisen, 25. Oktober 2026:
+ide_status und projects_list liefern unter indexes die vier Bereiche delphi, getit, group und das aktive project.
+Jede Projektzeile enthält zusätzlich index für ihr eigenes Projekt, einschließlich inaktiver Gruppenprojekte ohne Aktivierung.
+Die Hinweise enthalten nur exists/state/indexed_at/freshness und gegebenenfalls requires_update; freshness bleibt unknown.
+Die Abfrage liest ausschließlich ausgewählte Indexmetadaten, ohne Quelltexte, Deklarationszählung oder impliziten Indexaufbau.
+Metadata-only-Verbindungen warten nicht auf SQLite-Sperren. Normale Leser und Writer behalten BusyTimeout=5000/LockWait=True.
+Fehlende, gesperrte oder fehlerhafte Indizes lassen die Basisinformationen verfügbar; private Fehlertexte werden nicht ausgegeben.
+Bestanden je Win32/Win64: IndexHints 84, SymbolStore 138 und SymbolService 338 Prüfungen.
+Der Integrationstest übernimmt die echten Status-/Dispatch-/Helperquellen unverändert und prüft aktive/inaktive Projektzuordnung sowie Fehlerisolation.
+Backendtests prüfen Metadaten ohne Quelltabellen, echte exklusive SQLite-Sperren unter einer Sekunde sowie bestehende Commit-Warte- und SQL-Schutzprüfungen.
+Readonly-Review ohne Blocker; Release-Package und Bridge wurden erfolgreich für beide Architekturen gebaut.
+Keine Benutzerindizes erstellt oder aktualisiert und keine IDE neu gestartet.
+
+Nachtrag zur Scrollbar der Einstellungsseite:
+Der Optionsframe aktiviert sein natives AutoScroll und füllt die verfügbare Hostfläche mit alClient.
+Eine zusätzliche ScrollBox und Umparenten der bestehenden Einstellungen sind nicht erforderlich.
+Die bisherige statische Vorgabe alTop/IDE-eigene ScrollBox wurde durch native Verhaltensprüfungen ersetzt.
+Test.Options besteht je Win32/Win64 mit 1162 Prüfungen. Panel- und ScrollBox-Hosts bei 96/144/192 DPI prüfen native Scrollleiste,
+WM_VSCROLL, ScrollInView, Erreichbarkeit der letzten Einstellungen, Größenwechsel, fehlende Doppelleisten und unveränderte Optionsentwürfe.
+Die Python-Verifier-Tests bestehen mit 27 Prüfungen; Release-Package und Bridge wurden für Win32/Win64 erfolgreich gebaut.
+Keine Optionen in der Benutzer-IDE geöffnet oder gespeichert und keine IDE neu gestartet.
+
+Nachtrag zu SQLite-Commit-Sperren:
+Die Debuggerdiagnose benennt ESQLiteNativeException/database is locked beim Commit während Initialize beziehungsweise BeginErrorReport.
+Ein kontrollierter paralleler ReadOnly-Cursor reproduziert dies bereits bei einer Haltezeit von 200 ms.
+Mit unveränderten bisherigen Parametern war LockWait=False und PRAGMA busy_timeout effektiv 0, obwohl BusyTimeout=5000 gesetzt war.
+OpenConnection setzt jetzt UpdateOptions.LockWait=True vor Connected=True. Die tatsächliche SQLite-Wartezeit beträgt dadurch 5000 ms.
+Derselbe Commit gelingt nach Freigabe des Lesers in rund 203 ms. Journalmodus, Synchronisationswerte und bestehende Timeoutwerte bleiben erhalten.
+Die Regression kontrolliert die tatsächliche Store-Verbindung und den Commit gegen einen echten parallelen Leser.
+Bestanden je Win32/Win64: SymbolStore 123 und SymbolService 215 Prüfungen, einschließlich bestehender SQL-Lese-/Zeitgrenzen.
+Release-Package und Bridge wurden mit Build.ps1 erfolgreich für beide Architekturen gebaut. Keine Benutzerindizes verändert und keine IDE neu gestartet.
+
+Nachtrag zu fehlgeschlagenen Aktualisierungen und leeren Fehlerdetails:
+Der vorhandene Benutzerindex wurde ausschließlich über SQLite-Read-only-Backup in isolierte Build-Verzeichnisse kopiert.
+Mit Win32 und Win64 liefen auf der Kopie alle 2275 Hashskips, Pruning und Abschluss ohne parallele Leser erfolgreich; die spätere Sperrreproduktion ist oben dokumentiert.
+Nachgewiesen und korrigiert: Initialize veröffentlichte einen neuen Start vor dem Fehlerbericht. Beginn und Bericht sind jetzt atomar.
+Echte SQLite-Trigger prüfen fehlgeschlagenen Berichtsbeginn und fehlgeschlagenen Abschluss, einschließlich ursprünglicher und sekundärer Fehler.
+Der Service hält aktuelle, identitätsgebundene Laufzeitdiagnosen vor, ohne private Fehlertexte in freie MCP-Metadaten aufzunehmen.
+Neuere persistierte Berichte haben Vorrang; erfolgreicher Neuaufbau und Löschen unterdrücken alte Fehler. Nicht persistierte Gründe tragen einen klaren Lebensdauerhinweis.
+Der Dialog zeigt den konkreten Fehler kurz im Status und vollständig in den Details; nachfolgende Ladefehler verdecken den ursprünglichen Grund nicht.
+Bestanden je Win32/Win64: SymbolStore 115, SymbolService 215 und SymbolDialog 611 Prüfungen.
+Release-Package und Bridge wurden für beide Architekturen mit Build.ps1 erfolgreich gebaut. Keine Benutzerindizes verändert und keine IDE neu gestartet.
+
+Nachtrag zu Indexgrößen und Zahlenformatierung:
+Die Indexliste zeigt die Größe der SQLite-Datei in KB/MB; unbekannte Größen erscheinen als Gedankenstrich.
+Die Messung über GetFileSizeEx folgt dem Wachstum bei geöffnetem SQLite-Writer und verändert den Indexstatus nicht.
+MCP-Metadaten enthalten size_bytes als Int64-Zahl oder null. Die Oberfläche formatiert Datei-/Deklarationszahlen,
+Fortschritt und Fehlerzahlen mit lokalen Tausendertrennzeichen; Int64-Zählwerte bleiben auch unter Win64 exakt.
+Bestanden je Win32/Win64: SymbolService 174 und SymbolDialog 579 Prüfungen, einschließlich KB/MB-Grenzen,
+unbekannter Größen, großer Zähler und bestehender DPI-/Layoutfälle. Gerenderte Ansichten wurden visuell geprüft.
+Release-Package und Bridge wurden mit Build.ps1 für beide Architekturen erfolgreich gebaut.
+
+Nachtrag zu dauerhaften Fehlerdetails und großen Quellen:
+Die Indexverwaltung zeigt vollständige Dateipfade und Gründe in einem modeless, kopierbaren Textfenster.
+Dateifehler werden vollständig und paginiert in der additiven SQLite-Tabelle index_errors (Schema 1) gespeichert.
+Zusätzlich bleiben Abschlusszustand, allgemeiner Fehler-/Abbruchgrund und Zeitpunkte erhalten, einschließlich Fehlern der Dateisammlung.
+Separate Berichtsidentitäten verhindern die Anzeige alter Fehler nach Änderung der Projektgruppe. Unbekannte frühere Unterbrechungen werden ehrlich erklärt.
+Detailseiten prüfen Berichtskennung/Gesamtzahl und lehnen laufende/neugestartete Berichte ab; Projekt-MCP-Status enthält nur Fehlerzahlen.
+
+Der gemeinsame 16-MiB-Textschutz ersetzt das zusätzliche 2-MiB-Limit. Große Dateien werden einzeln verarbeitet.
+Snapshots und dekodierte Inhalte haben ein Aggregatbudget; offene UTF-8-Puffer werden begrenzt gelesen und erst im Worker dekodiert.
+Eine verkürzte Batchantwort wird anhand ihrer tatsächlichen Länge fortgesetzt. Die Datenträgerallokation verwendet exakt eine zuvor geprüfte Größe.
+
+Bestanden je Win32/Win64: SymbolStore 104, SymbolService 163, SymbolDialog 547, DirectorySearch 195,
+EditorWrite 235 und SymbolDispatch 7589 Prüfungen. Fälle umfassen mehr als 50/500 Fehler, lange Gründe,
+Wiederöffnen, persistierte Abbruch-/Fehlerzustände, Eigentümerwechsel, Paginationwechsel, UTF-8-Grenzen und große Quellen.
+Gerenderte Fehlerfenster wurden visuell geprüft; Tests verändern die Benutzer-Zwischenablage nicht.
+MSHTML.pas wurde frisch mit aktuellem Textleser, Parser und Store geprüft: 3.999.233 Byte, 68.927 Zeilen, 6.822 Deklarationen.
+Isolierte Gesamtlaufzeit einschließlich SQLite: Win32 528 ms/68,41 MiB Peak, Win64 539 ms/87,82 MiB Peak.
+Alle Diagnose- und Testdatenbanken liegen unter Build oder eigenen temporären Testverzeichnissen; Benutzerindizes wurden nicht verändert.
+
+Nachtrag zum Indexfenster-Layout:
+Die oberen Hinweise und der untere Status verwenden gemessene Texthöhen statt fester Pixelhöhen.
+Header und Footer passen sich an den Inhalt an; der Abstand zwischen den oberen Hinweisen beträgt 8 skalierte Pixel.
+Bei Breiten-, Schrift- und DPI-Änderungen werden Umbruch und Höhe neu berechnet; die ausgerichtete Breite bleibt fest.
+Der lange Produktionswarntext wird vollständig angezeigt, kurze Fortschrittsmeldungen benötigen nur ihre tatsächliche Höhe.
+
+Der echte VCL-Dialog besteht 435 Prüfungen je Win32/Win64, einschließlich der ursprünglichen 60 Funktionsprüfungen.
+Geprüft: 900→1200→900 Breite bei 96/144/192 PPI, Rückskalierung, DrawText-Messung gegen vollständigen Produktionswarntext,
+Parentgrenzen sämtlicher Texte und Aktionen, kompakter Header und sichtbarer Schließen-Button.
+Gerenderte Ansichten mit 96 und 192 PPI wurden visuell kontrolliert; PNGs liegen unter Build/Tests-SymbolDialog-Win32 bzw. Win64.
+Release-Package und Bridge wurden erfolgreich für beide Architekturen gebaut. Die Benutzer-IDE und laufende Indizes blieben unberührt.
+
+Nachtrag zur Index-Performance:
+Der endliche FireDAC-CmdExecTimeout erzeugte bei internen SQLite-Befehlen zusätzliche Ausführungs-/Wartekosten.
+Der Indexwriter verwendet jetzt den direkten Standardweg, während öffentliche SQL-Abfragen ihre 2-Sekunden-Grenze,
+SQLite-Authorizer und Progress-Abbruchprüfung behalten. Private Verbindungscaches verhindern Shared-Cache-Lesekonflikte.
+IDE-Snapshots und Schreibtransaktionen erfolgen in Paketen von höchstens 32 Dateien; einzelne Dateien haben Savepoints.
+Offene Editorpuffer behalten Vorrang, auch bei fehlenden oder gesperrten Diskdateien. Disk-I/O, Decodierung, Hash und Parser laufen im Worker.
+
+Isolierter Win32-Store-Benchmark (500 Dateien mit je 20 Deklarationen, ohne Parser/IDE):
+- Ausgangsstand: 177.792,6 ms.
+- Direkter Writer, Einzelcommits: 1.176,9 ms.
+- Direkter Writer mit 32er-Paketen: 428,9 ms.
+Die Werte beschreiben den Schreibtest; die vollständige SDK-Indizierung wurde nicht als Laufzeitvergleich gemessen.
+Benchmarkartefakte liegen ausschließlich unter Build/Tests-SymbolStore-Benchmark; keine Benutzerindizes wurden verändert.
+
+Aktuell bestanden je Win32/Win64: SymbolStore 85, SymbolService 108 und DirectorySearch 175 Prüfungen.
+Die neuen Fälle prüfen Batch-Commit/-Rollback/-Destruktor, Dateisavepoints, Lesesichtbarkeit, SQL-Zeitlimit,
+Editorpriorität und -änderungen, Codierungen, Größenlimits, einzelne Lesefehler, Berechtigungen und Reparsepfade.
+Release-Package und Bridge wurden mit Build.ps1 erfolgreich für beide Architekturen gebaut.
+Die laufende IDE verwendet weiterhin ihr bereits geladenes Package; ein Neustart oder Neuladen wurde nicht ausgelöst.
+
+Hintergrund: [FireDAC CmdExecTimeout](https://docwiki.embarcadero.com/Libraries/Athens/en/FireDAC.Stan.Option.TFDResourceOptions.CmdExecTimeout)
+und [SQLite-Verbindungen mit FireDAC](https://docwiki.embarcadero.com/RADStudio/Florence/en/Using_SQLite_with_FireDAC).
+
+Die Suchindexänderungen wurden mit Berechtigungsumbau, manueller Registrierung und Hint-Abbruch zusammengeführt.
+Das Popup enthält zuerst die vorhandenen Aktionen und IDE-/Projektrechte, darunter einen eigenen Trenner und die Indexeinträge.
+Versionen sind auf 1.2.36 vereinheitlicht; das Manifest wird aus dem zusammengeführten Stand erzeugt.
+Alle *_start-Registrierungen enthalten --dai-version mit CDAIVersion. Die normale STDIO-Brücke benötigt nur --url;
+zusätzliche Tests prüfen beide Argumentformen und alle manuellen und registrierten Clientformate.
+Projekt-/Gruppenindizes prüfen die aktuellen Berechtigungen und die gespeicherte Projektzuordnung, globale Referenzcaches die IDE-/DAI-Änderungsrechte.
+Normale Inhaltsänderungen erlauben weiterhin Suchen mit Veraltungshinweis; geänderte Gruppenmitglieder erfordern eine ausdrückliche Aktualisierung.
+
+Delphi 13 Win32/Win64 bestanden jeweils: SymbolParser496, SymbolStore59, SymbolService91, SymbolDialog60,
+SymbolDispatch7575, Clientregistrierung2493, Toolbar-Permissions1168, ToolUsage1575, Runtime94 und PermissionRouting1129 Prüfungen.
+Native Toolbar-Popup-Suite: Win32 6143, Win64 6053 Prüfungen. Python-Verifierregressionen: 27 Tests bestanden.
+Das echte Build.ps1 baut Release-Package und Bridge erfolgreich für beide Architekturen einschließlich Standard-FireDAC/SQLite.
+Statische Vollprüfung: 67 Pascal-Units, 87 MCP-Werkzeuge. Delphi 11/12 wurden nicht binär getestet.
+Keine tatsächlichen Clientregistrierungen verändert, keine Benutzerprojekte gespeichert und kein Index der Benutzerprojekte aufgebaut.
+Der SearchIndex-Stash bleibt als Sicherung erhalten; es wird kein Commit erstellt.
+
+# DAI 1.2.35 – Hint beim Popupöffnen abbrechen, 24. Oktober 2026
 
 Das eigene DAI-TPopupMenu ruft im OnPopup Application.CancelHint auf, bevor die VCL das native Menü öffnet.
 Dadurch werden ein sichtbarer Hint und dessen wartende Anzeige abgebrochen; die allgemeine ShowHint-Einstellung bleibt erhalten.
@@ -48,6 +202,31 @@ Das echte Build.ps1 baut Release-Package und Bridge für Win32 und Win64 mit Del
 Delphi 11/12 wurden nicht binär getestet. Keine Installation, Registrierung oder IDE-Neustart vorgenommen.
 Der Index-Stash bleibt unangetastet. Alte Berechtigungen werden über PermissionsV2/Projektdateischema 2 ignoriert;
 die automatische Freigabeprüfung blockierte ihre angefragte Löschung (nur „blocked by policy“ als Begründung).
+# Indexprototyp aus dem Stash – Deklarationsindizes und Indexverwaltung, 24. Oktober 2026
+
+Explizite Hintergrundindizierung für Projekt, Projektgruppe, Delphi/ToolsAPI und GetIt mit statischem FireDAC/SQLite.
+Das Toolbar-Menü listet diese Bereiche nach einem Trennstrich; fehlende Projektindizes bleiben deaktiviert, die nicht modale
+Verwaltung bleibt zum Erstellen erreichbar. Datum, Zustand, Dateianzahl und Symbolanzahl sowie Erstellen/Aktualisieren/Löschen sind verfügbar.
+Die 6 neuen MCP-Werkzeuge ergeben 87 Werkzeuge insgesamt; 67 Produktionsunits. Keine automatische Indexerstellung und keine Modellanfrage.
+
+Delphi13 Win32 und Win64 bestanden jeweils: Parser490, Store59, Service73, Dialog60, Dispatch7467,
+ToolUsage1575 und Runtime94 Prüfungen. Native Toolbar-Popup-Prüfungen: Win32 4089, Win64 4117.
+Zusätzliche Parser-Korpora: 42 ToolsAPI-Units/3920 Deklarationen und 103 RTL-Units/9615 Deklarationen.
+Die SQL-Prüfung unterbricht eine tatsächlich unendliche rekursive CTE nach zwei Sekunden; ReadOnly-Verbindungen und SQLite-Autorisierung
+verhindern schreibende und schemaändernde Abfragen. Service-Tests verwenden echte Parser/SQLite/Worker mit isolierten OTA-Testmodellen.
+Dispatchprüfungen lesen die echten Produktionszweige und testen Berechtigungen über eine Gruppe mit 80 Projekten.
+Die 27 Python-Verifierregressionen bestehen. Vollständige Package-/Bridge-Release-Builds sind für beide Architekturen erfolgreich.
+Delphi11/12 wurden nicht binär getestet; der OTA-KI-Statusadapter meldet dort ausdrücklich nicht unterstützt.
+
+Live-OTA-Prüfung durch ein temporäres Testpackage: OpenAI aktiviert, Chat und Instruction angeboten. Keine Anfrage an den Modelldienst;
+Zugangsdaten wurden weder gelesen noch verändert. Das Testpackage wurde anschließend deinstalliert und als nicht registriert bestätigt.
+Ein eigener, anschließend beendeter DelphiLSP13-Prozess bestätigte documentSymbol für eine virtuelle Unit mit neun Symbolen und gültigen
+Quellbereichen. workspaceSymbolProvider fehlt. Die Probe ist unter Scripts/Test.DelphiLSP.py reproduzierbar; keine Dateien/Configs geschrieben.
+Der produktive Index verwendet den lokalen Parser; ein direkter LSP-Indexadapter ist noch nicht angeschlossen. Sichtbarkeit/Vorfahren und
+vollständige Deklarationsgrenzen müssten auch bei LSP aus dem Originaltext ergänzt werden.
+
+Die aktuell geladene DAI-BPL wurde nicht ersetzt oder neu geladen. Build.ps1 benannte die gesperrte alte Win32-BPL wie vorgesehen um,
+um den neuen Build zu schreiben. Neue Indizes/UI stehen nach dem Laden der neuen BPL zur Verfügung. Kein Benutzerprojekt wurde gespeichert.
 
 # DAI 1.2.31 – Nutzungszähler und Aktivitätsanzeige, 24. Oktober 2026
 

@@ -20,6 +20,7 @@ type
     class var TestBuffers: TDictionary<string, TTestBuffer>;
     class var TestWorkspaceRoots: TArray<string>;
     class var TestReadCount: Integer;
+    class var TestMainThreadCallCount: Integer;
     class var TestDesignerReadCount: Integer;
     class constructor Initialize;
     class destructor Finalize;
@@ -71,7 +72,15 @@ type
     function CreateReader: IOTAEditReader;
   end;
 
-  TTestReader = class(TInterfacedObject, IOTAEditReader);
+  TTestReader = class(TInterfacedObject, IOTAEditReader)
+  private
+    FFileName: string;
+    FBytes: TBytes;
+    FLoaded: Boolean;
+  public
+    constructor Create(const AFileName: string);
+    function GetText(Position: Longint; Buffer: PAnsiChar; Count: Longint): Longint;
+  end;
 
   TTestActions = class(TInterfacedObject, IOTAActionServices)
     function OpenFile(const AFileName: string): Boolean;
@@ -96,7 +105,36 @@ begin
   Result := nil;
   if TDAIOTA.TestBuffers.TryGetValue(FFileName, LBuffer) then
     if LBuffer.ReaderAvailable then
-      Result := TTestReader.Create;
+      Result := TTestReader.Create(FFileName);
+end;
+
+constructor TTestReader.Create(const AFileName: string);
+begin
+  inherited Create;
+  FFileName := AFileName;
+end;
+
+function TTestReader.GetText(Position: Longint; Buffer: PAnsiChar; Count: Longint): Longint;
+var
+  LBuffer: TTestBuffer;
+begin
+  if not FLoaded then
+  begin
+    Inc(TDAIOTA.TestReadCount);
+    if not TDAIOTA.TestBuffers.TryGetValue(FFileName, LBuffer) then
+      raise EInvalidOperation.Create('Test buffer no longer exists.');
+    if LBuffer.ReadFails then
+      raise EInvalidOperation.Create('Test editor read failed.');
+    FBytes := TEncoding.UTF8.GetBytes(LBuffer.Content);
+    FLoaded := True;
+  end;
+  Result := 0;
+  if (Position < 0) or (Position >= Length(FBytes)) or (Count <= 0) or (Buffer = nil) then
+    Exit;
+  Result := Length(FBytes) - Position;
+  if Result > Count then
+    Result := Count;
+  Move(FBytes[Position], Buffer^, Result);
 end;
 
 class constructor TDAIOTA.Initialize;
@@ -132,6 +170,7 @@ end;
 
 class procedure TDAIOTA.RunOnMainThread(const AAction: TThreadProcedure);
 begin
+  Inc(TestMainThreadCallCount);
   AAction();
 end;
 
