@@ -662,13 +662,18 @@ begin
 
     ## Vor Dateiänderungen
 
-    - Vor Dateiänderungen zuerst prüfen, ob DAI erreichbar/aktiv ist, besonders bei `.pas`, `.dfm`, `.fmx`, `.dpr`, `.dpk` und `.dproj`.
-    - Bei erreichbarem DAI `ide_status` und `open_files_list` abfragen, bei Bedarf `projects_list`; mehrere erreichbare IDEs anhand betroffener Dateien zuordnen.
-    - Geöffnete Dateien möglichst mit DAI im vorhandenen Editor-/Designerzustand bearbeiten; ungespeicherte Puffer sind maßgeblich.
+    - Vor Dateiänderungen den geladenen IDE-Zustand prüfen, besonders bei `.pas`, `.dfm`, `.fmx`, `.dpr`, `.dpk`, `.dproj`, `.groupproj`, `.bdsgroup` und `.bpg`.
+    - Bei erreichbarem DAI `ide_status`, `open_files_list` und `projects_list` abgleichen; mehrere betroffene IDE-Instanzen berücksichtigen.
+    - Kein sichtbarer Editor-Tab bedeutet nicht ungeladen. Geladene Projektgruppen umfassen GROUPPROJ/BDSGROUP/BPG, geladene Projekte ihre DPROJ sowie DPR/DPK.
+    - Zu einem geladenen Formularmodul gehören PAS und DFM/FMX gemeinsam, in beide Richtungen, auch ohne sichtbaren Code- oder Designer-Tab.
+    - Andere Projektmitglieder sind nicht allein wegen ihrer Projektzugehörigkeit geladen; `project_files_list` ist keine Liste geladener Dateien.
+    - Geladene Dateien ausschließlich über DAI/ToolsAPI im vorhandenen Editor-/Designerzustand bearbeiten; ungespeicherte Puffer sind maßgeblich.
+    - Geladene DPR/DPK bei Bedarf mit `file_open` im IDE-Codeeditor öffnen, dann mit `file_read`/`file_write` den aktuellen Textpuffer bearbeiten.
     - Vorhandene Benutzeränderungen weder ungefragt mitspeichern noch verwerfen; keine ältere Datenträgerdatei über einen aktuellen IDE-Puffer schreiben.
-    - DPROJ-Projektoptionen bevorzugt mit den Projektwerkzeugen ändern.
-    - Direkte Dateibearbeitung ist ein Ausweichweg bei unerreichbarem DAI, geschlossener Datei oder fehlender passender Operation.
-    - Einschränkung kurz nennen und bekannte offene/ungespeicherte Inhalte schützen; unbekannten Editorzustand nicht als geschlossen ausgeben.
+    - Projektoptionen mit `project_options_read` lesen und ausschließlich über `project_option_set`/`project_option_remove` ändern, nicht per DPROJ-XML.
+    - Geladene Dateien niemals zusätzlich direkt auf dem Datenträger ändern; fehlender Textpuffer oder fehlende OTA-Operation sind kein Ausweichgrund.
+    - Direkte Dateibearbeitung nur bei nachweislich geschlossener Datei oder beendeten betroffenen IDEs; DAI offline bedeutet nicht IDE beendet.
+    - Bei unbekanntem Ladezustand erst klären und keine externe Schreibänderung ausführen; unerreichbares DAI ist keine Schreibfreigabe.
     - Die IDE allein für diese Prüfung nicht ungefragt starten.
 
     ## IDE starten und beenden
@@ -883,15 +888,18 @@ begin
     '' + sLineBreak +
     '## Vor Dateiänderungen' + sLineBreak +
     '' + sLineBreak +
-    '- Vor Dateiänderungen zuerst prüfen, ob DAI erreichbar/aktiv ist, besonders bei `.pas`, `.dfm`, `.fmx`, `.dpr`, `.dpk` und `.dproj`.' + sLineBreak +
-    '- Bei erreichbarem DAI `ide_status` und `open_files_list` abfragen, bei Bedarf `projects_list`; mehrere erreichbare IDEs anhand betroffener ' +
-    'Dateien zuordnen.' + sLineBreak +
-    '- Geöffnete Dateien möglichst mit DAI im vorhandenen Editor-/Designerzustand bearbeiten; ungespeicherte Puffer sind maßgeblich.' + sLineBreak +
-    '- Vorhandene Benutzeränderungen weder ungefragt mitspeichern noch verwerfen; keine ältere Datenträgerdatei über einen aktuellen IDE-Puffer ' +
-    'schreiben.' + sLineBreak +
-    '- DPROJ-Projektoptionen bevorzugt mit den Projektwerkzeugen ändern.' + sLineBreak +
-    '- Direkte Dateibearbeitung ist ein Ausweichweg bei unerreichbarem DAI, geschlossener Datei oder fehlender passender Operation.' + sLineBreak +
-    '- Einschränkung kurz nennen und bekannte offene/ungespeicherte Inhalte schützen; unbekannten Editorzustand nicht als geschlossen ausgeben.' + sLineBreak +
+    '- Vor Dateiänderungen den geladenen IDE-Zustand prüfen, besonders bei `.pas`, `.dfm`, `.fmx`, `.dpr`, `.dpk`, `.dproj`, `.groupproj`, `.bdsgroup` und `.bpg`.' + sLineBreak +
+    '- Bei erreichbarem DAI `ide_status`, `open_files_list` und `projects_list` abgleichen; mehrere betroffene IDE-Instanzen berücksichtigen.' + sLineBreak +
+    '- Kein sichtbarer Editor-Tab bedeutet nicht ungeladen. Geladene Projektgruppen umfassen GROUPPROJ/BDSGROUP/BPG, geladene Projekte ihre DPROJ sowie DPR/DPK.' + sLineBreak +
+    '- Zu einem geladenen Formularmodul gehören PAS und DFM/FMX gemeinsam, in beide Richtungen, auch ohne sichtbaren Code- oder Designer-Tab.' + sLineBreak +
+    '- Andere Projektmitglieder sind nicht allein wegen ihrer Projektzugehörigkeit geladen; `project_files_list` ist keine Liste geladener Dateien.' + sLineBreak +
+    '- Geladene Dateien ausschließlich über DAI/ToolsAPI im vorhandenen Editor-/Designerzustand bearbeiten; ungespeicherte Puffer sind maßgeblich.' + sLineBreak +
+    '- Geladene DPR/DPK bei Bedarf mit `file_open` im IDE-Codeeditor öffnen, dann mit `file_read`/`file_write` den aktuellen Textpuffer bearbeiten.' + sLineBreak +
+    '- Vorhandene Benutzeränderungen weder ungefragt mitspeichern noch verwerfen; keine ältere Datenträgerdatei über einen aktuellen IDE-Puffer schreiben.' + sLineBreak +
+    '- Projektoptionen mit `project_options_read` lesen und ausschließlich über `project_option_set`/`project_option_remove` ändern, nicht per DPROJ-XML.' + sLineBreak +
+    '- Geladene Dateien niemals zusätzlich direkt auf dem Datenträger ändern; fehlender Textpuffer oder fehlende OTA-Operation sind kein Ausweichgrund.' + sLineBreak +
+    '- Direkte Dateibearbeitung nur bei nachweislich geschlossener Datei oder beendeten betroffenen IDEs; DAI offline bedeutet nicht IDE beendet.' + sLineBreak +
+    '- Bei unbekanntem Ladezustand erst klären und keine externe Schreibänderung ausführen; unerreichbares DAI ist keine Schreibfreigabe.' + sLineBreak +
     '- Die IDE allein für diese Prüfung nicht ungefragt starten.' + sLineBreak +
     '' + sLineBreak +
     '## IDE starten und beenden' + sLineBreak +

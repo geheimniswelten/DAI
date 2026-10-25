@@ -29,6 +29,30 @@ begin
   Inc(GCount);
 end;
 
+procedure SkillLoadedFileSafetyTests;
+var
+  LSkill: string;
+begin
+  LSkill := TDAICodexRegistration.BuildSkillContent;
+  Check(Pos('`ide_status`, `open_files_list` und `projects_list` abgleichen', LSkill) > 0, 'skill requires complete IDE/project inventory');
+  Check(Pos('Kein sichtbarer Editor-Tab bedeutet nicht ungeladen', LSkill) > 0, 'skill separates loaded files from visible tabs');
+  Check(Pos('GROUPPROJ/BDSGROUP/BPG', LSkill) > 0, 'skill includes loaded project groups');
+  Check(Pos('geladene Projekte ihre DPROJ sowie DPR/DPK', LSkill) > 0, 'skill includes loaded project metadata and sources');
+  Check(Pos('PAS und DFM/FMX gemeinsam, in beide Richtungen', LSkill) > 0, 'skill protects paired form modules symmetrically');
+  Check(Pos('nicht allein wegen ihrer Projektzugehörigkeit geladen', LSkill) > 0, 'skill does not mark every project member loaded');
+  Check(Pos('DPR/DPK bei Bedarf mit `file_open`', LSkill) > 0, 'skill opens loaded project sources in the IDE');
+  Check(Pos('ausschließlich über `project_option_set`/`project_option_remove` ändern, nicht per DPROJ-XML', LSkill) > 0,
+    'skill requires ToolsAPI project option changes');
+  Check(Pos('Geladene Dateien niemals zusätzlich direkt auf dem Datenträger ändern', LSkill) > 0, 'skill prohibits a second external write');
+  Check(Pos('fehlender Textpuffer oder fehlende OTA-Operation sind kein Ausweichgrund', LSkill) > 0, 'skill prohibits missing-operation fallback');
+  Check(Pos('nur bei nachweislich geschlossener Datei oder beendeten betroffenen IDEs', LSkill) > 0, 'skill requires evidence before external writes');
+  Check(Pos('Bei unbekanntem Ladezustand erst klären und keine externe Schreibänderung ausführen', LSkill) > 0, 'skill protects unknown loaded state');
+  Check(Pos('DAI offline bedeutet nicht IDE beendet', LSkill) > 0, 'skill distinguishes DAI reachability and IDE lifetime');
+  Check(Pos('unerreichbares DAI ist keine Schreibfreigabe', LSkill) > 0, 'skill prohibits offline fallback');
+  Check(Pos('Benutzeränderungen weder ungefragt mitspeichern noch verwerfen', LSkill) > 0, 'skill protects existing user buffers');
+  Check(Pos('Ausweichweg bei unerreichbarem DAI', LSkill) = 0, 'skill removes the previous unsafe fallback advice');
+end;
+
 procedure CheckLauncherVersion(const AArguments: TJSONArray; const AName: string);
 var
   LIndex, LMatches: Integer;
@@ -1674,6 +1698,7 @@ begin
       raise Exception.Create('Pass the isolated test directory.');
     GRoot := TPath.GetFullPath(ParamStr(1));
     ForceDirectories(GRoot);
+    SkillLoadedFileSafetyTests;
     ParserTests;
     SafeFileTests;
     RegistrationTests;

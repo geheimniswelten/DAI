@@ -169,6 +169,7 @@ $(PreBuildEvent)]]></PreBuildEvent>
         <DCCReference Include="Source\h5u.DAI.OTA.CodeInsight.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Files.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Helpers.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.LoadedFiles.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Creators.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.ProjectOptions.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.ProjectSummary.pas"/>

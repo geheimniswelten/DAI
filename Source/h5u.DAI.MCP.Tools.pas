@@ -1748,7 +1748,9 @@ begin
     '"name":{"type":"string"}' +
     '},"additionalProperties":false,"required":["configuration","platform","name"]}',
     False);
-  AddTool(Result, 'open_files_list', 'Listet aktuell in der IDE geöffnete Dateien.', '{"type":"object","additionalProperties":false}', True);
+  AddTool(Result, 'open_files_list',
+    'Listet geladene IDE-Dateien auch ohne Editor-Tab, einschließlich Projektgruppe, Projektdateien und zugehöriger Formular-/Quelltextdateien.',
+    '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'projects_list',
     'Liefert kompakte Projektinfos mit Typ, Framework, aktivem Buildziel, DPROJ-Format, Package-Status und Indexhinweisen.',
     '{"type":"object","additionalProperties":false}', True);
@@ -2383,7 +2385,9 @@ begin
     '"ancestor_name":{"type":"string"}},"required":["file"],"additionalProperties":false}',
     False
   );
-  AddTool(Result, 'file_open', 'Öffnet eine Datei in der IDE.', '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}',
+  AddTool(Result, 'file_open',
+    'Öffnet eine Datei in der IDE; bereits geladene DPR/DPK werden als Projektquelltext angezeigt.',
+    '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}',
     False);
   AddTool(Result, 'file_activate', 'Aktiviert eine bereits geöffnete Datei.',
     '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}', False);

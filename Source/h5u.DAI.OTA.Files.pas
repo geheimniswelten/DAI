@@ -33,6 +33,7 @@ uses
   System.Character,
   System.Classes,
   System.Generics.Collections,
+  System.Generics.Defaults,
   System.Hash,
   System.IOUtils,
   System.Math,
@@ -201,51 +202,78 @@ begin
       Exit(True);
 end;
 
-function ReadCompleteText(const AFileName: string; out AFromEditor: Boolean; out AFormat: TDAITextFileFormat; out AFromDesigner: Boolean;
-  const ARequireAvailableBuffer: Boolean = False): string;
+procedure RaiseLoadedFileTextUnavailable(const AFileName: string);
 var
-  LResult: string;
-  LSourceEditor: IOTASourceEditor;
+  LExtension: string;
 begin
-  AFromEditor := False;
-  AFromDesigner := False;
-  LSourceEditor := TDAIOTA.FindSourceEditor(AFileName);
-  if Assigned(LSourceEditor) then
-  begin
-    AFromEditor := True;
-    LResult := '';
-    TDAIOTA.RunOnMainThread(
-      procedure
+  LExtension := TPath.GetExtension(AFileName);
+  if SameText(LExtension, '.dproj') or SameText(LExtension, '.groupproj') or SameText(LExtension, '.bdsgroup') or SameText(LExtension, '.bpg') then
+    raise EInvalidOperation.Create('Die Projektdatei ist in der IDE geladen, besitzt aber keinen lesbaren IDE-Textpuffer. ' +
+      'Lesen und ändern Sie Projekt- und Gruppeninformationen über die Projekt-Tools der Open Tools API.');
+  if SameText(LExtension, '.dfm') or SameText(LExtension, '.fmx') then
+    raise EInvalidOperation.Create('Die Formulardatei ist in der IDE geladen, aber der aktuelle Editor- oder Designerpuffer ist nicht lesbar. ' +
+      'Verwenden Sie file_open oder form_show_as_text und lesen Sie den IDE-Puffer erneut.');
+  raise EInvalidOperation.Create('Die Datei ist in der IDE geladen, besitzt aber keinen lesbaren IDE-Textpuffer. ' +
+    'Öffnen Sie sie mit file_open im Codeeditor und lesen Sie den aktuellen IDE-Puffer erneut.');
+end;
+
+procedure RequireNoLoadedProjectModelWrite(const AFileName: string);
+var
+  LExtension: string;
+begin
+  LExtension := TPath.GetExtension(AFileName);
+  if SameText(LExtension, '.dproj') or SameText(LExtension, '.groupproj') or SameText(LExtension, '.bdsgroup') or SameText(LExtension, '.bpg') then
+    if TDAIOTA.IsFileLoadedInIDE(AFileName) then
+      raise EInvalidOperation.Create('Die Projektdatei ist in der IDE geladen. Ändern Sie Projektoptionen und Projektgruppen ' +
+        'über die Projekt-Tools der Open Tools API; file_write darf das geladene Projektmodell nicht überschreiben.');
+end;
+
+function ReadCompleteText(const AFileName: string; out AFromEditor: Boolean; out AFormat: TDAITextFileFormat; out AFromDesigner: Boolean): string;
+var
+  LFormat: TDAITextFileFormat;
+  LFromDesigner, LFromEditor: Boolean;
+  LResult: string;
+begin
+  LFromEditor := False;
+  LFromDesigner := False;
+  // Lookup, buffer access and the decision to read disk form one IDE-thread snapshot.
+  TDAIOTA.RunOnMainThread(
+    procedure
+    var
+      LSourceEditor: IOTASourceEditor;
+    begin
+      LSourceEditor := TDAIOTA.FindSourceEditor(AFileName);
+      if Assigned(LSourceEditor) then
       begin
-        if ARequireAvailableBuffer then
-          if not Assigned(LSourceEditor.CreateReader) then
-            raise EInvalidOperation.Create('Der aktuelle Editorpuffer ist nicht lesbar.');
+        if not Assigned(LSourceEditor.CreateReader) then
+          raise EInvalidOperation.Create('Der aktuelle Editorpuffer ist nicht lesbar.');
         LResult := TDAIOTA.ReadEditorText(LSourceEditor);
-      end);
-    AFormat.EncodingKind := tekIDEBuffer;
-    AFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LResult);
-    Exit(LResult);
-  end;
-
-  if (SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx')) and
-    TDAIOTA.ReadFormText(AFileName, CDAIMaxTextFileBytes, LResult) then
-  begin
-    AFromEditor := True;
-    AFromDesigner := True;
-    AFormat.EncodingKind := tekIDEBuffer;
-    AFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LResult);
-    Exit(LResult);
-  end;
-
-  if ARequireAvailableBuffer then
-    if TDAIOTA.IsFormLoadedForFile(AFileName) then
-      raise EInvalidOperation.Create('Der aktuelle Designerpuffer ist nicht lesbar.');
-
-  if not TFile.Exists(AFileName) then
-    raise EDAIFileNotFound.CreateFmt('Datei nicht gefunden: %s', [AFileName]);
-  if TFile.GetSize(AFileName) > CDAIMaxTextFileBytes then
-    raise EInvalidOperation.CreateFmt('Die Datei überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
-  Result := TDAITextEncoding.ReadFile(AFileName, AFormat);
+        LFromEditor := True;
+      end
+      else if (SameText(TPath.GetExtension(AFileName), '.dfm') or SameText(TPath.GetExtension(AFileName), '.fmx')) and
+        TDAIOTA.ReadFormText(AFileName, CDAIMaxTextFileBytes, LResult) then
+      begin
+        LFromEditor := True;
+        LFromDesigner := True;
+      end;
+      if LFromEditor then
+      begin
+        LFormat.EncodingKind := tekIDEBuffer;
+        LFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LResult);
+        Exit;
+      end;
+      if TDAIOTA.IsFileLoadedInIDE(AFileName) or TDAIOTA.IsFormLoadedForFile(AFileName) then
+        RaiseLoadedFileTextUnavailable(AFileName);
+      if not TFile.Exists(AFileName) then
+        raise EDAIFileNotFound.CreateFmt('Datei nicht gefunden: %s', [AFileName]);
+      if TFile.GetSize(AFileName) > CDAIMaxTextFileBytes then
+        raise EInvalidOperation.CreateFmt('Die Datei überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
+      LResult := TDAITextEncoding.ReadFile(AFileName, LFormat);
+    end);
+  AFromEditor := LFromEditor;
+  AFromDesigner := LFromDesigner;
+  AFormat := LFormat;
+  Result := LResult;
 end;
 
 procedure RequireNoReparseReadPath(const APath: string);
@@ -391,10 +419,10 @@ begin
     raise EDAIAccessDenied.CreateFmt('Lesezugriff außerhalb des Workspace und freigegebener Referenzpfade: %s', [AFileName]);
   RequireNoReparseReadPath(AFileName);
   LSourceEditor := TDAIOTA.FindSourceEditor(AFileName);
-  LHasBuffer := Assigned(LSourceEditor) or TDAIOTA.IsFormLoadedForFile(AFileName);
+  LHasBuffer := Assigned(LSourceEditor) or TDAIOTA.IsFileLoadedInIDE(AFileName) or TDAIOTA.IsFormLoadedForFile(AFileName);
   if LHasBuffer then
   begin
-    Result := ReadCompleteText(AFileName, LFromEditor, LFormat, LFromDesigner, True);
+    Result := ReadCompleteText(AFileName, LFromEditor, LFormat, LFromDesigner);
     if not LFromEditor then
       raise EInvalidOperation.Create('Der aktuelle Editor- oder Designerpuffer ist nicht lesbar.');
   end
@@ -411,7 +439,7 @@ begin
         raise EDAIAccessDenied.Create('Der Inhaltsfilter kann keine Verknüpfung oder Verzeichnisressource lesen.');
       if ((UInt64(LInformation.nFileSizeHigh) shl 32) or LInformation.nFileSizeLow) > CDAIMaxTextFileBytes then
         raise EInvalidOperation.CreateFmt('Die Datei überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
-      Result := ReadCompleteText(AFileName, LFromEditor, LFormat, LFromDesigner, True);
+      Result := ReadCompleteText(AFileName, LFromEditor, LFormat, LFromDesigner);
     finally
       CloseHandle(LReadGuard);
     end;
@@ -518,36 +546,14 @@ end;
 class function TDAIFileService.OpenFiles: TJSONArray;
 var
   LFileName: string;
-  LFiles: TDictionary<string, Boolean>;
 begin
   Result := TJSONArray.Create;
-  LFiles := TDictionary<string, Boolean>.Create;
   try
-    TDAIOTA.RunOnMainThread(
-      procedure var LEditorIndex: Integer;
-        LModuleIndex: Integer;
-        LModuleServices: IOTAModuleServices;
-        LModule: IOTAModule;
-      begin
-        if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
-          Exit;
-
-        for LModuleIndex := 0 to LModuleServices.ModuleCount - 1 do
-        begin
-          LModule := LModuleServices.Modules[LModuleIndex];
-          if not Assigned(LModule) then
-            Continue;
-          AddUniqueFile(LFiles, LModule.FileName);
-          for LEditorIndex := 0 to LModule.ModuleFileCount - 1 do
-            if Assigned(LModule.ModuleFileEditors[LEditorIndex]) then
-              AddUniqueFile(LFiles, LModule.ModuleFileEditors[LEditorIndex].FileName);
-        end;
-      end);
-
-    for LFileName in LFiles.Keys do
+    for LFileName in TDAIOTA.LoadedFileNames do
       Result.Add(LFileName);
-  finally
-    LFiles.Free;
+  except
+    Result.Free;
+    raise;
   end;
 end;
 
@@ -706,32 +712,46 @@ begin
     var
       LFileIndex, LSnapshotBytes: Integer;
       LEditor: IOTASourceEditor;
+      LLoadedFileName: string;
+      LLoadedFiles: TDictionary<string, Boolean>;
     begin
-      LSnapshotBytes := 0;
-      for LFileIndex := 0 to High(LFiles) do
-      begin
-        LFiles[LFileIndex].FileName := AFileNames[LFileIndex];
-        try
-          LFiles[LFileIndex].FileName := TDAISettings.Instance.ExpandPath(AFileNames[LFileIndex]);
-          if not FileAllowedForRead(LFiles[LFileIndex].FileName) then
-            raise EDAIAccessDenied.Create('Lesezugriff ist nur auf Workspace- und freigegebene Referenzdateien erlaubt.');
-          LEditor := TDAIOTA.FindSourceEditor(LFiles[LFileIndex].FileName);
-          if Assigned(LEditor) then
-          begin
-            LEditorBytes[LFileIndex] := ReadIndexEditorBytes(LEditor, AMaximumBytes);
-            Inc(LSnapshotBytes, Length(LEditorBytes[LFileIndex]));
-            LFiles[LFileIndex].Source := 'editor_buffer';
-          end
-          else
-            LFiles[LFileIndex].Source := 'disk';
-        except
-          on E: Exception do
-            LFiles[LFileIndex].ErrorText := E.Message;
+      LLoadedFiles := TDictionary<string, Boolean>.Create(TIStringComparer.Ordinal);
+      try
+        // One loaded-file snapshot covers this atomic IDE-thread batch.
+        for LLoadedFileName in TDAIOTA.LoadedFileNames do
+          LLoadedFiles.AddOrSetValue(TDAIOTA.NormalizeFileName(LLoadedFileName), True);
+        LSnapshotBytes := 0;
+        for LFileIndex := 0 to High(LFiles) do
+        begin
+          LFiles[LFileIndex].FileName := AFileNames[LFileIndex];
+          try
+            LFiles[LFileIndex].FileName := TDAISettings.Instance.ExpandPath(AFileNames[LFileIndex]);
+            if not FileAllowedForRead(LFiles[LFileIndex].FileName) then
+              raise EDAIAccessDenied.Create('Lesezugriff ist nur auf Workspace- und freigegebene Referenzdateien erlaubt.');
+            LEditor := TDAIOTA.FindSourceEditor(LFiles[LFileIndex].FileName);
+            if Assigned(LEditor) then
+            begin
+              LEditorBytes[LFileIndex] := ReadIndexEditorBytes(LEditor, AMaximumBytes);
+              Inc(LSnapshotBytes, Length(LEditorBytes[LFileIndex]));
+              LFiles[LFileIndex].Source := 'editor_buffer';
+            end
+            else
+            begin
+              if LLoadedFiles.ContainsKey(LFiles[LFileIndex].FileName) then
+                RaiseLoadedFileTextUnavailable(LFiles[LFileIndex].FileName);
+              LFiles[LFileIndex].Source := 'disk';
+            end;
+          except
+            on E: Exception do
+              LFiles[LFileIndex].ErrorText := E.Message;
+          end;
+          LEditor := nil;
+          Inc(LCaptured);
+          if LSnapshotBytes >= CEditorSnapshotBudget then
+            Break;
         end;
-        LEditor := nil;
-        Inc(LCaptured);
-        if LSnapshotBytes >= CEditorSnapshotBudget then
-          Break;
+      finally
+        LLoadedFiles.Free;
       end;
     end);
   SetLength(LFiles, LCaptured);
@@ -816,6 +836,7 @@ var
   LFileName: string;
   LFromDesigner: Boolean;
   LHasCurrentContent: Boolean;
+  LUsedEditorBuffer: Boolean;
   LOriginalEncoding: string;
   LOriginalLineEnding: string;
   LProjectSidecar: string;
@@ -824,6 +845,7 @@ var
   LWrittenContent: string;
 begin
   AUsedEditorBuffer := False;
+  LUsedEditorBuffer := False;
   LFromDesigner := False;
   LHasCurrentContent := False;
   LOriginalEncoding := '';
@@ -848,9 +870,10 @@ begin
   if not TDAIOTA.IsWorkspaceFile(LFileName) then
     raise EDAIAccessDenied.Create('Schreibzugriff ist nur innerhalb geöffneter Workspaces erlaubt.');
 
-  if TFile.Exists(LFileName) or TDAIOTA.IsFileOpenInEditor(LFileName) or TDAIOTA.IsFormLoadedForFile(LFileName) then
+  RequireNoLoadedProjectModelWrite(LFileName);
+  if TFile.Exists(LFileName) or TDAIOTA.IsFileLoadedInIDE(LFileName) or TDAIOTA.IsFormLoadedForFile(LFileName) then
   begin
-    LCurrentContent := ReadCompleteText(LFileName, AUsedEditorBuffer, LCurrentFormat, LFromDesigner);
+    LCurrentContent := ReadCompleteText(LFileName, LUsedEditorBuffer, LCurrentFormat, LFromDesigner);
     LHasCurrentContent := True;
     LCurrentHash := THashSHA2.GetHashString(LCurrentContent);
     LOriginalEncoding := TDAITextEncoding.EncodingName(LCurrentFormat.EncodingKind);
@@ -862,22 +885,30 @@ begin
     raise EInvalidOperation.Create('Die Datei existiert nicht mehr; expected_sha256 kann nicht erfüllt werden.');
 
   TDAISourceView.RequireCompleteUnit(LFileName, AContent);
+  // Native designer-to-text requests may need their existing worker-side wait.
+  // Afterwards resolve the editor again inside the final IDE-thread write action.
   LSourceEditor := TDAIOTA.EnsureFormTextEditor(LFileName);
-  if Assigned(LSourceEditor) then
-  begin
-    if LHasCurrentContent then
-      LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, LCurrentFormat.LineEndingKind)
-    else
-      LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, lekNone);
-    LWrittenContent := PrepareFormEditorText(LFileName, LWrittenContent);
-    if TEncoding.UTF8.GetByteCount(LWrittenContent) > CDAIMaxTextFileBytes then
-      raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
-
-    AUsedEditorBuffer := True;
-    LFormat.EncodingKind := tekIDEBuffer;
-    TDAIOTA.RunOnMainThread(
-      procedure
+  TDAIOTA.RunOnMainThread(
+    procedure
+    begin
+      RequireNoLoadedProjectModelWrite(LFileName);
+      LSourceEditor := TDAIOTA.FindSourceEditor(LFileName);
+      if Assigned(LSourceEditor) then
       begin
+        if LHasCurrentContent then
+          LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, LCurrentFormat.LineEndingKind)
+        else
+          LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, lekNone);
+        LWrittenContent := PrepareFormEditorText(LFileName, LWrittenContent);
+        if TEncoding.UTF8.GetByteCount(LWrittenContent) > CDAIMaxTextFileBytes then
+          raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
+
+        if not LHasCurrentContent then
+          raise EInvalidOperation.Create('Die Datei wurde während der Schreibanforderung in der IDE geöffnet. Lesen Sie den aktuellen IDE-Puffer erneut.');
+        if not Assigned(LSourceEditor.CreateReader) then
+          raise EInvalidOperation.Create('Der aktuelle Editorpuffer ist nicht lesbar.');
+        LUsedEditorBuffer := True;
+        LFormat.EncodingKind := tekIDEBuffer;
         if LHasCurrentContent and (TDAIOTA.ReadEditorText(LSourceEditor) <> LCurrentContent) then
         begin
           if LFromDesigner then
@@ -896,24 +927,40 @@ begin
           LWrittenContent := TDAIOTA.ReadEditorText(LSourceEditor);
         end;
         LFormat.LineEndingKind := TDAITextEncoding.DetectLineEnding(LWrittenContent);
-      end);
-  end
-  else
-  begin
-    if SameText(TPath.GetExtension(LFileName), '.dfm') or SameText(TPath.GetExtension(LFileName), '.fmx') then
-      raise EInvalidOperation.Create('Der native IDE-Textmodus für dieses Formular ist nicht verfügbar. ' +
-        'Formulardateien werden ausschließlich über einen verfügbaren IDE-Textpuffer geändert.');
-    if not ASave then
-      raise EInvalidOperation.Create('save=false erfordert einen geöffneten IDE-Textpuffer. Öffnen Sie die Datei zuerst mit file_open.');
-    if TDAIOTA.IsFormLoadedForFile(LFileName) then
-      raise EInvalidOperation.Create('Das Formular ist im Designer geladen. Wechseln Sie zuerst mit form_show_as_text in den Textmodus.');
+      end
+      else
+      begin
+        if SameText(TPath.GetExtension(LFileName), '.dfm') or SameText(TPath.GetExtension(LFileName), '.fmx') then
+          raise EInvalidOperation.Create('Der native IDE-Textmodus für dieses Formular ist nicht verfügbar. ' +
+            'Formulardateien werden ausschließlich über einen verfügbaren IDE-Textpuffer geändert.');
+        if TDAIOTA.IsFileLoadedInIDE(LFileName) then
+          RaiseLoadedFileTextUnavailable(LFileName);
+        if LUsedEditorBuffer then
+          raise EInvalidOperation.Create('Der zuvor gelesene IDE-Puffer wurde zwischenzeitlich geschlossen. Lesen Sie die Datei erneut.');
+        if not ASave then
+          raise EInvalidOperation.Create('save=false erfordert einen geöffneten IDE-Textpuffer. Öffnen Sie die Datei zuerst mit file_open.');
+        if TDAIOTA.IsFormLoadedForFile(LFileName) then
+          raise EInvalidOperation.Create('Das Formular ist im Designer geladen. Wechseln Sie zuerst mit form_show_as_text in den Textmodus.');
 
-    LBytes := TDAITextEncoding.PrepareWrite(LFileName, AContent, LWrittenContent, LFormat);
-    if Length(LBytes) > CDAIMaxTextFileBytes then
-      raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
-    ForceDirectories(TPath.GetDirectoryName(LFileName));
-    TFile.WriteAllBytes(LFileName, LBytes);
-  end;
+        if TFile.Exists(LFileName) then
+        begin
+          if not LHasCurrentContent or (TDAITextEncoding.ReadFile(LFileName, LFormat) <> LCurrentContent) then
+            raise EInvalidOperation.Create('Die Datei wurde während der Schreibanforderung geändert. Lesen Sie die Datei erneut.');
+        end
+        else if LHasCurrentContent then
+          raise EInvalidOperation.Create('Die Datei wurde während der Schreibanforderung entfernt. Lesen Sie die Datei erneut.');
+        LBytes := TDAITextEncoding.PrepareWrite(LFileName, AContent, LWrittenContent, LFormat);
+        if Length(LBytes) > CDAIMaxTextFileBytes then
+          raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
+        // Do not yield between the last loaded-module check and the physical write.
+        if TDAIOTA.IsFileLoadedInIDE(LFileName) then
+          RaiseLoadedFileTextUnavailable(LFileName);
+        TDAIOTA.RequireNoReparseWritePath(LFileName);
+        ForceDirectories(TPath.GetDirectoryName(LFileName));
+        TFile.WriteAllBytes(LFileName, LBytes);
+      end;
+    end);
+  AUsedEditorBuffer := LUsedEditorBuffer;
 
   Result := TJSONObject.Create;
   Result.AddPair('file', LFileName);

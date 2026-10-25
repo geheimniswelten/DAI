@@ -442,6 +442,162 @@ begin
   end;
 end;
 
+procedure CheckLoadedFileGuards;
+const
+  COriginal = 'unit Loaded; interface implementation { original } end.';
+  CChanged = 'unit Loaded; interface implementation { changed } end.';
+  CNames: array[0..8] of string = ('Loaded.dproj', 'Loaded.groupproj', 'Loaded.bdsgroup', 'Loaded.bpg', 'Loaded.dpk', 'Loaded.dpr',
+    'PairedForm.pas', 'PairedForm.dfm', 'PairedForm.fmx');
+var
+  LDirectory, LFileName, LName: string;
+  LDenied, LSave, LUsedEditor: Boolean;
+  LOriginalBytes: TBytes;
+  LResult: TJSONObject;
+begin
+  LDirectory := TPath.Combine(TPath.GetTempPath, 'DAI-Loaded-File-Test-' + TGUID.NewGuid.ToString);
+  TDirectory.CreateDirectory(LDirectory);
+  try
+    for LName in CNames do
+    begin
+      LFileName := TPath.Combine(LDirectory, LName);
+      TFile.WriteAllText(LFileName, COriginal, TEncoding.UTF8);
+      try
+        LOriginalBytes := TFile.ReadAllBytes(LFileName);
+        TDAIOTA.Reset(COriginal);
+        TDAIOTA.OpenEditor := False;
+        TDAIOTA.LoadedModule := True;
+        LDenied := False;
+        try
+          LResult := TDAIFileService.ReadFile(LFileName, 0, False);
+          LResult.Free;
+        except
+          on E: EInvalidOperation do
+          begin
+            LDenied := True;
+            Check(Pos('IDE', E.Message) > 0, 'loaded module read explains the unavailable IDE source');
+          end;
+        end;
+        Check(LDenied, 'a loaded project, source or paired form cannot be read from stale disk without its buffer');
+        for LSave in TArray<Boolean>.Create(False, True) do
+        begin
+          LDenied := False;
+          try
+            LResult := TDAIFileService.WriteFile(LFileName, CChanged, THashSHA2.GetHashString(COriginal), LSave, LUsedEditor);
+            LResult.Free;
+          except
+            on E: EInvalidOperation do
+              LDenied := True;
+          end;
+          Check(LDenied, 'loaded module without a buffer rejects file_write even with a matching hash and save=true');
+          Check((TDAIOTA.WriteCount = 0) and (TDAIOTA.SaveCount = 0), 'loaded module denial never writes or saves an editor');
+          Check(CompareMem(Pointer(LOriginalBytes), Pointer(TFile.ReadAllBytes(LFileName)), Length(LOriginalBytes)),
+            'loaded module denial preserves disk bytes exactly');
+        end;
+      finally
+        TFile.Delete(LFileName);
+      end;
+    end;
+    for LName in ['Loaded.dproj', 'Loaded.groupproj', 'Loaded.bdsgroup', 'Loaded.bpg'] do
+    begin
+      TDAIOTA.Reset(COriginal);
+      LDenied := False;
+      try
+        LResult := TDAIFileService.WriteFile(TPath.Combine(LDirectory, LName), CChanged, '', True, LUsedEditor);
+        LResult.Free;
+      except
+        on E: EInvalidOperation do
+          LDenied := True;
+      end;
+      Check(LDenied, 'loaded project models require project OTA even if they expose a source editor');
+      Check((TDAIOTA.ReadCount = 0) and (TDAIOTA.WriteCount = 0) and (TDAIOTA.SaveCount = 0),
+        'loaded project model guard precedes editor access and all saves');
+    end;
+    for LName in ['Loaded.dpr', 'Loaded.dpk'] do
+    begin
+      TDAIOTA.Reset(COriginal);
+      LResult := TDAIFileService.ReadFile(TPath.Combine(LDirectory, LName), 0, False);
+      try
+        Check(LResult.GetValue<string>('content') = COriginal, 'DPR and DPK use an available project source editor');
+        Check(LResult.GetValue<string>('source') = 'editor_buffer', 'project source origin identifies the live buffer');
+      finally
+        LResult.Free;
+      end;
+      LResult := TDAIFileService.WriteFile(TPath.Combine(LDirectory, LName), CChanged, THashSHA2.GetHashString(COriginal), False, LUsedEditor);
+      try
+        Check(LUsedEditor and (TDAIOTA.Buffer = CChanged), 'DPR and DPK are editable through their live IDE source buffer');
+        Check((TDAIOTA.WriteCount = 1) and (TDAIOTA.SaveCount = 0), 'project source save=false preserves the unsaved state');
+        Check(not TFile.Exists(TPath.Combine(LDirectory, LName)), 'project source buffer edits do not create or overwrite disk files');
+      finally
+        LResult.Free;
+      end;
+    end;
+
+    LFileName := TPath.Combine(LDirectory, 'LateLoaded.pas');
+    TFile.WriteAllText(LFileName, COriginal, TEncoding.UTF8);
+    try
+      TDAIOTA.Reset(COriginal);
+      TDAIOTA.OpenEditor := False;
+      TDAIOTA.LoadOnFinalLookup := True;
+      LDenied := False;
+      try
+        LResult := TDAIFileService.WriteFile(LFileName, CChanged, THashSHA2.GetHashString(COriginal), True, LUsedEditor);
+        LResult.Free;
+      except
+        on E: EInvalidOperation do
+          LDenied := True;
+      end;
+      Check(LDenied, 'a module loaded after the initial hash read cannot fall through to disk');
+      Check(TFile.ReadAllText(LFileName, TEncoding.UTF8) = COriginal, 'late module loading preserves disk content');
+      Check((TDAIOTA.WriteCount = 0) and (TDAIOTA.SaveCount = 0), 'late module loading invokes no writer or save');
+
+      TDAIOTA.Reset(COriginal);
+      TDAIOTA.OpenEditor := False;
+      TDAIOTA.OpenOnFinalLookup := True;
+      TDAIOTA.FinalBuffer := COriginal + ' { user change }';
+      LDenied := False;
+      try
+        LResult := TDAIFileService.WriteFile(LFileName, CChanged, THashSHA2.GetHashString(COriginal), True, LUsedEditor);
+        LResult.Free;
+      except
+        on E: EInvalidOperation do
+          LDenied := True;
+      end;
+      Check(LDenied, 'an editor opened during preflight retains newer unsaved user text');
+      Check(TDAIOTA.Buffer = COriginal + ' { user change }', 'late editor conflict preserves unsaved contents');
+      Check((TDAIOTA.WriteCount = 0) and (TDAIOTA.SaveCount = 0), 'late editor conflict neither replaces nor saves');
+      Check(TFile.ReadAllText(LFileName, TEncoding.UTF8) = COriginal, 'late editor conflict also preserves disk');
+
+      TDAIOTA.Reset(COriginal);
+      TDAIOTA.OpenEditor := False;
+      TDAIOTA.OpenOnFinalLookup := True;
+      TDAIOTA.FinalBuffer := COriginal;
+      LResult := TDAIFileService.WriteFile(LFileName, CChanged, THashSHA2.GetHashString(COriginal), False, LUsedEditor);
+      try
+        Check(LUsedEditor and (TDAIOTA.Buffer = CChanged), 'a matching newly opened editor is used instead of disk');
+        Check(TDAIOTA.SaveCount = 0, 'newly opened editor save=false never saves user changes');
+        Check(TFile.ReadAllText(LFileName, TEncoding.UTF8) = COriginal, 'the newly selected editor route leaves disk unchanged');
+      finally
+        LResult.Free;
+      end;
+
+      TDAIOTA.Reset(COriginal);
+      TDAIOTA.OpenEditor := False;
+      LResult := TDAIFileService.WriteFile(LFileName, CChanged, THashSHA2.GetHashString(COriginal), True, LUsedEditor);
+      try
+        Check(not LUsedEditor and (LResult.GetValue<string>('target') = 'disk'), 'a genuinely closed source remains writable to disk');
+        Check(TFile.ReadAllText(LFileName, TEncoding.UTF8) = CChanged, 'closed source preserves the existing encoding-aware write route');
+      finally
+        LResult.Free;
+      end;
+    finally
+      TFile.Delete(LFileName);
+    end;
+  finally
+    TDirectory.Delete(LDirectory);
+    TDAIOTA.Reset(COriginal);
+  end;
+end;
+
 procedure RunChecks;
 const
   CUnicode = 'unit IsolatedBuffer; interface { Grüße 漢字 ' + #$D83D#$DE00 + ' } implementation end.';
@@ -538,6 +694,7 @@ begin
     RunChecks;
     CheckOpenForeignFileGuards;
     CheckPermissionPolicyWriteGuards;
+    CheckLoadedFileGuards;
     CheckInterfaceReads;
     CheckUnitWriteGuards;
     CheckFormUnicode('dfm');

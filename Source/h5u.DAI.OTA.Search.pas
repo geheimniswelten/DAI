@@ -419,7 +419,7 @@ begin
         if Assigned(AFilenameRegex) then
           if not AFilenameRegex.IsMatch(TPath.GetFileName(LFile)) then
             Continue;
-        if not Assigned(TDAIOTA.FindSourceEditor(LFile)) and not TDAIOTA.IsFormLoadedForFile(LFile) then
+        if not TDAIOTA.IsFileLoadedInIDE(LFile) then
           Continue;
         LSnapshot.Content := #0;
         LSnapshot.Source := 'unavailable';

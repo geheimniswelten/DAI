@@ -359,7 +359,14 @@ Ohne diese Freigabe gilt dort das Leserecht des zugeordneten bzw. aktuellen Proj
 Geöffnete Dateien dürfen die Projektrechte verwenden, auch außerhalb des Projektordners. Referenzfreigaben werden beim Lesen zuerst geprüft; Referenzen bleiben schreibgeschützt.
 
 Projektoptionen verwenden dieselben Rechte wie Projektdateien. Ein neues Projekt erstellen oder öffnen verwendet die globalen Projektschreibrechte.
-Geöffnete Dateien werden weiterhin im aktuellen IDE-Puffer bearbeitet; geschlossene Dateien werden bei `save: true` auf dem Datenträger geändert.
+Als geladen gelten auch Projektgruppe und Projekte ohne Editor-Tab, einschließlich GROUPPROJ/BDSGROUP/BPG, DPROJ und tatsächlichem DPR/DPK
+sowie über die OTA zugeordneten PAS-/DFM-/FMX-Dateien. `open_files_list` erfasst zusätzlich weitere Modul-Editoren und eigenständige Textpuffer.
+Andere Projektmitglieder sind allein durch ihre Projektzugehörigkeit nicht geladen.
+Geladene Dateien werden im aktuellen IDE-Puffer bearbeitet. Fehlt ein lesbarer oder schreibbarer IDE-Puffer, meldet DAI dies, statt auf die
+Festplatte auszuweichen. Geladene Projekt-/Gruppenmodelle dürfen über `file_write` auch mit Textpuffer nicht geändert werden; Projektoptionen
+verwenden `project_options_read`, `project_option_set` und `project_option_remove`. DPR/DPK lassen sich bei Bedarf mit `file_open` anzeigen.
+Nur nachweislich geschlossene Dateien werden bei `save: true` auf dem Datenträger geändert; der geladene Zustand wird direkt vor dem Schreiben
+erneut im IDE-Thread geprüft. Ein korrektes `expected_sha256` erlaubt kein Umgehen des geladenen IDE-Zustands.
 Diese Wahl des Schreibwegs verändert die benötigte Berechtigung nicht. DAI-Berechtigungsdateien selbst sind über `file_write` schreibgeschützt, damit Projektschreibrechte keine zusätzlichen Freigaben erzeugen.
 Unbekannte Werkzeugargumente werden vor der Projektzuordnung zurückgewiesen. Compiler-Direktaufrufe verwenden globale Kompilierrechte.
 Debuggerauswertungen und ihre Ergebnisabfragen verwenden globale Ausführungsrechte, weil die aktive Projektauswahl den Debuggee nicht sicher zuordnet.

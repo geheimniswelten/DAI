@@ -436,8 +436,25 @@ begin
   end;
 end;
 
+procedure TestLoadedModuleWithoutText;
+var
+  LResult: TJSONObject;
+begin
+  TestSourceEditor := nil;
+  TestFileLoadedInIDE := True;
+  LResult := TDAICodeInsightService.Diagnostics('LoadedProject.dproj');
+  try
+    Check(LResult.GetValue<Boolean>('file_loaded_in_ide'), 'loaded project without text buffer is reported as loaded');
+    Check(not LResult.GetValue<Boolean>('provider_available'), 'loaded project does not fabricate a diagnostics provider');
+  finally
+    LResult.Free;
+    TestFileLoadedInIDE := False;
+  end;
+end;
+
 begin
   try
+    TestLoadedModuleWithoutText;
     RunTests;
     Writeln('PASS: ', CheckCount, ' Code Insight callback and hover checks');
   except

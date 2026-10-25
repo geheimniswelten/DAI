@@ -135,6 +135,7 @@ var
   LMatch: TJSONObject;
   LRejected: Boolean;
   LTimeoutOptions: TDAISourceSearchOptions;
+  LLoadedModule: TTestBuffer;
 begin
   CheckSearch('MARK_SCOPE_B', 'project', 'A', '', 1);
   CheckSearch('MARK_RECURSIVE_OWNER', 'project', 'A', '', 1);
@@ -176,6 +177,19 @@ begin
   try
     Check(Matches(LResult).Count = 0, 'unavailable editor buffer never falls back to stale disk');
     Check(LResult.GetValue<Integer>('snapshot_files_skipped') = 1, 'unavailable editor snapshot is reported');
+  finally
+    LResult.Free;
+  end;
+  LLoadedModule.Content := '';
+  LLoadedModule.Source := 'loaded_module';
+  LLoadedModule.ReadFails := True;
+  LLoadedModule.Truncated := False;
+  TDAIOTA.TestBuffers.AddOrSetValue(TDAIOTA.NormalizeFileName(MainFile), LLoadedModule);
+  Check(not Assigned(TDAIOTA.FindSourceEditor(MainFile)), 'loaded module fixture deliberately has no source editor');
+  LResult := TDAISourceSearchService.Search('disk-stale', 'project', 'A', '', Options);
+  try
+    Check(Matches(LResult).Count = 0, 'a loaded module without a source editor never falls back to stale disk');
+    Check(LResult.GetValue<Integer>('snapshot_files_skipped') = 1, 'a loaded module without a source editor is reported as unavailable');
   finally
     LResult.Free;
   end;

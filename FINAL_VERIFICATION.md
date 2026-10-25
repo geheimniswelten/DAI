@@ -1,5 +1,20 @@
 ﻿# DAI 1.2.36 – Suchindex-Stash integriert, 24. Oktober 2026
 
+Nachtrag zum Schutz geladener IDE-Dateien, 25. Oktober 2026:
+Eine zentrale OTA-Auflösung erfasst geladene Module, Editorpuffer, Projekte/Projektgruppe und zugeordnete Formulardateien unabhängig von sichtbaren Tabs.
+DPROJ wird nur aus einem tatsächlichen geladenen DPR/DPK-Projekt zugeordnet; es werden weder DPR-Dateien geraten noch alle Projektmitglieder als geladen markiert.
+Dateiliste, Modulzuordnung, Berechtigungszuordnung und Diagnosestatus verwenden diese gemeinsame Auflösung. Referenzverzeichnisse bleiben schreibgeschützt.
+Ohne lesbaren IDE-Puffer gibt es bei geladenen Dateien keinen stillen Datenträger-Lesepfad. Suche und Index-Lesebatches melden fehlende Puffer entsprechend.
+file_write prüft die endgültige Route und den Ladezustand vor dem Schreiben im IDE-Thread. Ein passender Diskhash umgeht keinen geladenen Zustand.
+Geladene Projekt-/Gruppenmodelle werden auch bei vorhandenem Texteditor nicht als rohes XML geschrieben; Projektoptionen verwenden die OTA-Werkzeuge.
+MCP-Initialisierung und Skill-Generator enthalten denselben Schutz in beiden Compilerzweigen. Der lokale verwaltete DAI-Skill wurde gezielt aktualisiert.
+Die Skill-Strukturprüfung besteht; übrige Skill-Inhalte und Clientregistrierungen bleiben erhalten. Die IDE war bei den Quelländerungen beendet.
+Bestanden je Win32/Win64: LoadedFiles 79, EditorWrite 337, DirectorySearch 208, SearchService 147, ProjectGroups 181,
+Designer 68, FormText 128, CodeInsight 800 plus 25 echte Test-BPL-Lebenszyklusprüfungen, PermissionRouting 1129 und ReadOnlyPolicy 56.
+Protocol bestätigt 181 Prüfungen je Architektur, ClientRegistration 2520; beide Skill-Compilerzweige haben denselben neuen Regelabschnitt.
+Der abschließende Delphi-13-Build bestätigt Package und Bridge für Win32/Win64. Delphi 11 ist nicht installiert; die Gesamtprüfung meldet 69 Units und 87 Werkzeuge.
+Unvollständige IDE-Dienste liefern einen Fehler statt eines vermeintlich geschlossenen Zustands. Die Iterator-False-Rückgabe behält ihre bisherige Bedeutung.
+
 Nachtrag zur IDE-Sprachlokalisierung, 25. Oktober 2026:
 Die zentrale Localization-Unit wählt Deutsch, Englisch, Französisch oder Japanisch anhand des bds-Sprachressourcenmoduls.
 Die offizielle RTL-Funktion FindResourceHInstance löst auch zunächst ungeladene Ressourcen auf, statt diesen Zustand als Englisch zu cachen.

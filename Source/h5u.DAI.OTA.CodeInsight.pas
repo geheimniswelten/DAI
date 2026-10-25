@@ -954,7 +954,7 @@ begin
     begin
       try
         LModule := TDAIOTA.FindModuleByFileName(LExpandedFileName);
-        LFileOpen := Assigned(LModule);
+        LFileOpen := TDAIOTA.IsFileLoadedInIDE(LExpandedFileName);
         if not Assigned(LModule) then
         begin
           LReason := 'Error Insight ist nur für eine von der IDE geladene Datei verfügbar.';

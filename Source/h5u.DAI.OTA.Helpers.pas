@@ -19,6 +19,8 @@ type
     class function MainProjectGroup: IOTAProjectGroup; static;
     class function ProjectByNameOrPath(const ANameOrPath: string): IOTAProject; static;
     class function Projects: TArray<IOTAProject>; static;
+    class function LoadedFileNames: TArray<string>; static;
+    class function IsFileLoadedInIDE(const AFileName: string): Boolean; static;
     class function FindModuleByFileName(const AFileName: string): IOTAModule; static;
     class function FindSourceEditor(const AFileName: string): IOTASourceEditor; static;
     class function FindFormEditor(const AFileName: string): IOTAFormEditor; static;
@@ -50,6 +52,7 @@ uses
   System.IOUtils,
   System.SysUtils,
   Winapi.Windows,
+  h5u.DAI.OTA.LoadedFiles,
   h5u.DAI.Settings,
   h5u.DAI.Text.Encoding,
   h5u.DAI.Types;
@@ -247,56 +250,66 @@ begin
   Result := LResult;
 end;
 
+class function TDAIOTA.LoadedFileNames: TArray<string>;
+var
+  LResult: TArray<string>;
+begin
+  RunOnMainThread(
+    procedure
+    var
+      LSnapshot: TDAILoadedFiles;
+    begin
+      LSnapshot := TDAILoadedFiles.Create(BorlandIDEServices);
+      try
+        LResult := LSnapshot.FileNames;
+      finally
+        LSnapshot.Free;
+      end;
+    end);
+  Result := LResult;
+end;
+
+class function TDAIOTA.IsFileLoadedInIDE(const AFileName: string): Boolean;
+var
+  LResult: Boolean;
+begin
+  LResult := False;
+  RunOnMainThread(
+    procedure
+    var
+      LSnapshot: TDAILoadedFiles;
+    begin
+      LSnapshot := TDAILoadedFiles.Create(BorlandIDEServices);
+      try
+        LResult := LSnapshot.Contains(AFileName);
+      finally
+        LSnapshot.Free;
+      end;
+    end);
+  Result := LResult;
+end;
+
 class function TDAIOTA.FindModuleByFileName(const AFileName: string): IOTAModule;
 var
   LResult: IOTAModule;
 begin
   LResult := nil;
   RunOnMainThread(
-    procedure var LEditorIndex: Integer;
-      LModuleIndex: Integer;
+    procedure
+    var
       LModuleServices: IOTAModuleServices;
-      LModule: IOTAModule;
-      LEditor: IOTAEditor;
-      LAdditionalFiles: IOTAAdditionalModuleFiles;
+      LSnapshot: TDAILoadedFiles;
     begin
       if not Supports(BorlandIDEServices, IOTAModuleServices, LModuleServices) then
         Exit;
-
       LResult := LModuleServices.FindModule(AFileName);
       if Assigned(LResult) then
         Exit;
-
-      for LModuleIndex := 0 to LModuleServices.ModuleCount - 1 do
-      begin
-        LModule := LModuleServices.Modules[LModuleIndex];
-        if not Assigned(LModule) then
-          Continue;
-        if SameFile(LModule.FileName, AFileName) then
-        begin
-          LResult := LModule;
-          Exit;
-        end;
-
-        for LEditorIndex := 0 to LModule.ModuleFileCount - 1 do
-        begin
-          LEditor := LModule.ModuleFileEditors[LEditorIndex];
-          if Assigned(LEditor) and SameFile(LEditor.FileName, AFileName) then
-          begin
-            LResult := LModule;
-            Exit;
-          end;
-        end;
-        if Supports(LModule, IOTAAdditionalModuleFiles, LAdditionalFiles) then
-          for LEditorIndex := 0 to LAdditionalFiles.AdditionalModuleFileCount - 1 do
-          begin
-            LEditor := LAdditionalFiles.AdditionalModuleFileEditors[LEditorIndex];
-            if Assigned(LEditor) and SameFile(LEditor.FileName, AFileName) then
-            begin
-              LResult := LModule;
-              Exit;
-            end;
-          end;
+      LSnapshot := TDAILoadedFiles.Create(BorlandIDEServices);
+      try
+        LResult := LSnapshot.FindModule(AFileName);
+      finally
+        LSnapshot.Free;
       end;
     end);
   Result := LResult;
@@ -738,8 +751,9 @@ begin
     if IsPathWithin(AFileName, LRoot) then
       Exit(True);
 
-  // Open editors use project permissions; reference roots remain read-only above.
-  Result := IsFileOpenInEditor(AFileName);
+  // Loaded modules and project models use project permissions, including files without a visible editor tab.
+  // Reference roots remain read-only above.
+  Result := IsFileLoadedInIDE(AFileName);
 end;
 
 class function TDAIOTA.MainProjectGroup: IOTAProjectGroup;

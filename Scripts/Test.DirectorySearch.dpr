@@ -172,6 +172,10 @@ begin
   ExpectFailure(procedure begin CheckSearch('*.dfm', '', 'stale-designer-disk', 0, False, False, False, False, 'Forms'); end,
     EInvalidOperation, 'Main.dfm', 'unavailable designer text');
   TDAIOTA.TestBuffers.Clear;
+  SetBuffer('Workspace\Alpha1.pas', '', 'loaded_module', False);
+  ExpectFailure(procedure begin CheckSearch('Alpha1.pas', '', 'MARK_IMPL', 0); end,
+    EInvalidOperation, 'Alpha1.pas', 'loaded source without a text editor cannot use stale disk in a content filter');
+  TDAIOTA.TestBuffers.Clear;
   Check(TDAIOTA.WriteCount = 0, 'directory search never writes editor buffers');
   Check(TDAIOTA.SaveCount = 0, 'directory search never saves editor buffers');
 end;
@@ -221,6 +225,7 @@ var
   LFiles: TArray<string>;
   LTexts: TArray<TDAIIndexFileText>;
   LCalls: Integer;
+  LLoadedListCalls: Integer;
   LFirstHash: string;
   LLock: TFileStream;
   LIndex: Integer;
@@ -229,8 +234,10 @@ begin
     Path('Encoding\Utf8NoBOM.txt'), Path('References\Reference.pas'), Path('Outside\Outside.pas'),
     Path('Workspace\Missing.pas'), Path('UnsupportedEncoding\UTF32.txt'), Path('Errors\Oversized.big')];
   LCalls := TDAIOTA.TestMainThreadCallCount;
+  LLoadedListCalls := TDAIOTA.TestLoadedFileListCount;
   LTexts := TDAIFileService.ReadIndexFiles(LFiles, 4096);
   Check(TDAIOTA.TestMainThreadCallCount - LCalls = 1, 'One IDE snapshot serves a complete index read batch');
+  Check(TDAIOTA.TestLoadedFileListCount - LLoadedListCalls = 1, 'The loaded module list is enumerated only once per index read batch');
   Check(Length(LTexts) = Length(LFiles), 'Every index request has an ordered result, including failed sources');
   for LIndex := 0 to 4 do
   begin
@@ -275,6 +282,19 @@ begin
   SetBuffer('Workspace\Alpha1.pas', 'unreadable', 'editor_buffer', True, True);
   LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas')], 4096);
   Check(LTexts[0].ErrorText <> '', 'Editor read exceptions are reported without disk fallback');
+  SetBuffer('Workspace\Alpha1.pas', '', 'loaded_module', False);
+  SetBuffer('Workspace\Loaded.dproj', '', 'loaded_module', False);
+  SetBuffer('Workspace\Loaded.groupproj', '', 'loaded_module', False);
+  LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas'), Path('Workspace\Loaded.dproj'),
+    Path('Workspace\Loaded.groupproj')], 4096);
+  for LIndex := 0 to High(LTexts) do
+  begin
+    Check(LTexts[LIndex].ErrorText <> '', 'A loaded module or project without a reader has an explicit index error');
+    Check((LTexts[LIndex].Content = '') and (LTexts[LIndex].Sha256 = ''), 'Unavailable loaded modules expose no stale disk snapshot');
+    Check(LTexts[LIndex].Source <> 'disk', 'A loaded module is never classified as a closed disk source');
+  end;
+  TDAIOTA.TestBuffers.Remove(Path('Workspace\Loaded.dproj'));
+  TDAIOTA.TestBuffers.Remove(Path('Workspace\Loaded.groupproj'));
   SetBuffer('Workspace\Alpha1.pas', StringOfChar('x', 4097), 'editor_buffer');
   LTexts := TDAIFileService.ReadIndexFiles([Path('Workspace\Alpha1.pas')], 4096);
   Check(LTexts[0].ErrorText <> '', 'Oversized editor text is rejected without a partial index');

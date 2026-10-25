@@ -13,6 +13,7 @@ type
     class function FindModuleByFileName(const AFileName: string): IOTAModule; static;
     class function FindSourceEditor(const AFileName: string): IOTASourceEditor; static;
     class function IsFileOpenInEditor(const AFileName: string): Boolean; static;
+    class function IsFileLoadedInIDE(const AFileName: string): Boolean; static;
     class function IsWorkspaceFile(const AFileName: string): Boolean; static;
     class function IsReadOnlyReferenceFile(const AFileName: string): Boolean; static;
     class function NormalizeFileName(const AFileName: string): string; static;
@@ -21,6 +22,7 @@ type
 
 var
   TestSourceEditor: IOTASourceEditor;
+  TestFileLoadedInIDE: Boolean;
 
 implementation
 
@@ -41,6 +43,11 @@ end;
 class function TDAIOTA.IsFileOpenInEditor(const AFileName: string): Boolean;
 begin
   Result := True;
+end;
+
+class function TDAIOTA.IsFileLoadedInIDE(const AFileName: string): Boolean;
+begin
+  Result := TestFileLoadedInIDE or Assigned(TestSourceEditor);
 end;
 
 class function TDAIOTA.IsWorkspaceFile(const AFileName: string): Boolean;

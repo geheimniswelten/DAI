@@ -21,6 +21,7 @@ type
     class var TestWorkspaceRoots: TArray<string>;
     class var TestReadCount: Integer;
     class var TestMainThreadCallCount: Integer;
+    class var TestLoadedFileListCount: Integer;
     class var TestDesignerReadCount: Integer;
     class constructor Initialize;
     class destructor Finalize;
@@ -44,6 +45,8 @@ type
     class function ProjectFileName(const AProject: IOTAProject): string; static;
     class function ProjectConfiguration(const AProject: IOTAProject): string; static;
     class function ProjectPlatform(const AProject: IOTAProject): string; static;
+    class function IsFileLoadedInIDE(const AFileName: string): Boolean; static;
+    class function LoadedFileNames: TArray<string>; static;
     class function FindSourceEditor(const AFileName: string): IOTASourceEditor; static;
     class function EnsureFormTextEditor(const AFileName: string): IOTASourceEditor; static;
     class function IsFileOpenInEditor(const AFileName: string): Boolean; static;
@@ -244,6 +247,17 @@ end;
 class function TDAIOTA.ProjectPlatform(const AProject: IOTAProject): string;
 begin
   Result := '';
+end;
+
+class function TDAIOTA.IsFileLoadedInIDE(const AFileName: string): Boolean;
+begin
+  Result := TestBuffers.ContainsKey(NormalizeFileName(AFileName));
+end;
+
+class function TDAIOTA.LoadedFileNames: TArray<string>;
+begin
+  Inc(TestLoadedFileListCount);
+  Result := TestBuffers.Keys.ToArray;
 end;
 
 class function TDAIOTA.FindSourceEditor(const AFileName: string): IOTASourceEditor;

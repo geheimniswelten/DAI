@@ -69,11 +69,21 @@ begin
     if SameFile(LProject.FileName, AName) then Exit(LProject);
 end;
 class function TDAIOTA.FindModuleByFileName(const AFileName: string): IOTAModule;
-var LModule: IOTAModule;
+var
+  LEditor: IOTAEditor;
+  LIndex: Integer;
+  LModule: IOTAModule;
 begin
   Result := nil;
   for LModule in TestModules do
+  begin
     if SameFile(LModule.FileName, AFileName) then Exit(LModule);
+    for LIndex := 0 to LModule.ModuleFileCount - 1 do
+    begin
+      LEditor := LModule.ModuleFileEditors[LIndex];
+      if Assigned(LEditor) and SameFile(LEditor.FileName, AFileName) then Exit(LModule);
+    end;
+  end;
 end;
 class function TDAIOTA.IsPathWithin(const AFileName, ARoot: string): Boolean;
 begin Result := SameText(ExcludeTrailingPathDelimiter(TPath.GetFullPath(ARoot)),

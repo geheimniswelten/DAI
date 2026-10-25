@@ -20,11 +20,15 @@ type
     function GetFileName: string;
     function GetModified: Boolean;
   end;
+  TTestSourceEditor = class(TTestEditor, IOTASourceEditor)
+  end;
   TTestModule = class(TInterfacedObject, IOTAModule)
   private
     FFileName: string;
   public
-    SaveCount: Integer;
+    SaveCount, ShowCount: Integer;
+    LastShownFile: string;
+    ShowCreatesSourceEditor, RaiseShowAbort: Boolean;
     Editors: TArray<IOTAEditor>;
     constructor Create(const AFileName: string);
     function GetFileName: string;
@@ -119,7 +123,22 @@ end;
 function TTestModule.CloseModule(AForceClosed: Boolean): Boolean;
 begin raise Exception.Create('Unexpected individual module close'); end;
 procedure TTestModule.ShowFileName(const AFileName: string);
-begin end;
+var
+  LEditor: TTestSourceEditor;
+begin
+  Check(TDAIOTA.DispatchDepth > 0, 'ShowFilename stays on IDE thread');
+  Inc(ShowCount);
+  LastShownFile := AFileName;
+  Host.Events.Add('show');
+  if RaiseShowAbort then
+    raise EAbort.Create('Synthetic native source display cancellation');
+  if ShowCreatesSourceEditor then
+  begin
+    LEditor := TTestSourceEditor.Create;
+    LEditor.FileName := AFileName;
+    Editors := Editors + [LEditor as IOTAEditor];
+  end;
+end;
 procedure TTestProject.RemoveFile(const AFileName: string);
 begin raise Exception.Create('Unexpected project file removal'); end;
 procedure TTestGroup.RemoveProject(const AProject: IOTAProject);
@@ -556,6 +575,136 @@ begin
   finally LResult.Free; end;
 end;
 
+procedure OpenLoadedProjectSources;
+var
+  LEditor: TTestEditor;
+  LExtension, LFileName: string;
+  LFailed: Boolean;
+  LOriginalGroup: IOTAProjectGroup;
+  LModule: TTestModule;
+  LProject: TTestProject;
+  LResult: TJSONObject;
+begin
+  for LExtension in ['.dpr', '.dpk'] do
+  begin
+    ExistingWorkspace;
+    LOriginalGroup := TDAIOTA.TestGroup;
+    LFileName := TPath.Combine(FixtureRoot, 'Target' + LExtension);
+    LProject := TTestProject.Create(LFileName);
+    AddProject(LProject);
+    LProject.ShowCreatesSourceEditor := True;
+    LResult := TDAIProjectService.OpenFile(LFileName);
+    try
+      Check(JsonBoolean(LResult, 'opened'), LExtension + ' loaded source uses native module display');
+      Check(JsonBoolean(LResult, 'source_editor_available'), LExtension + ' verifies editor availability after native display');
+      Check((LProject.ShowCount = 1) and (LProject.LastShownFile = LFileName), LExtension + ' displays the exact loaded source');
+      Check((Host.OpenCount = 0) and (Host.OpenFileCount = 0) and (Host.CloseCount = 0) and (Host.CreateCount = 0),
+        LExtension + ' source display never opens or replaces a project');
+      Check((TDAIOTA.TestGroup = LOriginalGroup) and (Length(TDAIOTA.TestProjects) = 2), LExtension + ' source display preserves the workspace');
+      Check(LProject.SaveCount = 0, LExtension + ' source display never saves the project');
+    finally LResult.Free; end;
+  end;
+
+  ExistingWorkspace;
+  LFileName := TPath.Combine(FixtureRoot, 'NotSavedYet.dpr');
+  LProject := TTestProject.Create(LFileName);
+  AddProject(LProject);
+  Check(not TFile.Exists(LFileName), 'unsaved source fixture has no disk file');
+  LResult := TDAIProjectService.OpenFile(LFileName);
+  try
+    Check(JsonBoolean(LResult, 'opened'), 'unsaved loaded source can request native display without disk existence');
+    Check(not JsonBoolean(LResult, 'source_editor_available'), 'native show request does not invent a verified text editor');
+    Check((LProject.ShowCount = 1) and (LProject.SaveCount = 0), 'unsaved source uses native display without saving');
+    Check(not TFile.Exists(LFileName), 'unsaved source display creates no disk file');
+  finally LResult.Free; end;
+
+  ExistingWorkspace;
+  LFileName := TPath.Combine(FixtureRoot, 'Target.dpk');
+  LProject := TTestProject.Create(TPath.Combine(FixtureRoot, 'Target.dproj'));
+  LEditor := TTestSourceEditor.Create;
+  LEditor.FileName := LFileName;
+  LEditor.Modified := True;
+  LProject.Editors := [LEditor as IOTAEditor];
+  AddProject(LProject);
+  LResult := TDAIProjectService.OpenFile(LFileName);
+  try
+    Check(JsonBoolean(LResult, 'opened') and JsonBoolean(LResult, 'source_editor_available'), 'actual source editor of metadata-named project is accepted');
+    Check((LProject.ShowCount = 1) and (LProject.SaveCount = 0) and LEditor.Modified, 'existing modified source editor remains unsaved');
+    Check(LProject.Editors[0] = (LEditor as IOTAEditor), 'existing source editor is retained');
+  finally LResult.Free; end;
+
+  ExistingWorkspace;
+  LProject := TTestProject.Create(TPath.Combine(FixtureRoot, 'Target.dproj'));
+  LEditor := TTestEditor.Create;
+  LEditor.FileName := TPath.Combine(FixtureRoot, 'Target.dpr');
+  LProject.Editors := [LEditor as IOTAEditor];
+  AddProject(LProject);
+  LFailed := False;
+  try
+    LResult := TDAIProjectService.OpenFile(LEditor.FileName);
+    LResult.Free;
+  except on E: EArgumentException do LFailed := True; end;
+  Check(LFailed and (LProject.ShowCount = 0), 'matching project metadata and a non-source editor do not invent a DPR');
+
+  ExistingWorkspace;
+  LFileName := TPath.Combine(FixtureRoot, 'Target.dpr');
+  TDAIOTA.TestModules := TDAIOTA.TestModules + [TTestModule.Create(LFileName) as IOTAModule];
+  LFailed := False;
+  try
+    LResult := TDAIProjectService.OpenFile(LFileName);
+    LResult.Free;
+  except on E: EArgumentException do LFailed := True; end;
+  Check(LFailed and (Host.OpenCount = 0), 'ordinary text module is not treated as a loaded project');
+
+  for LExtension in ['.dpr', '.dpk', '.dproj', '.groupproj', '.bdsgroup', '.bpg'] do
+  begin
+    ExistingWorkspace;
+    LFailed := False;
+    try
+      LResult := TDAIProjectService.OpenFile(TPath.Combine(FixtureRoot, 'Target' + LExtension));
+      LResult.Free;
+    except on E: EArgumentException do LFailed := True; end;
+    Check(LFailed, LExtension + ' unloaded project or metadata requires project_open');
+    Check((Host.OpenCount = 0) and (Host.OpenFileCount = 0) and (Host.CloseCount = 0), LExtension + ' refusal preserves workspace');
+  end;
+
+  for LExtension in ['.dproj', '.groupproj', '.bdsgroup', '.bpg'] do
+  begin
+    ExistingWorkspace;
+    LFileName := TPath.Combine(FixtureRoot, 'Target' + LExtension);
+    if LExtension = '.dproj' then
+    begin
+      LProject := TTestProject.Create(LFileName);
+      LModule := LProject;
+      AddProject(LProject);
+    end
+    else
+    begin
+      LModule := TTestGroup.Create(LFileName);
+      TDAIOTA.TestModules := TDAIOTA.TestModules + [LModule as IOTAModule];
+    end;
+    LFailed := False;
+    try
+      LResult := TDAIProjectService.OpenFile(LFileName);
+      LResult.Free;
+    except on E: EArgumentException do LFailed := True; end;
+    Check(LFailed and (LModule.ShowCount = 0), LExtension + ' loaded metadata cannot be shown as project source');
+    Check((Host.OpenCount = 0) and (Host.OpenFileCount = 0) and (LModule.SaveCount = 0), LExtension + ' metadata refusal has no fallback or save');
+  end;
+
+  ExistingWorkspace;
+  LProject := TTestProject.Create(TPath.Combine(FixtureRoot, 'Target.dpk'));
+  LProject.RaiseShowAbort := True;
+  AddProject(LProject);
+  LFailed := False;
+  try
+    LResult := TDAIProjectService.OpenFile(LProject.GetFileName);
+    LResult.Free;
+  except on E: EAbort do LFailed := True; end;
+  Check(LFailed and (LProject.ShowCount = 1), 'native source display cancellation propagates');
+  Check((Host.OpenCount = 0) and (Host.OpenFileCount = 0) and (LProject.SaveCount = 0), 'native display failure never falls back to project open or save');
+end;
+
 procedure CreateFixtures;
 var
   LGuid: TGUID;
@@ -581,6 +730,7 @@ begin
       CancelAndValidateOpen;
       CreateProjects;
       ImplicitGroupProjects;
+      OpenLoadedProjectSources;
       Check(Host.OpenFileCount = 0, 'project suite never uses OpenFile');
       Writeln('OK: ', CheckCount, ' isolated native project-group checks (', SizeOf(Pointer) * 8, '-bit)');
     finally

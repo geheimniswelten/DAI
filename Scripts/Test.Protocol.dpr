@@ -267,7 +267,42 @@ begin
   Check(Server.LastMCPAccessTick = 0, 'a restarted listener clears previous activity');
 end;
 
+function CheckFileSafetyInstructions(const ABody, ASource: string): string;
+var
+  LJson: TJSONValue;
+begin
+  LJson := TJSONObject.ParseJSONValue(ABody);
+  try
+    Check(LJson is TJSONObject, ASource + ' returns a JSON object');
+    Result := LJson.GetValue<string>('result.instructions', '');
+    Check(Pos('ide_status, open_files_list und projects_list abgleichen', Result) > 0, ASource + ' requires complete IDE/project inventory');
+    Check(Pos('Kein sichtbarer Editor-Tab bedeutet nicht ungeladen', Result) > 0, ASource + ' separates loaded files from visible tabs');
+    Check(Pos('GROUPPROJ/BDSGROUP/BPG', Result) > 0, ASource + ' includes loaded project groups');
+    Check(Pos('ihre DPROJ sowie DPR/DPK, auch ohne Editor-Tab', Result) > 0, ASource + ' includes loaded project metadata and sources');
+    Check(Pos('PAS und DFM/FMX gemeinsam, in beide Richtungen', Result) > 0, ASource + ' protects paired form modules symmetrically');
+    Check(Pos('nicht allein wegen ihrer Projektzugehörigkeit geladen', Result) > 0, ASource + ' does not mark every project member loaded');
+    Check(Pos('DPR/DPK bei Bedarf mit file_open', Result) > 0, ASource + ' opens loaded project sources in the IDE');
+    Check(Pos('ausschließlich über project_option_set/project_option_remove ändern, nicht per DPROJ-XML', Result) > 0,
+      ASource + ' requires ToolsAPI project option changes');
+    Check(Pos('Geladene Dateien niemals zusätzlich direkt auf dem Datenträger ändern', Result) > 0,
+      ASource + ' prohibits a second external write to loaded files');
+    Check(Pos('Fehlender Textpuffer, fehlende OTA-Operation oder unerreichbares DAI erlauben keinen Datenträger-Ausweichweg', Result) > 0,
+      ASource + ' has no missing-operation or offline disk fallback');
+    Check(Pos('nur bei nachweislich geschlossener Datei oder beendeten betroffenen IDEs', Result) > 0,
+      ASource + ' requires evidence before an external write');
+    Check(Pos('Bei unbekanntem Ladezustand erst klären und keine externe Schreibänderung ausführen', Result) > 0,
+      ASource + ' protects unknown loaded state');
+    Check(Pos('DAI offline bedeutet nicht IDE beendet', Result) > 0, ASource + ' distinguishes DAI reachability and IDE lifetime');
+    Check(Pos('Benutzeränderungen nicht ungefragt speichern, verwerfen', Result) > 0, ASource + ' protects existing user buffers');
+    Check(Pos('Ausweichweg bei unerreichbarem DAI', Result) = 0, ASource + ' removes the previous unsafe fallback advice');
+  finally
+    LJson.Free;
+  end;
+end;
+
 procedure RunChecks;
+var
+  LInitializationInstructions: string;
 begin
   Response := Post('{"jsonrpc":"2.0","id":1,"method":"initialize","params":' +
     '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"IsolatedTest","version":"1"}}}');
@@ -275,6 +310,7 @@ begin
   SessionId := Response.HeaderValue['Mcp-Session-Id'];
   Check(SessionId <> '', 'server-issued legacy session');
   Check(Pos('2025-06-18', Response.ContentAsString) > 0, 'legacy negotiated version');
+  LInitializationInstructions := CheckFileSafetyInstructions(Response.ContentAsString, 'legacy initialize');
 
   Response := Post('{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}', SessionId);
   Check((Response.StatusCode = 202) and (Response.ContentAsString = ''),
@@ -305,6 +341,8 @@ begin
   Check(Pos('"resultType":"complete"', Response.ContentAsString) > 0, 'modern result type');
   Response := Post('{"jsonrpc":"2.0","id":5,"method":"server/discover","params":{' + CModernMeta + '}}', '', '2026-07-28', 'server/discover');
   Check((Response.StatusCode = 200) and (Pos('supportedVersions', Response.ContentAsString) > 0), 'modern discovery');
+  Check(CheckFileSafetyInstructions(Response.ContentAsString, 'modern discovery') = LInitializationInstructions,
+    'legacy initialize and modern discovery distribute the same complete file safety rules');
   Response := Post('{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"file_read","arguments":{},' +
     CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'file_read');
   Check((Response.StatusCode = 200) and (TDAIMCPTools.CallCount = 3), 'modern tool executes once');

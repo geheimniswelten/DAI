@@ -2,6 +2,9 @@
 
 ## 1.2.36
 
+- Geladene Dateien werden unabhängig von Editor-Tabs erkannt: Projektgruppe, Projekte samt DPROJ und DPR/DPK, gekoppelte PAS-/DFM-/FMX-Dateien, zusätzliche Modul-Editoren und eigenständige Textpuffer. `open_files_list` verwendet dieselbe zentrale Erkennung.
+- Dateizugriffe fallen bei geladenen Dateien ohne verfügbaren IDE-Puffer nicht mehr auf den Datenträger zurück. Schreibzugriffe prüfen den Ladezustand unmittelbar vor der Änderung erneut; geladene Projekt-/Gruppenmodelle verlangen die Projektwerkzeuge. Suche und Index-Lesebatches beachten denselben Schutz.
+- MCP-Anweisungen und Delphi-Skill erklären den geladenen IDE-Zustand ausdrücklich. Fehlende OTA-Unterstützung oder unerreichbares DAI erlauben keine externen Schreibänderungen an möglicherweise geladenen Dateien.
 - Die sichtbare DAI-Oberfläche unterstützt Deutsch, Englisch, Französisch und Japanisch anhand der IDE-Sprachressourcen. Die offizielle RTL-Ressourcenauflösung berücksichtigt auch BDSSetLang und verzögert geladene Ressourcen. Ohne passende Sprachressource wird Englisch verwendet.
 - Einstellungen, Toolbar-/Menütexte, Hinweise, Indexverwaltung, Berechtigungsdialoge, Projektbestätigungen und manuelle Registrierungsanleitungen sind lokalisiert. Lange Texte umbrechen; Indexaktionen passen ihre Breite an die Sprache an. Maschinenwerte, Konfigurationsbeispiele und rohe Diagnosen bleiben erhalten.
 - Beim Öffnen des DAI-Menüs wird neben dem Hint auch der sichtbare Mauszeiger auf den Pfeil zurückgesetzt, vor und nach der Indexabfrage. Der globale VCL-Cursor bleibt unverändert, damit der Textcursor nach der Rückkehr in den Editor wieder regulär funktioniert.

@@ -14,6 +14,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $sourceDirectory = Join-Path $projectRoot 'Source'
 $designerSource = [IO.File]::ReadAllText((Join-Path $sourceDirectory 'h5u.DAI.OTA.Designer.pas'))
 $helperSource = [IO.File]::ReadAllText((Join-Path $sourceDirectory 'h5u.DAI.OTA.Helpers.pas'))
+$loadedFilesSource = [IO.File]::ReadAllText((Join-Path $sourceDirectory 'h5u.DAI.OTA.LoadedFiles.pas'))
 $platforms = if ($Platform -eq 'Both') { @('Win32', 'Win64') } else { @($Platform) }
 
 function Get-ProductionSection {
@@ -42,6 +43,8 @@ function Get-ProductionMethod {
 }
 
 $designerFunctions = Get-ProductionSection $designerSource 'function TryComponentString(' 'procedure CollectComponents('
+$loadedFilesType = Get-ProductionSection $loadedFilesSource '  TDAILoadedFiles = class sealed' 'implementation'
+$loadedFilesMethods = Get-ProductionSection $loadedFilesSource 'class function TDAILoadedFiles.NormalizeFileName(' 'end.'
 $propertyLimit = [regex]::Matches($designerSource, '(?m)^\s*CMaximumPropertyCharacters\s*=\s*\d+;')
 if ($propertyLimit.Count -ne 1) {
     throw 'Das produktive Limit fuer Designer-Strings ist nicht mehr eindeutig.'
@@ -88,6 +91,10 @@ foreach ($currentPlatform in $platforms) {
             [IO.File]::WriteAllText((Join-Path $generatedDirectory 'DAI.Designer.Functions.inc'),
                 $designerFunctions, [Text.UTF8Encoding]::new($true))
         } else {
+            [IO.File]::WriteAllText((Join-Path $generatedDirectory 'DAI.FormText.LoadedFiles.Type.inc'),
+                $loadedFilesType, [Text.UTF8Encoding]::new($true))
+            [IO.File]::WriteAllText((Join-Path $generatedDirectory 'DAI.FormText.LoadedFiles.Methods.inc'),
+                $loadedFilesMethods, [Text.UTF8Encoding]::new($true))
             [IO.File]::WriteAllText((Join-Path $generatedDirectory 'DAI.FormText.State.inc'),
                 ('const' + [Environment]::NewLine + $formViewConstants + $formViewState), [Text.UTF8Encoding]::new($true))
             [IO.File]::WriteAllText((Join-Path $generatedDirectory 'DAI.FormText.Methods.inc'),

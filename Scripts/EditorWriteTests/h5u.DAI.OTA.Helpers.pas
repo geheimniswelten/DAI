@@ -19,6 +19,10 @@ type
     class var ReadCount: Integer;
     class var FindCount: Integer;
     class var OpenEditor: Boolean;
+    class var LoadedModule: Boolean;
+    class var LoadOnFinalLookup: Boolean;
+    class var OpenOnFinalLookup: Boolean;
+    class var FinalBuffer: string;
     class var SourceEditor: IOTASourceEditor;
     class procedure Reset(const AText: string); static;
     class procedure RunOnMainThread(const AAction: TThreadProcedure); static;
@@ -34,6 +38,8 @@ type
     class function ProjectFileName(const AProject: IOTAProject): string; static;
     class function ProjectConfiguration(const AProject: IOTAProject): string; static;
     class function ProjectPlatform(const AProject: IOTAProject): string; static;
+    class function IsFileLoadedInIDE(const AFileName: string): Boolean; static;
+    class function LoadedFileNames: TArray<string>; static;
     class function FindSourceEditor(const AFileName: string): IOTASourceEditor; static;
     class function EnsureFormTextEditor(const AFileName: string): IOTASourceEditor; static;
     class function IsFileOpenInEditor(const AFileName: string): Boolean; static;
@@ -119,6 +125,10 @@ begin
   ReadCount := 0;
   FindCount := 0;
   OpenEditor := True;
+  LoadedModule := False;
+  LoadOnFinalLookup := False;
+  OpenOnFinalLookup := False;
+  FinalBuffer := '';
 end;
 
 class procedure TDAIOTA.RunOnMainThread(const AAction: TThreadProcedure);
@@ -188,6 +198,18 @@ begin
   Result := '';
 end;
 
+class function TDAIOTA.IsFileLoadedInIDE(const AFileName: string): Boolean;
+begin
+  Result := OpenEditor or LoadedModule;
+end;
+
+class function TDAIOTA.LoadedFileNames: TArray<string>;
+begin
+  Result := nil;
+  if OpenEditor or LoadedModule then
+    Result := ['IsolatedBuffer.pas'];
+end;
+
 class function TDAIOTA.FindSourceEditor(const AFileName: string): IOTASourceEditor;
 begin
   Inc(FindCount);
@@ -199,6 +221,13 @@ end;
 
 class function TDAIOTA.EnsureFormTextEditor(const AFileName: string): IOTASourceEditor;
 begin
+  if LoadOnFinalLookup then
+    LoadedModule := True;
+  if OpenOnFinalLookup then
+  begin
+    OpenEditor := True;
+    Buffer := FinalBuffer;
+  end;
   Result := FindSourceEditor(AFileName);
 end;
 

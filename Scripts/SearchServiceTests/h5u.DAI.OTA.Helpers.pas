@@ -36,6 +36,8 @@ type
     class function ProjectContainsFile(const AProject: IOTAProject; const AFileName: string): Boolean; static;
     class function MainProjectGroup: IOTAProjectGroup; static;
     class procedure RunOnMainThread(const AProcedure: TProc); static;
+    class function IsFileLoadedInIDE(const AFileName: string): Boolean; static;
+    class function LoadedFileNames: TArray<string>; static;
     class function FindSourceEditor(const AFileName: string): IOTASourceEditor; static;
     class function IsFormLoadedForFile(const AFileName: string): Boolean; static;
   end;
@@ -121,9 +123,21 @@ begin
   AProcedure();
 end;
 
-class function TDAIOTA.FindSourceEditor(const AFileName: string): IOTASourceEditor;
+class function TDAIOTA.IsFileLoadedInIDE(const AFileName: string): Boolean;
 begin
-  if TestBuffers.ContainsKey(NormalizeFileName(AFileName)) then
+  Result := TestBuffers.ContainsKey(NormalizeFileName(AFileName));
+end;
+
+class function TDAIOTA.LoadedFileNames: TArray<string>;
+begin
+  Result := TestBuffers.Keys.ToArray;
+end;
+
+class function TDAIOTA.FindSourceEditor(const AFileName: string): IOTASourceEditor;
+var
+  LBuffer: TTestBuffer;
+begin
+  if TestBuffers.TryGetValue(NormalizeFileName(AFileName), LBuffer) and (LBuffer.Source = 'editor_buffer') then
     Result := TTestSourceEditor.Create
   else
     Result := nil;

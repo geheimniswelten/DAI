@@ -477,22 +477,53 @@ begin
   Result.AddPair('created', TJSONBool.Create(Assigned(LCreatedModule)));
 end;
 
+function HasProjectSourceEditor(const AModule: IOTAModule; const AFileName: string): Boolean;
+var
+  LEditor: IOTASourceEditor;
+  LIndex: Integer;
+begin
+  for LIndex := 0 to AModule.ModuleFileCount - 1 do
+    if Supports(AModule.ModuleFileEditors[LIndex], IOTASourceEditor, LEditor) and TDAIOTA.SameFile(LEditor.FileName, AFileName) then
+      Exit(True);
+  Result := False;
+end;
+
 class function TDAIProjectService.OpenFile(const AFileName: string): TJSONObject;
 var
   LActionServices: IOTAActionServices;
   LFileName: string;
+  LModule: IOTAModule;
   LOpened: Boolean;
+  LProject: IOTAProject;
+  LProjectSource: Boolean;
+  LSourceEditorAvailable: Boolean;
 begin
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
-  if IsProjectFile(LFileName) then
+  LProjectSource := SameText(TPath.GetExtension(LFileName), '.dpr') or SameText(TPath.GetExtension(LFileName), '.dpk');
+  if IsProjectFile(LFileName) and not LProjectSource then
     raise EArgumentException.Create('Projektdateien müssen mit project_open geöffnet werden.');
-  if not TFile.Exists(LFileName) then
+  if not LProjectSource and not TFile.Exists(LFileName) then
     raise EDAIFileNotFound.CreateFmt('Datei nicht gefunden: %s', [LFileName]);
 
   LOpened := False;
+  LSourceEditorAvailable := False;
   TDAIOTA.RunOnMainThread(
     procedure
     begin
+      if LProjectSource then
+      begin
+        LModule := TDAIOTA.FindModuleByFileName(LFileName);
+        if not Supports(LModule, IOTAProject, LProject) then
+          raise EArgumentException.Create('Nicht geladene Projektdateien müssen mit project_open geöffnet werden.');
+        // Accept only the actual project source or an existing source editor of
+        // this project module. A matching DPROJ basename is not sufficient.
+        if not TDAIOTA.SameFile(LProject.FileName, LFileName) and not HasProjectSourceEditor(LModule, LFileName) then
+          raise EArgumentException.Create('Die Datei ist kein geladener Projektquelltext. Verwenden Sie project_open zum Öffnen eines Projekts.');
+        LModule.ShowFileName(LFileName);
+        LOpened := True;
+        LSourceEditorAvailable := HasProjectSourceEditor(LModule, LFileName);
+        Exit;
+      end;
       if not Supports(BorlandIDEServices, IOTAActionServices, LActionServices) then
         raise EInvalidOperation.Create('IOTAActionServices ist nicht verfügbar.');
       LOpened := LActionServices.OpenFile(LFileName);
@@ -501,6 +532,10 @@ begin
   Result := TJSONObject.Create;
   Result.AddPair('file', LFileName);
   Result.AddPair('opened', TJSONBool.Create(LOpened));
+  // ShowFilename has no success return value. Report editor availability
+  // separately, rather than claiming that its text buffer was verified.
+  if LProjectSource then
+    Result.AddPair('source_editor_available', TJSONBool.Create(LSourceEditorAvailable));
 end;
 
 class function TDAIProjectService.OpenProject(const AFileName: string; const ACloseOthers: Boolean): TJSONObject;

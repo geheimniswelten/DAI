@@ -6,9 +6,11 @@
 // Path normalization below is a test environment adapter; RunOnMainThread is included verbatim.
 // Actual production units are also compiled by Test.ReadOnlyPolicy.ps1 against original ToolsAPI.
 
-uses System.Classes, System.Generics.Collections, System.IOUtils, System.SysUtils, Winapi.Windows,
+uses System.Classes, System.Generics.Collections, System.Generics.Defaults, System.IOUtils, System.SysUtils, Winapi.Windows,
   h5u.DAI.Text.Encoding;
 type
+  IOTAModule = interface;
+  IOTAProject = interface;
   IOTAEditReader = interface ['{26EB0E4F-F97B-11D1-AB27-00C04FB16FB3}']
     function GetText(Position: Longint; Buffer: PAnsiChar; Count: Longint): Longint;
   end;
@@ -20,6 +22,8 @@ type
     function GetFileName: string;
     procedure Show;
     function GetModified: Boolean;
+    function GetModule: IOTAModule;
+    property Module: IOTAModule read GetModule;
     property Modified: Boolean read GetModified;
     property FileName: string read GetFileName;
   end;
@@ -36,6 +40,7 @@ type
     function GetFileName: string;
     function GetModuleFileCount: Integer;
     function GetModuleFileEditor(AIndex: Integer): IOTAEditor;
+    procedure GetAssociatedFilesFromModule(AFiles: TStrings);
     property FileName: string read GetFileName;
     property ModuleFileCount: Integer read GetModuleFileCount;
     property ModuleFileEditors[AIndex: Integer]: IOTAEditor read GetModuleFileEditor;
@@ -46,10 +51,22 @@ type
     property AdditionalModuleFileCount: Integer read GetAdditionalModuleFileCount;
     property AdditionalModuleFileEditors[AIndex: Integer]: IOTAEditor read GetAdditionalModuleFileEditor;
   end;
+  IOTAProject = interface(IOTAModule) ['{0E4BFB1D-2F3B-4CD6-A9A2-4903713B59E0}']
+    procedure GetAssociatedFiles(const AFileName: string; AFiles: TStrings);
+  end;
+  IOTAProjectGroup = interface(IOTAModule) ['{B9EAE73C-8A03-4729-A232-EEE626801A0B}']
+    function GetProjectCount: Integer;
+    function GetProject(AIndex: Integer): IOTAProject;
+    property ProjectCount: Integer read GetProjectCount;
+    property Projects[AIndex: Integer]: IOTAProject read GetProject;
+  end;
   IOTAModuleServices = interface ['{55A5E848-27FB-4880-8E7C-7F05A9802482}']
     function GetModuleCount: Integer;
     function GetModule(AIndex: Integer): IOTAModule;
     function FindModule(const AFileName: string): IOTAModule;
+    function GetMainProjectGroup: IOTAProjectGroup;
+    function GetActiveProject: IOTAProject;
+    property MainProjectGroup: IOTAProjectGroup read GetMainProjectGroup;
     property ModuleCount: Integer read GetModuleCount;
     property Modules[AIndex: Integer]: IOTAModule read GetModule;
   end;
@@ -65,6 +82,7 @@ type
   IOTAActionServices = interface ['{F17A7BC9-E07D-11D1-AB0B-00C04FB16FB3}']
     function OpenFile(const AFileName: string): Boolean;
   end;
+{$I DAI.FormText.LoadedFiles.Type.inc}
   TDAIOTA = class
     class procedure RunOnMainThread(const AAction: TThreadProcedure); static;
     class function NormalizeFileName(const AFileName: string): string; static;
@@ -83,6 +101,7 @@ begin Result := TPath.GetFullPath(AFileName); end;
 class function TDAIOTA.SameFile(const ALeft, ARight: string): Boolean;
 begin Result := SameText(TPath.GetFullPath(ALeft), TPath.GetFullPath(ARight)); end;
 
+{$I DAI.FormText.LoadedFiles.Methods.inc}
 {$I DAI.FormText.State.inc}
 {$I DAI.FormText.Methods.inc}
 
@@ -100,6 +119,7 @@ type
     constructor Create(const AFileName: string);
     function GetFileName: string;
     function GetModified: Boolean;
+    function GetModule: IOTAModule;
     procedure Show;
   end;
   TFakeSource = class(TFakeEditor, IOTASourceEditor, IOTAEditBuffer)
@@ -119,6 +139,7 @@ type
     function GetFileName: string;
     function GetModuleFileCount: Integer;
     function GetModuleFileEditor(AIndex: Integer): IOTAEditor;
+    procedure GetAssociatedFilesFromModule(AFiles: TStrings);
     function GetAdditionalModuleFileCount: Integer;
     function GetAdditionalModuleFileEditor(AIndex: Integer): IOTAEditor;
   end;
@@ -129,6 +150,8 @@ type
     function GetModuleCount: Integer;
     function GetModule(AIndex: Integer): IOTAModule;
     function FindModule(const AFileName: string): IOTAModule;
+    function GetMainProjectGroup: IOTAProjectGroup;
+    function GetActiveProject: IOTAProject;
     function GetEditBufferIterator(out AIterator: IOTAEditBufferIterator): Boolean;
     function GetCount: Integer;
     function GetEditBuffer(AIndex: Integer): IOTAEditBuffer;
@@ -184,6 +207,7 @@ begin
 end;
 function TFakeEditor.GetFileName: string; begin Result := FileName; end;
 function TFakeEditor.GetModified: Boolean; begin Result := IsModified; end;
+function TFakeEditor.GetModule: IOTAModule; begin Result := nil; end;
 procedure TFakeEditor.Show; begin Inc(ShowCount); end;
 function TFakeSource.CreateReader: IOTAEditReader; begin Result := TFakeReader.Create(Content); end;
 function TFakeSource.GetEditViewCount: Integer; begin if Assigned(View) then Result := 1 else Result := 0; end;
@@ -191,10 +215,13 @@ function TFakeSource.GetEditView(AIndex: Integer): IOTAEditView; begin Result :=
 function TFakeModule.GetFileName: string; begin Result := FileName; end;
 function TFakeModule.GetModuleFileCount: Integer; begin Result := Length(Editors); end;
 function TFakeModule.GetModuleFileEditor(AIndex: Integer): IOTAEditor; begin Result := Editors[AIndex]; end;
+procedure TFakeModule.GetAssociatedFilesFromModule(AFiles: TStrings); begin end;
 function TFakeModule.GetAdditionalModuleFileCount: Integer; begin Result := Length(Additional); end;
 function TFakeModule.GetAdditionalModuleFileEditor(AIndex: Integer): IOTAEditor; begin Result := Additional[AIndex]; end;
 function TFakeServices.GetModuleCount: Integer; begin Result := Length(Modules); end;
 function TFakeServices.GetModule(AIndex: Integer): IOTAModule; begin Result := Modules[AIndex]; end;
+function TFakeServices.GetMainProjectGroup: IOTAProjectGroup; begin Result := nil; end;
+function TFakeServices.GetActiveProject: IOTAProject; begin Result := nil; end;
 function TFakeServices.FindModule(const AFileName: string): IOTAModule;
 var LModule: IOTAModule;
 begin
