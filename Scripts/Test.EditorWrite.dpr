@@ -51,6 +51,126 @@ begin
   end;
 end;
 
+procedure CheckLocalEdits;
+const
+  COriginal = 'unit IsolatedBuffer;' + #13#10 + 'interface' + #13#10 + 'implementation' + #13#10 +
+    'const First = 1; Second = 2; Greeting = ''Grüße 漢字 ' + #$D83D#$DE00 + ''';' + #13#10 + 'end.' + #13#10;
+var
+  LEdits: TJSONValue;
+  LResult: TJSONObject;
+  LUsedEditor: Boolean;
+
+  procedure CheckRejected(const AContent, AJson, AHash, ADescription: string);
+  var
+    LRejected: Boolean;
+  begin
+    TDAIOTA.Reset(AContent);
+    LEdits := TJSONObject.ParseJSONValue(AJson);
+    try
+      LRejected := False;
+      try
+        LResult := TDAIFileService.EditFile('IsolatedBuffer.txt', AHash, LEdits, False, LUsedEditor);
+        LResult.Free;
+      except
+        on E: EArgumentException do LRejected := True;
+        on E: EInvalidOperation do LRejected := True;
+      end;
+      Check(LRejected, ADescription + ' rejected');
+      Check((TDAIOTA.Buffer = AContent) and (TDAIOTA.WriteCount = 0) and (TDAIOTA.SaveCount = 0), ADescription + ' leaves buffer untouched');
+    finally
+      LEdits.Free;
+    end;
+  end;
+
+  procedure CheckInvalidUnicode(const AOldText, ANewText: string);
+  const
+    CEmojiText = 'a' + #$D83D#$DE00 + 'z';
+  var
+    LRejected: Boolean;
+  begin
+    TDAIOTA.Reset(CEmojiText);
+    LEdits := TJSONArray.Create;
+    TJSONArray(LEdits).AddElement(TJSONObject.Create.AddPair('old_text', AOldText).AddPair('new_text', ANewText));
+    try
+      LRejected := False;
+      try
+        LResult := TDAIFileService.EditFile('IsolatedBuffer.txt', THashSHA2.GetHashString(CEmojiText), LEdits, False, LUsedEditor);
+        LResult.Free;
+      except
+        on E: EArgumentException do LRejected := Pos('Surrogat', E.Message) > 0;
+      end;
+      Check(LRejected and (TDAIOTA.WriteCount = 0) and (TDAIOTA.Buffer = CEmojiText), 'Unpaired surrogate cannot split or damage Unicode');
+    finally
+      LEdits.Free;
+    end;
+  end;
+
+begin
+  TDAIOTA.Reset(COriginal);
+  LEdits := TJSONObject.ParseJSONValue('[{"old_text":"Second = 2","new_text":"Second = 3"},' +
+    '{"old_text":"Grüße 漢字 ' + #$D83D#$DE00 + '","new_text":"Änderung ' + #$D83D#$DE80 + '"},' +
+    '{"old_text":"First = 1","new_text":"First = 10"}]');
+  try
+    LResult := TDAIFileService.EditFile('IsolatedBuffer.pas', THashSHA2.GetHashString(COriginal), LEdits, False, LUsedEditor);
+    try
+      Check(LUsedEditor and (TDAIOTA.WriteCount = 1), 'multiple edits use one guarded writer');
+      Check((Pos('First = 10', TDAIOTA.Buffer) > 0) and (Pos('Second = 3', TDAIOTA.Buffer) > 0), 'unordered changes target original positions');
+      Check(Pos('Änderung ' + #$D83D#$DE80, TDAIOTA.Buffer) > 0, 'local edit preserves Unicode and surrogate pairs');
+      Check(Pos('implementation', TDAIOTA.Buffer) > 0, 'local edit internally reads complete PAS implementation');
+      Check((LResult.GetValue<Integer>('edit_count') = 3) and not LResult.GetValue<Boolean>('saved'), 'local edit reports count and preserves unsaved state');
+      CheckResult(LResult, 'local edit readback');
+    finally
+      LResult.Free;
+    end;
+  finally
+    LEdits.Free;
+  end;
+  TDAIOTA.Reset('abc def ghi');
+  LEdits := TJSONObject.ParseJSONValue('[{"old_text":"def ","new_text":""},{"old_text":"abc","new_text":"abc inserted"}]');
+  try
+    LResult := TDAIFileService.EditFile('IsolatedBuffer.txt', THashSHA2.GetHashString('abc def ghi'), LEdits, False, LUsedEditor);
+    LResult.Free;
+    Check(TDAIOTA.Buffer = 'abc inserted ghi', 'empty replacement deletes; anchored replacement inserts');
+  finally
+    LEdits.Free;
+  end;
+  TDAIOTA.Reset('first second');
+  LEdits := TJSONObject.ParseJSONValue('[{"old_text":"first","new_text":"second"},{"old_text":"second","new_text":"third"}]');
+  try
+    LResult := TDAIFileService.EditFile('IsolatedBuffer.txt', THashSHA2.GetHashString('first second'), LEdits, False, LUsedEditor);
+    LResult.Free;
+    Check(TDAIOTA.Buffer = 'second third', 'later patches never match newly inserted replacement text');
+  finally
+    LEdits.Free;
+  end;
+  CheckInvalidUnicode(#$D83D, 'x');
+  CheckInvalidUnicode(#$DE00, 'x');
+  CheckInvalidUnicode('a', #$D83D);
+  CheckInvalidUnicode('a', #$DE00);
+  CheckInvalidUnicode('a', #$D83D + 'x');
+  CheckInvalidUnicode('a', 'x' + #$DE00);
+  CheckRejected('abc', '[{"old_text":"a","new_text":"A"}]', '', 'missing hash');
+  CheckRejected('abc', '[{"old_text":"a","new_text":"A"}]', THashSHA2.GetHashString('stale'), 'stale hash');
+  CheckRejected('abc', 'null', THashSHA2.GetHashString('abc'), 'null edits');
+  CheckRejected('abc', '{}', THashSHA2.GetHashString('abc'), 'object edits');
+  CheckRejected('abc', '[]', THashSHA2.GetHashString('abc'), 'empty edits');
+  CheckRejected('abc', '[null]', THashSHA2.GetHashString('abc'), 'non-object edit');
+  CheckRejected('abc', '[{"new_text":"A"}]', THashSHA2.GetHashString('abc'), 'missing old_text');
+  CheckRejected('abc', '[{"old_text":"","new_text":"A"}]', THashSHA2.GetHashString('abc'), 'empty old_text');
+  CheckRejected('abc', '[{"old_text":123,"new_text":"A"}]', THashSHA2.GetHashString('abc'), 'nonstring old_text');
+  CheckRejected('abc', '[{"old_text":"a"}]', THashSHA2.GetHashString('abc'), 'missing new_text');
+  CheckRejected('abc', '[{"old_text":"a","new_text":null}]', THashSHA2.GetHashString('abc'), 'null new_text');
+  CheckRejected('abc', '[{"old_text":"a","new_text":123}]', THashSHA2.GetHashString('abc'), 'numeric new_text');
+  CheckRejected('abc', '[{"old_text":"a","new_text":false}]', THashSHA2.GetHashString('abc'), 'boolean new_text');
+  CheckRejected('abc', '[{"old_text":"a","new_text":"A","extra":1}]', THashSHA2.GetHashString('abc'), 'unknown edit property');
+  CheckRejected('abc', '[{"old_text":"a","new_text":"A"},{"old_text":"missing","new_text":"X"}]', THashSHA2.GetHashString('abc'),
+    'later missing match');
+  CheckRejected('aba', '[{"old_text":"a","new_text":"A"}]', THashSHA2.GetHashString('aba'), 'ambiguous match');
+  CheckRejected('aaa', '[{"old_text":"aa","new_text":"A"}]', THashSHA2.GetHashString('aaa'), 'overlapping ambiguous occurrences');
+  CheckRejected('abc', '[{"old_text":"ab","new_text":"A"},{"old_text":"bc","new_text":"B"}]', THashSHA2.GetHashString('abc'), 'overlapping edits');
+  CheckRejected('abc', '[{"old_text":"a","new_text":"A"},{"old_text":"a","new_text":"B"}]', THashSHA2.GetHashString('abc'), 'duplicate edits');
+end;
+
 procedure CheckInterfaceReads;
 const
   CPublicText = 'unit IsolatedBuffer;' + #13#10 + 'interface' + #13#10 +
@@ -697,6 +817,7 @@ begin
     CheckLoadedFileGuards;
     CheckInterfaceReads;
     CheckUnitWriteGuards;
+    CheckLocalEdits;
     CheckFormUnicode('dfm');
     CheckFormUnicode('fmx');
     Writeln('PASS: ', CheckCount, ' isolated native editor write/read-view checks');

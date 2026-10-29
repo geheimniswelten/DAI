@@ -15,8 +15,8 @@ begin
   TDAIIDEToolbar.Install;
   TDAIIDEToolbar.Refresh;
   Check(TDAIClientRegistration.HealthCount = 1, 'Package activation scans registrations exactly once');
-  CheckHealthGlyph('NotRegistered', 'Missing registration displays the question glyph');
-  Check(GHost.DAIAction.Caption = 'DAI nicht registriert', 'Missing registration has a clear caption');
+  CheckHealthGlyph('Inactive', 'An inactive server retains Pause despite a missing registration');
+  Check(GHost.DAIAction.Caption = 'DAI inaktiv', 'Missing registration does not override the inactive caption');
   Check(Pos(TDAIClientRegistration.HealthDetails, GHost.DAIAction.Hint) > 0, 'Missing-registration details appear in the hint');
   Check(Pos('kein aktiver Port', GHost.DAIAction.Hint) > 0, 'Inactive warning still states the inactive runtime');
   LCount := TDAIClientRegistration.HealthCount;
@@ -27,7 +27,8 @@ begin
   TDAIClientRegistration.HealthState := rhCurrent;
   TDAIClientRegistration.HealthDetails := '';
   TDAIIDEToolbar.Refresh;
-  CheckHealthGlyph('NotRegistered', 'External fixtures are not polled without an invalidation trigger');
+  CheckHealthGlyph('Inactive', 'Unchanged inactive status does not poll external fixtures');
+  Check(Pos('No matching registration', GHost.DAIAction.Hint) > 0, 'Cached registration diagnostics remain until invalidation');
   TDAIIDEToolbar.CheckRegistrations;
   TDAIIDEToolbar.Refresh;
   Check(TDAIClientRegistration.HealthCount = LCount + 1, 'Explicit registration check performs one fresh scan');
@@ -38,7 +39,8 @@ begin
   Inc(TDAIClientRegistration.Version);
   TDAIIDEToolbar.Refresh;
   Check(TDAIClientRegistration.HealthCount = LCount + 2, 'A changed registration revision invalidates the cache');
-  CheckHealthGlyph('RegistrationUpdate', 'Changed registration revision updates the warning glyph');
+  CheckHealthGlyph('Inactive', 'Changed registration revision retains Pause while inactive');
+  Check(Pos(TDAIClientRegistration.HealthDetails, GHost.DAIAction.Hint) > 0, 'Changed registration revision updates the diagnostic hint');
   TDAIIDEToolbar.Refresh;
   Check(TDAIClientRegistration.HealthCount = LCount + 2, 'The scanned revision is retained after refresh');
   TDAIRuntime.Active := True;
@@ -63,10 +65,13 @@ begin
   TDAIClientRegistration.HealthDetails := 'Update fixture needs its launcher registration.';
   TDAIIDEToolbar.Install;
   TDAIIDEToolbar.Refresh;
-  CheckHealthGlyph('RegistrationUpdate', 'An update recommendation displays the exclamation glyph');
-  Check(GHost.DAIAction.Caption = 'DAI: Registrierung aktualisieren', 'An old registration has a clear update caption');
+  CheckHealthGlyph('Inactive', 'An update recommendation retains Pause while inactive');
+  Check(GHost.DAIAction.Caption = 'DAI inaktiv', 'An old registration does not override the inactive caption');
   TDAIRuntime.Active := True;
   TDAIRuntime.Port := 7444;
+  TDAIIDEToolbar.Refresh;
+  CheckHealthGlyph('RegistrationUpdate', 'An active server displays its registration update notice');
+  Check(GHost.DAIAction.Caption = 'DAI: Registrierung aktualisieren', 'An active registration notice has a clear caption');
   TDAIRuntime.HasMCPAccess := True;
   TDAIRuntime.MCPAccessAgeMs := 0;
   TDAIIDEToolbar.Refresh;
@@ -95,10 +100,10 @@ begin
   CheckHealthGlyph('EarlierAccess', 'Earlier activity takes precedence over a missing-registration notice');
   TDAIRuntime.Active := False;
   TDAIIDEToolbar.Refresh;
-  CheckHealthGlyph('NotRegistered', 'An inactive server does not display stale activity over the warning');
+  CheckHealthGlyph('Inactive', 'An inactive server displays Pause before stale activity and registration notices');
   TDAIRuntime.FailStart := True;
   GHost.DAIAction.Execute;
-  CheckHealthGlyph('Error', 'Runtime start errors take precedence over a registration notice');
+  CheckHealthGlyph('Inactive', 'A failed start retains Pause before a registration notice');
   Check(Pos('isolated bind failed', GHost.DAIAction.Hint) > 0, 'Registration notices do not conceal the runtime failure reason');
   TDAIRuntime.FailStart := False;
   GHost.DAIAction.Execute;
@@ -113,6 +118,8 @@ var
   LCount: Integer;
 begin
   NewHost;
+  TDAIRuntime.Active := True;
+  TDAIRuntime.Port := 7331;
   TDAIClientRegistration.HealthState := rhCheckRecommended;
   TDAIClientRegistration.HealthDetails := 'Client fixture contains an unrecognised registration.';
   TDAIIDEToolbar.Install;
@@ -132,7 +139,7 @@ begin
   TDAIClientRegistration.HealthState := rhCurrent;
   TDAIClientRegistration.HealthDetails := '';
   TDAIIDEToolbar.CheckRegistrations;
-  CheckHealthGlyph('Inactive', 'An explicit successful recheck clears the registration read failure');
+  CheckHealthGlyph('Active', 'An explicit successful recheck clears the active registration read failure');
 end;
 
 procedure TestManualRegistrationConfirmation;
@@ -144,7 +151,7 @@ begin
   TDAIClientRegistration.HealthDetails := 'No managed registration fixture.';
   TDAIIDEToolbar.Install;
   TDAIIDEToolbar.Refresh;
-  CheckHealthGlyph('NotRegistered', 'A fresh installation still displays the missing-registration notice');
+  CheckHealthGlyph('Inactive', 'A stopped fresh installation displays Pause while retaining registration details');
   LCount := TDAIClientRegistration.HealthCount;
   TDAISettings.Instance.ManualClientRegistration := True;
   TDAIIDEToolbar.Refresh;
@@ -156,7 +163,8 @@ begin
   TDAIIDEToolbar.Refresh;
   Check(TDAIClientRegistration.HealthCount = LCount + 1, 'An unchanged manual confirmation retains cached registration scans');
   TDAIIDEToolbar.SetUpdateAvailable(True, '4.0.0');
-  CheckHealthGlyph('UpdateAvailable', 'Manual registration retains a pending DAI software-update notice');
+  CheckHealthGlyph('Inactive', 'A software update does not override Pause after manual registration');
+  Check(Pos('4.0.0', GHost.DAIAction.Hint) > 0, 'Manual registration retains the software-update version in its hint');
   TDAIRuntime.Active := True;
   TDAIRuntime.HasMCPAccess := True;
   TDAIRuntime.MCPAccessAgeMs := 0;
@@ -194,8 +202,75 @@ begin
   TDAIIDEToolbar.SetUpdateAvailable(False);
   TDAISettings.Instance.ManualClientRegistration := False;
   TDAIIDEToolbar.Refresh;
-  CheckHealthGlyph('NotRegistered', 'Clearing manual confirmation restores the missing-registration notice');
+  CheckHealthGlyph('Inactive', 'Clearing manual confirmation retains Pause while the server is stopped');
+  Check(Pos('No managed registration fixture', GHost.DAIAction.Hint) > 0, 'Clearing manual confirmation restores the missing-registration detail');
   Check(Pos('vom Benutzer bestätigt', GHost.DAIAction.Hint) = 0, 'Clearing manual confirmation removes its tooltip explanation');
+end;
+
+procedure TestInactiveStatusPriorityMatrix;
+const
+  CRegistrationDetail = 'Isolated registration diagnostics remain available.';
+  CRuntimeError = 'Isolated port conflict remains available.';
+var
+  LActive, LUpdate, LError, LAccess: Integer;
+  LHealth: TDAIRegistrationHealth;
+  LExpectedGlyph, LCase: string;
+begin
+  NewHost;
+  TDAIIDEToolbar.Install;
+  for LActive := 0 to 1 do
+    for LHealth := Low(TDAIRegistrationHealth) to High(TDAIRegistrationHealth) do
+      for LUpdate := 0 to 1 do
+        for LError := 0 to 1 do
+          for LAccess := 0 to 3 do
+          begin
+            LCase := Format('active=%d health=%d update=%d error=%d access=%d', [LActive, Ord(LHealth), LUpdate, LError, LAccess]);
+            TDAIRuntime.Active := LActive = 1;
+            TDAIRuntime.Port := 7331;
+            TDAIRuntime.HasMCPAccess := LAccess <> 0;
+            case LAccess of
+              1: TDAIRuntime.MCPAccessAgeMs := 0;
+              2: TDAIRuntime.MCPAccessAgeMs := 15001;
+              3: TDAIRuntime.MCPAccessAgeMs := 900001;
+            end;
+            if LError = 1 then
+              TDAIRuntime.ErrorText := CRuntimeError
+            else
+              TDAIRuntime.ErrorText := '';
+            TDAIClientRegistration.HealthState := LHealth;
+            TDAIClientRegistration.HealthDetails := CRegistrationDetail;
+            TDAIIDEToolbar.SetUpdateAvailable(LUpdate = 1, '9.9.9');
+            TDAIIDEToolbar.CheckRegistrations;
+            LExpectedGlyph := 'Inactive';
+            if LActive = 1 then
+            begin
+              if LError = 1 then
+                LExpectedGlyph := 'Error'
+              else if LAccess = 1 then
+                LExpectedGlyph := 'RecentAccess'
+              else if LAccess = 2 then
+                LExpectedGlyph := 'EarlierAccess'
+              else if LHealth = rhNotRegistered then
+                LExpectedGlyph := 'NotRegistered'
+              else if LHealth in [rhUpdateRecommended, rhCheckRecommended] then
+                LExpectedGlyph := 'RegistrationUpdate'
+              else if LUpdate = 1 then
+                LExpectedGlyph := 'UpdateAvailable'
+              else
+                LExpectedGlyph := 'Active';
+            end;
+            CheckHealthGlyph(LExpectedGlyph, 'Runtime state priority: ' + LCase);
+            if LActive = 0 then
+            begin
+              Check(GHost.DAIAction.Caption = 'DAI inaktiv', 'Inactive caption has priority: ' + LCase);
+              Check(GHost.DAIButton.DropdownMenu.Items[0].Caption = 'Server &starten', 'Inactive server remains startable: ' + LCase);
+            end;
+            Check(Pos(CRegistrationDetail, GHost.DAIAction.Hint) > 0, 'Registration diagnostics remain in the hint: ' + LCase);
+            if LError = 1 then
+              Check(Pos(CRuntimeError, GHost.DAIAction.Hint) > 0, 'Runtime diagnostics remain in the hint: ' + LCase);
+            if LUpdate = 1 then
+              Check(Pos('9.9.9', GHost.DAIAction.Hint) > 0, 'Software-update details remain in the hint: ' + LCase);
+          end;
 end;
 
 procedure TestToolbarRegistrationHealth;
@@ -204,4 +279,5 @@ begin
   TestRegistrationHealthPriority;
   TestRegistrationHealthReadFailure;
   TestManualRegistrationConfirmation;
+  TestInactiveStatusPriorityMatrix;
 end;

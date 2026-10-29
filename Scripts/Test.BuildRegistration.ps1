@@ -107,9 +107,10 @@ function Invoke-BuildRegistrationFixtureCompiler {
     $command = [string] $Arguments[-1]
     $state.Commands.Add($command)
     $global:LASTEXITCODE = 0
-    if ($command -match '\bmsbuild\b') {
-        if ($command -notmatch '/p:Platform=(Win32|Win64)') { throw 'Fixture package platform missing.' }
-        $platform = $Matches[1]
+    if ($command -notmatch '\bmsbuild\b') { throw 'Both projects must run their own MSBuild events.' }
+    if ($command -notmatch '/p:Platform=(Win32|Win64)') { throw 'Fixture platform missing.' }
+    $platform = $Matches[1]
+    if ($command -match '\\DAI\.dproj"') {
         $state.PackageAttempts++
         if ($state.Mode -eq 'syntax-failure-with-lock') {
             Write-Output '[dcc32 Error] E2003 Undeclared identifier: Broken'
@@ -134,10 +135,19 @@ function Invoke-BuildRegistrationFixtureCompiler {
         $binaryPlatform = if ($state.Mode -eq 'wrong-package-architecture') { 'Win64' } else { $platform }
         New-TestBinary -Path (Join-Path $state.ProjectRoot "Build\$platform\DAI$($state.PackageSuffix).bpl") -Platform $binaryPlatform -Package
     }
-    else {
-        if ($command -notmatch '-E"([^"]+)"') { throw 'Fixture bridge output missing.' }
+    elseif ($command -match '\\DAI\.McpBridge\.dproj"') {
+        if ($command -notmatch '/p:DCC_ExeOutput="([^"]+)"') { throw 'Fixture bridge output missing.' }
         $output = $Matches[1]
-        $platform = if ($output -match '\\Win64(?:\\|$)') { 'Win64' } else { 'Win32' }
+        if ($command -notmatch '/p:DCC_DcuOutput="([^"]+)"' -or
+            $Matches[1] -ne (Join-Path $state.ProjectRoot "Build\$platform-$($state.Configuration)-BridgeDcu")) {
+            throw 'Fixture isolated bridge DCU output missing.'
+        }
+        if ($command -notmatch 'call "([^"]+)\\bin\\rsvars\.bat"') { throw 'Fixture SDK setup missing.' }
+        $sdkRoot = $Matches[1]
+        if ($command -notmatch '/p:DCC_UnitSearchPath="([^"]+)"' -or
+            $Matches[1] -ne (Join-Path $sdkRoot "lib\$platform\release")) {
+            throw 'Fixture bridge library does not match the selected SDK and platform.'
+        }
         if ($state.Mode -eq 'bridge-failure' -or
             ($state.Mode -eq 'second-bridge-failure' -and $platform -eq 'Win64')) {
             $global:LASTEXITCODE = 42
@@ -146,6 +156,7 @@ function Invoke-BuildRegistrationFixtureCompiler {
         $binaryPlatform = if ($state.Mode -eq 'wrong-bridge-architecture') { 'Win64' } else { $platform }
         New-TestBinary -Path (Join-Path $output 'DAI.McpBridge.exe') -Platform $binaryPlatform
     }
+    else { throw 'Unexpected build project in fixture.' }
 }
 
 function Test-BuildPipeline {
@@ -155,11 +166,14 @@ function Test-BuildPipeline {
           [int] $ExpectedRegistrations = 0, [int] $ExpectedCommands = 0,
           [switch] $SkipMissing, [string] $BdsRoot = '')
 
-    $fixtureProject = Join-Path $script:FixtureRoot ('Pipeline-' + $Mode)
+    $fixtureProject = Join-Path $script:FixtureRoot ('Pipeline with spaces-' + $Mode)
     [System.IO.Directory]::CreateDirectory((Join-Path $fixtureProject 'Scripts')) | Out-Null
     Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'Build.ps1') -Destination (Join-Path $fixtureProject 'Build.ps1')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Build.Output.ps1') -Destination (Join-Path $fixtureProject 'Scripts\Build.Output.ps1')
     [System.IO.File]::WriteAllText((Join-Path $fixtureProject 'DAI.dproj'), '<Project />')
+    if ($Mode -ne 'missing-bridge-project') {
+        [System.IO.File]::WriteAllText((Join-Path $fixtureProject 'DAI.McpBridge.dproj'), '<Project />')
+    }
     $helperPath = (Join-Path $PSScriptRoot 'Build.Registration.ps1').Replace("'", "''")
     $mockHelpers = @'
 . '__HELPER_PATH__'
@@ -180,7 +194,8 @@ function Register-DAIPackage {
                                   $mockHelpers.Replace('__HELPER_PATH__', $helperPath))
     $suffix = if ($Version -eq '11') { '280' } elseif ($Version -eq '12') { '290' } else { '370' }
     $global:DAIBuildRegistrationFixture = [pscustomobject] @{
-        ProjectRoot = $fixtureProject; Mode = $Mode; PackageSuffix = $suffix; PackageAttempts = 0;
+        ProjectRoot = $fixtureProject; Mode = $Mode; Configuration = $Configuration;
+        PackageSuffix = $suffix; PackageAttempts = 0;
         RegistryRows = $script:RegistryRows;
         Commands = [System.Collections.Generic.List[string]]::new();
         Registrations = [System.Collections.Generic.List[object]]::new()
@@ -209,6 +224,14 @@ function Register-DAIPackage {
     Assert-Test ($failed -eq $ExpectFailure) "Pipeline '$Mode' has the expected success/failure status."
     Assert-Test ($global:DAIBuildRegistrationFixture.Commands.Count -eq $ExpectedCommands) "Pipeline '$Mode' invokes only the expected build commands."
     Assert-Test ($global:DAIBuildRegistrationFixture.Registrations.Count -eq $ExpectedRegistrations) "Pipeline '$Mode' performs only the expected registration writes."
+    for ($commandIndex = 0; $commandIndex -lt $global:DAIBuildRegistrationFixture.Commands.Count; $commandIndex++) {
+        $buildCommand = $global:DAIBuildRegistrationFixture.Commands[$commandIndex]
+        Assert-Test ($buildCommand -notmatch '\btaskkill\b') "Pipeline '$Mode' delegates bridge stopping to its project event."
+        if ($buildCommand -match '\\DAI\.McpBridge\.dproj"') {
+            Assert-Test ($commandIndex -gt 0 -and
+                $global:DAIBuildRegistrationFixture.Commands[$commandIndex - 1] -match '\\DAI\.dproj"') "Pipeline '$Mode' builds the package before starting the bridge build."
+        }
+    }
     foreach ($registration in $global:DAIBuildRegistrationFixture.Registrations) {
         Assert-Test ($registration.BdsVersion -eq (Get-BdsVersion $Version)) "Pipeline '$Mode' registers the correct IDE version."
         $expectedOutput = Join-Path $fixtureProject "Build\$($registration.Platform)\DAI$suffix.bpl"
@@ -378,6 +401,7 @@ try {
     Test-BuildPipeline -Mode no-registration -Register $false -ExpectedCommands 4
     Test-BuildPipeline -Mode missing-version -Version 12 -SkipMissing
     Test-BuildPipeline -Mode explicit-mismatched-root -Version 11 -BdsRoot $delphi13.RootDir -SkipMissing -ExpectFailure $true
+    Test-BuildPipeline -Mode missing-bridge-project -ExpectFailure $true
     Test-BuildPipeline -Mode package-failure -ExpectFailure $true -ExpectedCommands 1
     Test-BuildPipeline -Mode bridge-failure -ExpectFailure $true -ExpectedCommands 2
     Test-BuildPipeline -Mode wrong-package-architecture -ExpectFailure $true -ExpectedCommands 1

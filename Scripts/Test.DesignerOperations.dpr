@@ -12,7 +12,8 @@ uses
 const
   CFormFile = 'C:\Workspace\FormUnit.dfm';
 type
-  TOperation = (opSearch, opSelect, opRead, opSet, opMove, opCreate);
+  TOperation = (opSearch, opSelect, opRead, opSet, opMove, opCreate, opDelete);
+  TComponentAccess = class(TComponent);
 var
   GChecks: Integer;
   GEditor: TTestFormEditor;
@@ -55,6 +56,7 @@ begin
       opSet: Result := TDAIDesignerService.SetProperty(CFormFile, LArguments);
       opMove: Result := TDAIDesignerService.MoveComponent(CFormFile, LArguments);
       opCreate: Result := TDAIDesignerService.CreateComponent(CFormFile, LArguments);
+      opDelete: Result := TDAIDesignerService.DeleteComponent(CFormFile, LArguments);
     else raise Exception.Create('Unknown test operation');
     end;
   finally
@@ -64,7 +66,7 @@ end;
 
 procedure Reject(const AOperation: TOperation; const AJson, AName: string);
 var
-  LBeforeCreate, LBeforeSelect, LBeforeModified: Integer;
+  LBeforeCreate, LBeforeSelect, LBeforeModified, LBeforeDelete, LBeforeSave: Integer;
   LBeforeParent: TWinControl;
   LBeforeBounds: TRect;
   LBeforeName, LBeforeCaption: string;
@@ -73,6 +75,8 @@ var
   LRejected: Boolean;
 begin
   LBeforeCreate := GEditor.CreateCount;
+  LBeforeDelete := GEditor.DeleteCount;
+  LBeforeSave := GEditor.ModuleObject.SaveCount;
   LBeforeSelect := GEditor.SelectCount;
   LBeforeModified := GEditor.DesignerObject.ModifiedCount;
   LLabel := TLabel(GEditor.Root.FindComponent('Label1'));
@@ -92,7 +96,8 @@ begin
   end;
   Check(LRejected, AName + ' rejected');
   Check((GEditor.CreateCount = LBeforeCreate) and (GEditor.SelectCount = LBeforeSelect) and
-    (GEditor.DesignerObject.ModifiedCount = LBeforeModified) and (LLabel.Name = LBeforeName) and
+    (GEditor.DesignerObject.ModifiedCount = LBeforeModified) and (GEditor.DeleteCount = LBeforeDelete) and
+    (GEditor.ModuleObject.SaveCount = LBeforeSave) and (LLabel.Name = LBeforeName) and
     (LLabel.Caption = LBeforeCaption) and (LLabel.Parent = LBeforeParent) and
     EqualRect(LLabel.BoundsRect, LBeforeBounds), AName + ' leaves state untouched');
 end;
@@ -284,6 +289,118 @@ begin
   Check(GEditor.ModuleObject.SaveCount = 0, 'creation never saves');
 end;
 
+procedure TestDeletion;
+var
+  LResult: TJSONObject;
+  LLabel, LInlineChild, LForeign: TComponent;
+  LError: string;
+  LMode: Integer;
+  procedure DeleteMustFail(const AMessage: string);
+  begin
+    LError := '';
+    try
+      LResult := Invoke(opDelete, '{"component":"Button1"}');
+      LResult.Free;
+    except
+      on E: EInvalidOperation do LError := E.Message;
+    end;
+    Check(LError <> '', AMessage + ' reports failure');
+    Check(Assigned(GEditor.Root.FindComponent('Button1')), AMessage + ' target still exists');
+    Check(Assigned(GEditor.Root.FindComponent('Panel2')), AMessage + ' unrelated component preserved');
+    Check(GEditor.ModuleObject.SaveCount = 0, AMessage + ' never saves');
+    Check(GEditor.InvalidInterfaceReads = 0, AMessage + ' does not reuse deleted interface');
+  end;
+begin
+  NewFixture;
+  // Existing selection must never decide what a named deletion removes.
+  LResult := Invoke(opSelect, '{"components":["Panel2"],"focus":false}'); LResult.Free;
+  LResult := Invoke(opDelete, '{"component":"bUtToN1"}');
+  try
+    Check(GEditor.Root.FindComponent('Button1') = nil, 'named delete removes exact component through designer');
+    Check(Assigned(GEditor.Root.FindComponent('Panel2')), 'previously selected unrelated component remains');
+    Check(Assigned(GEditor.Root.FindComponent('Label1')), 'sibling component remains');
+    Check((GEditor.DeleteCount = 1) and GEditor.LastDeleteAll, 'one native DeleteSelection command with DoAll true');
+    Check(LResult.GetValue<string>('component') = 'Button1', 'deleted actual case-sensitive name reported');
+    Check(LResult.GetValue<Boolean>('deleted'), 'verified deletion reported');
+    Check(LResult.GetValue<Boolean>('modified') = GEditor.ModifiedFlag, 'native modified state reported');
+    Check(not LResult.GetValue<Boolean>('saved'), 'delete remains unsaved');
+    Check(not LResult.GetValue<Boolean>('source_declaration_verified'), 'source synchronization not falsely verified');
+    Check(GEditor.FocusCount = 0, 'deletion requires no keyboard focus');
+    Check(GEditor.InvalidInterfaceReads = 0, 'deleted interface is never reused');
+    Check(GEditor.ModuleObject.SaveCount = 0, 'deletion never saves');
+  finally LResult.Free; end;
+
+  NewFixture;
+  // Wrap descendants beforehand so stale wrapper use would be detected after the cascade.
+  GEditor.Wrap(GEditor.Root.FindComponent('Label1'));
+  LResult := Invoke(opSelect, '{"components":["Button1"],"focus":false}'); LResult.Free;
+  LResult := Invoke(opDelete, '{"component":"Panel1"}');
+  try
+    Check(GEditor.Root.FindComponent('Panel1') = nil, 'container deleted');
+    Check(GEditor.Root.FindComponent('Label1') = nil, 'container visual label child deleted by native cascade');
+    Check(GEditor.Root.FindComponent('Button1') = nil, 'container visual button child deleted by native cascade');
+    Check(Assigned(GEditor.Root.FindComponent('Panel2')), 'other container preserved');
+    Check(Assigned(GEditor.Root.FindComponent('Timer1')), 'unrelated nonvisual component preserved');
+    Check(GEditor.Selection.Count = 0, 'selection has no destroyed child interface');
+    Check(GEditor.InvalidInterfaceReads = 0, 'cascade does not inspect destroyed component interfaces');
+    Check(GEditor.ModuleObject.SaveCount = 0, 'cascade never saves');
+  finally LResult.Free; end;
+
+  NewFixture;
+  LResult := Invoke(opDelete, '{"component":"Timer1"}');
+  try Check(GEditor.Root.FindComponent('Timer1') = nil, 'nonvisual component deletion'); finally LResult.Free; end;
+  Reject(opDelete, '{"component":"Form1"}', 'root component deletion');
+  Reject(opDelete, '{"component":"Missing"}', 'missing component deletion');
+  Reject(opDelete, '{}', 'missing deletion name');
+  Reject(opDelete, '{"component":" "}', 'blank deletion name');
+  Reject(opDelete, '{"component":false}', 'invalid deletion name type');
+  LLabel := GEditor.Root.FindComponent('Label1');
+  TComponentAccess(LLabel).SetAncestor(True);
+  Reject(opDelete, '{"component":"Label1"}', 'inherited component deletion');
+  TComponentAccess(LLabel).SetAncestor(False);
+  LInlineChild := TButton.Create(GEditor.Root.FindComponent('Panel2'));
+  LInlineChild.Name := 'InlineChild';
+  GEditor.LookupOverride := LInlineChild;
+  TComponentAccess(LInlineChild.Owner).SetInline(True);
+  Reject(opDelete, '{"component":"InlineChild"}', 'inline-owned component deletion');
+  TComponentAccess(LInlineChild.Owner).SetInline(False);
+  TComponentAccess(LInlineChild.Owner).SetAncestor(True);
+  Reject(opDelete, '{"component":"InlineChild"}', 'ancestor-owned component deletion');
+  TComponentAccess(LInlineChild.Owner).SetAncestor(False);
+  GEditor.LookupOverride := nil;
+  LForeign := TButton.Create(nil);
+  try
+    LForeign.Name := 'ForeignButton'; GEditor.LookupOverride := LForeign;
+    Reject(opDelete, '{"component":"ForeignButton"}', 'foreign component deletion');
+  finally
+    GEditor.LookupOverride := nil;
+    LForeign.Free;
+  end;
+
+  // An inherited form's own new local controls remain deletable.
+  NewFixture;
+  TComponentAccess(GEditor.Root).SetAncestor(True);
+  TComponentAccess(GEditor.Root.FindComponent('Button1')).SetAncestor(False);
+  LResult := Invoke(opDelete, '{"component":"Button1"}');
+  try Check(GEditor.Root.FindComponent('Button1') = nil, 'local component in inherited form may be deleted'); finally LResult.Free; end;
+
+  for LMode := 1 to 2 do
+  begin
+    NewFixture; GEditor.DeleteMode := LMode;
+    DeleteMustFail('native refusal or exception');
+    Check(GEditor.DeleteCount = 1, 'native refusal attempted exactly once');
+    Check(GEditor.ModifiedFlag, 'possible partial native failure retains dirty state');
+  end;
+  for LMode := 1 to 2 do
+  begin
+    NewFixture;
+    LResult := Invoke(opSelect, '{"components":["Panel2"],"focus":false}'); LResult.Free;
+    GEditor.SelectMode := LMode;
+    DeleteMustFail('native redirected selection');
+    Check(GEditor.DeleteCount = 0, 'selection mismatch blocks delete before native command');
+  end;
+end;
+
 procedure TestProtection;
 var LResult: TJSONObject;
 begin
@@ -292,25 +409,31 @@ begin
   Reject(opSet, '{"component":"Label1","property":"Caption","value":"blocked"}', 'read-only designer');
   Reject(opMove, '{"component":"Label1","x":20}', 'read-only movement');
   Reject(opCreate, '{"class_name":"TButton"}', 'read-only creation');
+  Reject(opDelete, '{"component":"Button1"}', 'read-only deletion');
   LResult := Invoke(opRead, '{"component":"Label1","properties":["Caption"]}');
   try Check(LResult.GetValue<TJSONArray>('properties').Count = 1, 'read-only property reads remain available'); finally LResult.Free; end;
   GEditor.DesignerObject.ReadOnly := False;
   TDAIOTA.ReferenceFile := True;
   Reject(opSet, '{"component":"Label1","property":"Caption","value":"blocked"}', 'reference-file mutation');
   Reject(opCreate, '{"class_name":"TButton"}', 'reference-file creation');
+  Reject(opDelete, '{"component":"Button1"}', 'reference-file deletion');
   TDAIOTA.ReferenceFile := False;
   TDAIOTA.WorkspaceAllowed := False;
   Reject(opSet, '{"component":"Label1","property":"Caption","value":"blocked"}', 'outside-workspace mutation');
+  Reject(opDelete, '{"component":"Button1"}', 'outside-workspace deletion');
   TDAIOTA.WorkspaceAllowed := True;
   TDAIOTA.DeniedPath := GEditor.ModuleObject.GetFileName;
   Reject(opSet, '{"component":"Label1","property":"Caption","value":"blocked"}',
     'actual Pascal module outside workspace despite allowed form path');
+  Reject(opDelete, '{"component":"Button1"}', 'Pascal module outside workspace blocks deletion');
   TDAIOTA.DeniedPath := '';
   TDAIOTA.ReferencePath := GEditor.ModuleObject.GetFileName;
   Reject(opMove, '{"component":"Label1","x":20}', 'actual Pascal module is read-only reference');
+  Reject(opDelete, '{"component":"Button1"}', 'reference Pascal module blocks deletion');
   TDAIOTA.ReferencePath := '';
   TDAIOTA.RejectReparsePath := True;
   Reject(opCreate, '{"class_name":"TButton"}', 'reparse write-path protection');
+  Reject(opDelete, '{"component":"Button1"}', 'reparse path blocks deletion');
   TDAIOTA.RejectReparsePath := False;
   Check(TDAIOTA.ReparseChecks > 0, 'writes pass through reparse path guard');
   Check(GEditor.ModuleObject.SaveCount = 0, 'protection failures never save');
@@ -395,6 +518,7 @@ begin
     TestProperties;
     TestMovement;
     TestCreation;
+    TestDeletion;
     TestProtection;
     TestPartialSetterFailures;
     TestFloatLocale;

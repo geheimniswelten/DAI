@@ -54,6 +54,7 @@ uses
   Winapi.Windows,
   h5u.DAI.OTA.LoadedFiles,
   h5u.DAI.Settings,
+  h5u.DAI.Text.Changes,
   h5u.DAI.Text.Encoding,
   h5u.DAI.Types;
 
@@ -1053,10 +1054,33 @@ end;
 
 class function TDAIOTA.ReplaceEditorText(const ASourceEditor: IOTASourceEditor; const AText: string; out AActualText: string): Boolean;
 var
-  LCurrentBytes: TBytes;
+  LChange: TDAITextChange;
+  LChanges: TArray<TDAITextChange>;
   LCurrentText: string;
-  LNewText: UTF8String;
   LWriter: IOTAEditWriter;
+
+  procedure MoveCursorToChangeStart;
+  var
+    LEditBuffer: IOTAEditBuffer;
+    LEditView: IOTAEditView;
+    LCharPos: TOTACharPos;
+    LEditPos: TOTAEditPos;
+  begin
+    // Let the IDE convert original UTF-8 offsets and expand visual tab columns.
+    if Supports(ASourceEditor, IOTAEditBuffer, LEditBuffer) then
+      LEditView := LEditBuffer.TopView;
+    if not Assigned(LEditView) and (ASourceEditor.EditViewCount > 0) then
+      LEditView := ASourceEditor.EditViews[0];
+    if Assigned(LEditView) then
+    begin
+      LCharPos := LEditView.PosToCharPos(LChanges[0].StartByte);
+      LEditPos := Default(TOTAEditPos);
+      LEditView.ConvertPos(False, LEditPos, LCharPos);
+      LEditView.CursorPos := LEditPos;
+      LEditView.MoveViewToCursor;
+    end;
+  end;
+
 begin
   Result := False;
   AActualText := '';
@@ -1064,17 +1088,32 @@ begin
     Exit;
 
   LCurrentText := ReadEditorText(ASourceEditor);
-  LCurrentBytes := TEncoding.UTF8.GetBytes(LCurrentText);
+  LChanges := TDAITextChanges.Between(LCurrentText, AText);
+  if Length(LChanges) = 0 then
+  begin
+    AActualText := LCurrentText;
+    Exit(TDAITextEncoding.EditorWriteMatches(AText, AActualText));
+  end;
+  MoveCursorToChangeStart;
   LWriter := ASourceEditor.CreateUndoableWriter;
   if not Assigned(LWriter) then
     Exit;
 
-  LWriter.CopyTo(0);
-  if Length(LCurrentBytes) > 0 then
-    LWriter.DeleteTo(Length(LCurrentBytes));
-  LNewText := UTF8Encode(AText);
-  LWriter.Insert(PAnsiChar(LNewText));
-  LWriter := nil;
+  try
+    // A single forward writer uses offsets in the original UTF-8 buffer and retains native Undo.
+    for LChange in LChanges do
+    begin
+      LWriter.CopyTo(LChange.StartByte);
+      if LChange.EndByte > LChange.StartByte then
+        LWriter.DeleteTo(LChange.EndByte);
+      if LChange.NewTextUtf8 <> '' then
+        LWriter.Insert(PAnsiChar(LChange.NewTextUtf8));
+    end;
+  finally
+    LWriter := nil;
+  end;
+  // Insertions can move the native caret; leave it at the same change anchor for Undo.
+  MoveCursorToChangeStart;
   AActualText := ReadEditorText(ASourceEditor);
   Result := TDAITextEncoding.EditorWriteMatches(AText, AActualText);
 end;

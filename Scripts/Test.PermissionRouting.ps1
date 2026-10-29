@@ -36,12 +36,16 @@ $resolver = Extract-One '(?<body>function ContextForArguments\(.*?\r\nend;\r\n)(
 $directorySchema = Extract-One '(?<body>function DirectoryFilesSchema\(.*?\r\nend;\r\n)(?=\r\nclass function TDAIMCPTools.ListTools)' 'directory schema'
 $catalog = Extract-One '(?<body>class function TDAIMCPTools.ListTools.*?\r\nend;\r\n)(?=\r\nend\.)' 'full tool catalog'
 $argumentString = Extract-One '(?<body>function ArgumentString\(.*?\r\nend;\r\n)(?=\r\nfunction StrictArgumentString\()' 'ArgumentString'
+$strictArgumentString = Extract-One '(?<body>function StrictArgumentString\(.*?\r\nend;\r\n)(?=\r\nfunction RequiredArgumentString\()' 'StrictArgumentString'
+$requiredArgumentString = Extract-One '(?<body>function RequiredArgumentString\(.*?\r\nend;\r\n)(?=\r\nfunction StrictArgumentStringArray\()' 'RequiredArgumentString'
+$strictArgumentBoolean = Extract-One '(?<body>function StrictArgumentBoolean\(.*?\r\nend;\r\n)(?=\r\nprocedure ValidateDesignerNumber\()' 'StrictArgumentBoolean'
 $argumentBoolean = Extract-One '(?<body>function ArgumentBoolean\(.*?\r\nend;\r\n)(?=\r\nfunction StrictArgumentBoolean\()' 'ArgumentBoolean'
 $requirePermission = Extract-One '(?<body>procedure RequirePermission\(.*?\r\nend;\r\n)(?=\r\nprocedure RequireFileReadPermission\()' 'RequirePermission'
 $readPermission = Extract-One '(?<body>procedure RequireFileReadPermission\(.*?\r\nend;\r\n)(?=\r\nprocedure EnsureDebuggerIdle;)' 'read permission classifier'
 $argumentInteger = Extract-One '(?<body>function ArgumentInteger\(.*?\r\nend;\r\n)(?=\r\nfunction DirectoryFilesResult\()' 'ArgumentInteger'
 $fileRead = Extract-One "(?<body>  if SameText\(AName, 'file_read'\) or SameText\(AName, 'reference_file_read'\) then\r\n.*?)(?=  if SameText\(AName, 'code_insight_status'\) then)" 'file_read branch'
-$fileWrite = Extract-One "(?<body>  if SameText\(AName, 'file_write'\) then\r\n.*?)(?=  if SameText\(AName, 'project_create'\) then)" 'file_write branch'
+$fileWrite = Extract-One "(?<body>  if SameText\(AName, 'file_write'\) then\r\n.*?)(?=  if SameText\(AName, 'file_edit'\) then)" 'file_write branch'
+$fileEdit = Extract-One "(?<body>  if SameText\(AName, 'file_edit'\) then\r\n.*?)(?=  if SameText\(AName, 'project_create'\) then)" 'file_edit branch'
 $projectCreate = Extract-One "(?<body>  if SameText\(AName, 'project_create'\) then\r\n.*?)(?=  if SameText\(AName, 'project_open'\) then)" 'project_create branch'
 $projectOpen = Extract-One "(?<body>  if SameText\(AName, 'project_open'\) then\r\n.*?)(?=  if SameText\(AName, 'project_save'\) then)" 'project_open branch'
 $header = @'
@@ -91,12 +95,12 @@ end;
 end.
 '@
 $generated = ($header -replace '\r?\n', $crlf) + $crlf + $crlf + $jsonObject + $crlf + $addTool + $crlf +
-    $argumentString + $crlf + $argumentBoolean + $crlf + $argumentInteger + $crlf + $validator + $crlf +
+    $argumentString + $crlf + $strictArgumentString + $crlf + $requiredArgumentString + $crlf + $strictArgumentBoolean + $crlf + $argumentBoolean + $crlf + $argumentInteger + $crlf + $validator + $crlf +
     $requirePermission + $crlf + $readPermission + $crlf + $resolver + $crlf +
     $directorySchema + $crlf + $catalog + $crlf + ($wrapper -replace '\r?\n', $crlf) + $crlf +
-    $fileRead + $fileWrite + $projectCreate + $projectOpen + ($footer -replace '\r?\n', $crlf) + $crlf
-foreach ($region in @($jsonObject, $addTool, $argumentString, $argumentBoolean, $validator, $requirePermission, $resolver,
-        $directorySchema, $catalog, $readPermission, $argumentInteger, $fileRead, $fileWrite, $projectCreate, $projectOpen)) {
+    $fileRead + $fileWrite + $fileEdit + $projectCreate + $projectOpen + ($footer -replace '\r?\n', $crlf) + $crlf
+foreach ($region in @($jsonObject, $addTool, $argumentString, $strictArgumentString, $requiredArgumentString, $strictArgumentBoolean, $argumentBoolean, $validator, $requirePermission, $resolver,
+        $directorySchema, $catalog, $readPermission, $argumentInteger, $fileRead, $fileWrite, $fileEdit, $projectCreate, $projectOpen)) {
     if (-not $generated.Contains($region)) {
         throw 'Extracted production logic must remain byte-for-byte unchanged.'
     }

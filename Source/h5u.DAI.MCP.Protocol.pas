@@ -165,10 +165,15 @@ begin
     'Geladene Dateien ausschließlich über DAI/ToolsAPI im IDE-Zustand bearbeiten; ungespeicherte IDE-Puffer sind maßgeblich. ' +
     'Geladene DPR/DPK bei Bedarf mit file_open im IDE-Codeeditor öffnen und den aktuellen Puffer bearbeiten. ' +
     'Vor Textänderungen den vollständigen aktuellen Inhalt mit file_read (interfaces_only: false, maximum_characters: 0) lesen. ' +
-    'Nur vollständigen Inhalt mit file_write und expected_sha256 zurückschreiben; danach Inhalt und Speicherstatus prüfen. ' +
+    'Für kleine Änderungen file_edit mit expected_sha256 und eindeutigen old_text/new_text-Blöcken verwenden. ' +
+    'Ersetzungen gelten für dasselbe Original und dürfen sich nicht überschneiden; file_write bleibt für vollständigen Inhalt verfügbar. ' +
+    'Im IDE-Puffer werden nur Unterschiede Undo-fähig geändert; danach Inhalt und Speicherstatus prüfen. ' +
+    'Vorhandene Schlussleerzeilen erhalten; die Anzahl abschließender Zeilenumbrüche nur auf ausdrücklichen Auftrag ändern. ' +
     'Hashkonflikte durch erneutes Lesen und Abgleichen lösen. ' +
     'Vorhandene Benutzeränderungen nicht ungefragt speichern, verwerfen oder mit einer älteren Datenträgerdatei überschreiben. ' +
-    'DFM/FMX bevorzugt über die Designerwerkzeuge ändern; Textänderungen nur im IDE-Textpuffer. ' +
+    'DFM/FMX möglichst mit den nativen Designerwerkzeugen bearbeiten: form_component_create, form_component_delete, ' +
+    'form_component_set_property und form_component_move. Für unterstützte Operationen diese Werkzeuge bevorzugen. ' +
+    'Formulartext nur für dort nicht unterstützte Änderungen und ausschließlich im IDE-Textpuffer bearbeiten. ' +
     'Projektoptionen mit project_options_read lesen und ausschließlich über project_option_set/project_option_remove ändern, nicht per DPROJ-XML. ' +
     'form_show_as_text schaltet normalerweise den vorhandenen PAS-Editor-Tab auf DFM-/FMX-Text um; standardmäßig sind das keine getrennten Tabs. ' +
     'Danach die gewünschte Formulartextdatei über den vollständigen Pfad erneut mit file_read lesen und den tatsächlichen Puffer prüfen. ' +

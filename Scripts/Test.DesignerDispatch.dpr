@@ -8,9 +8,9 @@ uses
   h5u.DAI.Permissions.Manager, h5u.DAI.Types;
 const
   CFile = 'C:\Workspace\MainForm.pas';
-  CTools: array[0..6] of string = ('form_components_search', 'form_components_select', 'form_component_properties',
-    'form_component_set_property', 'form_component_move', 'form_component_create', 'form_palette_list');
-  CMethods: array[0..5] of string = ('search', 'select', 'properties', 'set_property', 'move', 'create');
+  CTools: array[0..7] of string = ('form_components_search', 'form_components_select', 'form_component_properties',
+    'form_component_set_property', 'form_component_move', 'form_component_create', 'form_palette_list', 'form_component_delete');
+  CMethods: array[0..7] of string = ('search', 'select', 'properties', 'set_property', 'move', 'create', '', 'delete');
 var
   Checks: Integer;
   Context: TDAIRequestContext;
@@ -30,7 +30,7 @@ begin
   if AIndex <> 6 then Result.AddPair('file', CFile);
   case AIndex of
     1: begin Names := TJSONArray.Create; Names.Add('Button1'); Names.Add('Panel1'); Result.AddPair('components', Names); end;
-    2, 3, 4: Result.AddPair('component', 'Button1');
+    2, 3, 4, 7: Result.AddPair('component', 'Button1');
     5: Result.AddPair('class_name', 'TButton');
   end;
   if AIndex = 3 then begin Result.AddPair('property', 'Name'); Result.AddPair('value', 'SaveButton'); end;
@@ -38,7 +38,7 @@ end;
 procedure Replace(const AArguments: TJSONObject; const AName: string; const AValue: TJSONValue);
 begin AArguments.RemovePair(AName).Free; AArguments.AddPair(AName, AValue); end;
 function IsMutation(const AIndex: Integer): Boolean;
-begin Result := AIndex in [1, 3, 4, 5]; end;
+begin Result := AIndex in [1, 3, 4, 5, 7]; end;
 procedure TestForwarding(const AIndex: Integer; const AExplicit: Boolean);
 var
   Args, Response: TJSONObject;
@@ -169,6 +169,9 @@ begin
   InvalidValue(5, 'width', TJSONNumber.Create(-2)); InvalidValue(5, 'select', TJSONString.Create('false'));
   InvalidValue(6, 'category', TJSONArray.Create); InvalidValue(6, 'include_unavailable', TJSONString.Create('true'));
   InvalidValue(6, 'maximum_results', TJSONNumber.Create(4097));
+
+  MissingValue(7, 'component'); InvalidValue(7, 'component', TJSONNull.Create);
+  InvalidValue(7, 'component', TJSONString.Create(' ')); InvalidValue(7, 'component', TJSONNumber.Create(1));
 end;
 procedure TestScalarsAndParentModes;
 var Args, Response: TJSONObject; Mode: string; Value: TJSONValue;
@@ -196,7 +199,7 @@ var Schemas: TJSONArray; Tool, Schema, Props: TJSONObject; I: Integer;
 begin
   Schemas := ListDesignerSchemas;
   try
-    Check(Schemas.Count = Length(CTools), 'seven production tools');
+    Check(Schemas.Count = Length(CTools), 'all production designer tools');
     for I := 0 to High(CTools) do
     begin
       Tool := TJSONObject(Schemas.Items[I]); Check(Tool.GetValue<string>('name') = CTools[I], 'actual registered name');
@@ -210,6 +213,13 @@ begin
       if I = 4 then Check(Props.GetValue<TJSONObject>('parent_mode').GetValue<string>('default') = 'explicit', 'move retains parent default');
       if I = 5 then Check(Props.GetValue<TJSONObject>('parent_mode').GetValue<string>('default') = 'selected', 'create selection default');
       if I = 6 then Check(Props.GetValue<TJSONObject>('maximum_results').GetValue<Integer>('default') = 500, 'palette default');
+
+      if I = 7 then
+      begin
+        Check(Props.GetValue<TJSONObject>('component').GetValue<Integer>('minLength') = 1, 'named deletion required');
+        Check(Schema.GetValue<TJSONArray>('required').Count = 2, 'delete requires file and component');
+        Check(Props.Count = 2, 'delete has no focus or current-selection fallback');
+      end;
     end;
   finally Schemas.Free; end;
 end;

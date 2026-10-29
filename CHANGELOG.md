@@ -2,6 +2,17 @@
 
 ## 1.2.36
 
+- Der DAI-Toolbarbutton erhält eine persistente Tag-Kennung. Auch bei verlorenen Namen, Aktionen und Menüs wird das eigene markierte Objekt an seiner bisherigen Position wiederverwendet und verbunden; eigene markierte Duplikate werden bereinigt, fremde Buttons bleiben erhalten.
+
+- Das neue form_component_delete löscht Komponenten samt Unterkomponenten über die native Designer-Löschaktion. Root, geerbte und eingebettete Unterkomponenten bleiben geschützt; es wird nicht automatisch gespeichert. MCP-Beschreibungen und registrierter Delphi-Skill empfehlen für DFM/FMX ausdrücklich die nativen Designerwerkzeuge.
+
+- Vor und nach Editoränderungen über file_edit oder file_write wird der Cursor an den Anfang der ersten geänderten Stelle gesetzt. Dadurch bleibt er auch bei mehrzeiligen Einfügungen dort und Rückgängig führt an diese Stelle; identischer Inhalt lässt Cursor und Undo-Verlauf unverändert.
+- Das DAI-Package beendet beim Erzeugen keine Bridge-Prozesse mehr. Das Freigeben der Bridge-EXE bleibt auf deren eigenen Build begrenzt, auch in Build.ps1 und Build+Register.cmd.
+- Die Bereichsänderungen bewahren auch vorhandene Schlussleerzeilen. Der native Dateiende-Regressionstest prüft wiederholte Volltextänderungen und späteres Speichern sowie große ANSI-/Unicode-Dateien. MCP-Anweisungen und Delphi-Skill verlangen, die Anzahl abschließender Zeilenumbrüche ohne ausdrücklichen Auftrag zu erhalten.
+- Server-, Client-, Codex- und Skillstatus in den Optionen sind jetzt randlose, schreibgeschützte Memos mit der Hintergrundfarbe des Dialogs. Lange Meldungen und Pfade bleiben vollständig scrollbar und mit Strg+A/Strg+C kopierbar; konkrete Registrierungsfehler sind dauerhaft in der Clientliste sichtbar.
+- Ein inaktiver MCP zeigt immer Pause. Registrierungsprobleme, verfügbare Updates und gespeicherte Serverfehler überschreiben das Inaktiv-Symbol nicht mehr; alle Hinweise bleiben im Tooltip erhalten.
+- Editoränderungen ersetzen nur noch die ermittelten Unterschiede über einen gemeinsamen Undo-fähigen ToolsAPI-Writer. Unveränderte Bereiche bleiben erhalten, auch wenn ein Client mit `file_write` den vollständigen Text sendet; identischer Inhalt erzeugt keinen Schreibvorgang.
+- Das neue `file_edit` erlaubt mehrere gezielte, eindeutige Textersetzungen mit verpflichtendem Pufferhash. Alle Blöcke werden vor der Änderung gegen denselben Originalinhalt geprüft; Überlappungen und mehrdeutige Treffer werden abgewiesen. MCP-Anweisungen und registrierter Delphi-Skill empfehlen diesen Weg für kleine Änderungen.
 - Geladene Dateien werden unabhängig von Editor-Tabs erkannt: Projektgruppe, Projekte samt DPROJ und DPR/DPK, gekoppelte PAS-/DFM-/FMX-Dateien, zusätzliche Modul-Editoren und eigenständige Textpuffer. `open_files_list` verwendet dieselbe zentrale Erkennung.
 - Dateizugriffe fallen bei geladenen Dateien ohne verfügbaren IDE-Puffer nicht mehr auf den Datenträger zurück. Schreibzugriffe prüfen den Ladezustand unmittelbar vor der Änderung erneut; geladene Projekt-/Gruppenmodelle verlangen die Projektwerkzeuge. Suche und Index-Lesebatches beachten denselben Schutz.
 - MCP-Anweisungen und Delphi-Skill erklären den geladenen IDE-Zustand ausdrücklich. Fehlende OTA-Unterstützung oder unerreichbares DAI erlauben keine externen Schreibänderungen an möglicherweise geladenen Dateien.

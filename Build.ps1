@@ -77,11 +77,15 @@ function Assert-TargetBinary {
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectFile = Join-Path $projectRoot 'DAI.dproj'
+$bridgeProjectFile = Join-Path $projectRoot 'DAI.McpBridge.dproj'
 . (Join-Path $projectRoot 'Scripts\Build.Registration.ps1')
 . (Join-Path $projectRoot 'Scripts\Build.Output.ps1')
 
 if (-not (Test-Path -LiteralPath $projectFile)) {
     throw "DAI.dproj wurde nicht gefunden: $projectFile"
+}
+if (-not (Test-Path -LiteralPath $bridgeProjectFile -PathType Leaf)) {
+    throw "DAI.McpBridge.dproj wurde nicht gefunden: $bridgeProjectFile"
 }
 
 $installation = $null
@@ -199,17 +203,24 @@ foreach ($currentPlatform in $platforms) {
     Assert-TargetBinary -Path $packageFile -TargetPlatform $currentPlatform -IsPackage $true
 
     $bridgeDcu = Join-Path $projectRoot "Build\$currentPlatform-$Configuration-BridgeDcu"
+    $bridgeLibrary = Join-Path $BdsRoot "lib\$currentPlatform\release"
     New-Item -ItemType Directory -Path $bridgeOutput, $bridgeDcu -Force | Out-Null
-    $compilerName = if ($currentPlatform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
+    # The bridge project's own pre-build event stops bridge processes only here,
+    # immediately before replacing their executable. Package builds do not stop them.
     $bridgeCommand = @(
         'call'
         "`"$rsvars`""
         '&&'
-        "`"$(Join-Path $BdsRoot "bin\$compilerName")`""
-        '-B'
-        "-E`"$bridgeOutput`""
-        "-N0`"$bridgeDcu`""
-        "`"$(Join-Path $projectRoot 'DAI.McpBridge.dpr')`""
+        'msbuild'
+        "`"$bridgeProjectFile`""
+        '/t:Build'
+        "/p:Config=$Configuration"
+        "/p:Platform=$currentPlatform"
+        "/p:DCC_ExeOutput=`"$bridgeOutput`""
+        "/p:DCC_DcuOutput=`"$bridgeDcu`""
+        "/p:DCC_UnitSearchPath=`"$bridgeLibrary`""
+        '/nologo'
+        '/verbosity:minimal'
     ) -join ' '
     & $env:ComSpec /d /s /c $bridgeCommand
     if ($LASTEXITCODE -ne 0) {

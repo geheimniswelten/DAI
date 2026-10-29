@@ -53,6 +53,8 @@ type
 const
   CDAIActionName = 'DAIServerToggleAction';
   CDAIButtonName = 'DAIServerToolButton';
+  // Standard VCL Tag survives toolbar streaming even when the IDE clears Name.
+  CDAIButtonTag = $44414931;
   // New identifiers replace earlier glyphs even within the same IDE session.
   CDAIImageIds: array[TDAIServerGlyphState] of string = ('h5u.DAI.ServerGlyph.v4.Inactive', 'h5u.DAI.ServerGlyph.v4.Active',
     'h5u.DAI.ServerGlyph.v4.Error', 'h5u.DAI.ServerGlyph.v4.RecentAccess', 'h5u.DAI.ServerGlyph.v4.EarlierAccess',
@@ -148,14 +150,17 @@ type
     FIDEPermissionSummary: string;
     FProjectPermissionSummary: string;
     procedure LeaveCallback;
-    procedure RemoveUI;
+    procedure RemoveUI(const APreserveButton: TToolButton = nil);
     procedure RemoveActionButtons;
+    procedure RemoveMarkedButtons(const APreserveButton: TToolButton = nil);
     procedure RemoveLegacyButtons(const AAllowSingle: Boolean = False);
     procedure EnsureReadNotifier;
     procedure RetireReadNotifier;
     procedure CaptureReadButton(Reader: TReader; Component: TComponent; const AName: string);
     procedure BeginToolbarRead(AToolbar: TWinControl);
     function RestoredButton(AToolbar: TToolBar; AActionList: TCustomActionList): TToolButton;
+    function IsMarkedButton(AButton: TToolButton; AToolbar: TToolBar; AActionList: TCustomActionList): Boolean;
+    function MarkedButton(AToolbar: TToolBar; AActionList: TCustomActionList): TToolButton;
     procedure ReportError(const AError: string);
     procedure InstallImages(const AServices: INTAServices; AImages: TCustomImageList);
     procedure CreatePopup;
@@ -587,7 +592,7 @@ begin
   if ((LButton.Action <> nil) and (LButton.Action <> FAction)) or
     ((LButton.DropdownMenu <> nil) and (LButton.DropdownMenu <> FPopup)) or
     (LButton.PopupMenu <> nil) or (LButton.MenuItem <> nil) or (LButton.Style <> tbsDropDown) or
-    (LButton.Tag <> 0) or (LButton.DragMode <> dmManual) or (LButton.DragKind <> dkDrag) or
+    ((LButton.Tag <> 0) and (LButton.Tag <> CDAIButtonTag)) or (LButton.DragMode <> dmManual) or (LButton.DragKind <> dkDrag) or
     Assigned(TDAIToolButtonAccess(LButton).OnDblClick) or Assigned(LButton.OnContextPopup) or
     Assigned(LButton.OnMouseDown) or Assigned(LButton.OnMouseMove) or Assigned(LButton.OnMouseUp) or
     Assigned(LButton.OnDragDrop) or Assigned(LButton.OnDragOver) or Assigned(LButton.OnStartDrag) or
@@ -598,6 +603,82 @@ begin
     Exit;
   end;
   Result := LButton;
+end;
+
+function TDAIToolbarController.IsMarkedButton(AButton: TToolButton; AToolbar: TToolBar; AActionList: TCustomActionList): Boolean;
+var
+  LOwnClick, LClick: TNotifyEvent;
+begin
+  Result := False;
+  if not Assigned(AButton) or not Assigned(AToolbar) or not Assigned(AActionList) then
+    Exit;
+  if not Assigned(AActionList.Owner) then
+    Exit;
+  if (AButton.ClassType <> TToolButton) or (AButton.Tag <> CDAIButtonTag) then
+    Exit;
+  if (AButton.Parent <> AToolbar) or (AButton.Owner <> AActionList.Owner) or (AToolbar.Owner <> AActionList.Owner) then
+    Exit;
+  if (AButton.ComponentState * [csDestroying, csLoading, csReading] <> []) or
+    (AToolbar.ComponentState * [csDestroying, csLoading, csReading] <> []) or
+    (AActionList.ComponentState * [csDestroying, csLoading, csReading] <> []) or
+    (AActionList.Owner.ComponentState * [csDestroying, csLoading, csReading] <> []) then
+    Exit;
+  // The marker proves identity only together with the official toolbar/owner.
+  // Never reclaim a marked object that has acquired another plug-in's behavior.
+  LOwnClick := ToggleServer;
+  LClick := AButton.OnClick;
+  if Assigned(LClick) then
+    if (TMethod(LClick).Code <> TMethod(LOwnClick).Code) or (TMethod(LClick).Data <> Self) then
+      Exit;
+  if ((AButton.Action <> nil) and (AButton.Action <> FAction)) or
+    ((AButton.DropdownMenu <> nil) and (AButton.DropdownMenu <> FPopup)) or
+    (AButton.PopupMenu <> nil) or (AButton.MenuItem <> nil) or (AButton.Style <> tbsDropDown) or
+    (AButton.DragMode <> dmManual) or (AButton.DragKind <> dkDrag) or
+    Assigned(TDAIToolButtonAccess(AButton).OnDblClick) or Assigned(AButton.OnContextPopup) or
+    Assigned(AButton.OnMouseDown) or Assigned(AButton.OnMouseMove) or Assigned(AButton.OnMouseUp) or
+    Assigned(AButton.OnDragDrop) or Assigned(AButton.OnDragOver) or Assigned(AButton.OnStartDrag) or
+    Assigned(AButton.OnEndDrag) or Assigned(AButton.OnMouseEnter) or Assigned(AButton.OnMouseLeave) or
+    Assigned(AButton.OnMouseActivate) or Assigned(AButton.OnStartDock) or Assigned(AButton.OnEndDock) then
+    Exit;
+  Result := True;
+end;
+
+function TDAIToolbarController.MarkedButton(AToolbar: TToolBar; AActionList: TCustomActionList): TToolButton;
+var
+  LIndex: Integer;
+begin
+  Result := nil;
+  if IsMarkedButton(FButton, AToolbar, AActionList) then
+    Exit(FButton);
+  for LIndex := 0 to AToolbar.ButtonCount - 1 do
+    if IsMarkedButton(AToolbar.Buttons[LIndex], AToolbar, AActionList) then
+      Exit(AToolbar.Buttons[LIndex]);
+end;
+
+procedure TDAIToolbarController.RemoveMarkedButtons(const APreserveButton: TToolButton);
+var
+  LIndex: Integer;
+  LButton: TToolButton;
+begin
+  if not Assigned(FToolbar) or not Assigned(FActionList) then
+    Exit;
+  if csDestroying in FToolbar.ComponentState then
+    Exit;
+  if csDestroying in FActionList.ComponentState then
+    Exit;
+  for LIndex := FToolbar.ButtonCount - 1 downto 0 do
+  begin
+    if LIndex >= FToolbar.ButtonCount then
+      Continue;
+    LButton := FToolbar.Buttons[LIndex];
+    if (LButton = FButton) or (LButton = APreserveButton) then
+      Continue;
+    if not IsMarkedButton(LButton, FToolbar, FActionList) then
+      Continue;
+    LButton.Action := nil;
+    LButton.DropdownMenu := nil;
+    LButton.Free;
+  end;
 end;
 
 constructor TDAIToolbarController.Create;
@@ -659,8 +740,9 @@ begin
     FManageIndexesItem := nil;
 end;
 
-procedure TDAIToolbarController.RemoveUI;
+procedure TDAIToolbarController.RemoveUI(const APreserveButton: TToolButton);
 begin
+  RemoveMarkedButtons(APreserveButton);
   // Desktop/customization can create more than the one factory-returned button.
   // Remove exact action clients before freeing the action loses their identity.
   RemoveActionButtons;
@@ -1277,6 +1359,8 @@ var
   LImages: TCustomImageList;
   LControl: TControl;
   LRestored: TToolButton;
+  LRestoreGuard: TDAIStreamedButtonCapture;
+  LCaptured: Boolean;
   LIndex: Integer;
 begin
   EnsureReadNotifier;
@@ -1295,110 +1379,128 @@ begin
   end;
   if csDestroying in LToolbar.ComponentState then
     Exit;
-  if csDestroying in LActionList.ComponentState then
+  if LActionList.ComponentState * [csDestroying, csLoading, csReading] <> [] then
     Exit;
+  if Assigned(LActionList.Owner) then
+    if LActionList.Owner.ComponentState * [csDestroying, csLoading, csReading] <> [] then
+      Exit;
   if Assigned(FAction) then
     if csDestroying in FAction.ComponentState then
       Exit;
   if LToolbar.ComponentState * [csLoading, csReading] <> [] then
     Exit;
   LRestored := RestoredButton(LToolbar, LActionList);
+  LCaptured := Assigned(LRestored);
+  if not Assigned(LRestored) then
+    LRestored := MarkedButton(LToolbar, LActionList);
   if Assigned(FToolbar) and Assigned(FActionList) and Assigned(FAction) and Assigned(FButton) and Assigned(FPopup) then
     if (FToolbar = LToolbar) and (FActionList = LActionList) then
       if not Assigned(LRestored) or (LRestored = FButton) then
       begin
-        if Assigned(LRestored) then
-        begin
-          FButton.Name := CDAIButtonName;
+        RemoveMarkedButtons;
+        FButton.Name := CDAIButtonName;
+        FButton.Tag := CDAIButtonTag;
+        // RTL owner transfers send opRemove without destroying the dependency.
+        // Rebind only our known objects; foreign replacements remain untouched.
+        if FAction.ActionList = nil then
+          FAction.ActionList := FActionList;
+        if FButton.Action = nil then
           FButton.Action := FAction;
+        if FButton.DropdownMenu = nil then
           FButton.DropdownMenu := FPopup;
+        if LCaptured then
           FStreamCapture.Consume;
-          // Positive original-name evidence permits one historical single only
-          // during this adoption. Subsequent Ready refreshes remain three..five.
-          RemoveLegacyButtons(True);
+        // Only original-name capture authorizes the historical single migration.
+        RemoveLegacyButtons(LCaptured);
+        if LCaptured then
           EnsureOwnButtonFitsHorizontally;
-        end
-        else
-          RemoveLegacyButtons;
         Exit;
       end;
-  if Assigned(LRestored) then
-  begin
-    // Protect the validated restored object while retiring our old action clients.
-    LRestored.Action := nil;
-    LRestored.DropdownMenu := nil;
-    LRestored.OnClick := nil;
-    if LRestored = FButton then
-    begin
-      FButton.RemoveFreeNotification(Self);
-      FButton := nil;
-    end;
-  end;
-  RemoveUI;
-  if Assigned(LRestored) then
-    if FStreamCapture.Button <> LRestored then
-      LRestored := nil;
-  for LIndex := 0 to LToolbar.ButtonCount - 1 do
-    if LToolbar.Buttons[LIndex] <> LRestored then
-      if SameText(LToolbar.Buttons[LIndex].Name, CDAIButtonName) then
-        raise EInvalidOperation.Create(DAIText('Der DAI-Schalter ist bereits durch eine andere Instanz registriert.',
-          'The DAI button is already registered by another instance.',
-          'Le bouton DAI est déjà inscrit par une autre instance.',
-          'DAI ボタンは別のインスタンスによって登録されています。'));
-  for LIndex := 0 to LActionList.ActionCount - 1 do
-    if SameText(LActionList.Actions[LIndex].Name, CDAIActionName) then
-      raise EInvalidOperation.Create(DAIText('Die DAI-Aktion ist bereits durch eine andere Instanz registriert.',
-        'The DAI action is already registered by another instance.',
-        'L’action DAI est déjà inscrite par une autre instance.',
-        'DAI アクションは別のインスタンスによって登録されています。'));
-  InstallImages(LServices, LImages);
-  FToolbar := LToolbar;
-  FToolbar.FreeNotification(Self);
-  FActionList := LActionList;
-  FActionList.FreeNotification(Self);
+  LRestoreGuard := TDAIStreamedButtonCapture.Create(nil);
   try
-    FAction := TAction.Create(FActionList.Owner);
-    FAction.Name := CDAIActionName;
-    FAction.Category := 'DAI';
-    FAction.Caption := DAIText('DAI inaktiv', 'DAI inactive', 'DAI inactif', 'DAI 停止中');
-    FAction.ActionList := FActionList;
-    FAction.ImageIndex := FImages[sgInactive];
-    FAction.OnExecute := ToggleServer;
-    FAction.FreeNotification(Self);
     if Assigned(LRestored) then
-      FButton := LRestored
-    else
+      LRestoreGuard.Capture(LRestored, LToolbar, LActionList.Owner);
+    if Assigned(LRestored) then
     begin
-      LControl := LServices.AddToolButton(sDebugToolBar, CDAIButtonName, FAction);
-      if not (LControl is TToolButton) then
+      // Protect the validated restored object while retiring our old action clients.
+      LRestored.Action := nil;
+      LRestored.DropdownMenu := nil;
+      LRestored.OnClick := nil;
+      if LRestored = FButton then
       begin
-        LControl.Free;
-        raise EInvalidOperation.Create(DAIText('Die Debugger-Werkzeugleiste liefert keinen VCL-ToolButton.',
-          'The debugger toolbar did not provide a VCL ToolButton.',
-          'La barre d’outils du débogueur n’a pas fourni de bouton VCL.',
-          'デバッガーツールバーが VCL ToolButton を返しませんでした。'));
+        FButton.RemoveFreeNotification(Self);
+        FButton := nil;
       end;
-      FButton := TToolButton(LControl);
     end;
-    FButton.FreeNotification(Self);
-    FButton.Name := CDAIButtonName;
-    FButton.Action := FAction;
-    FButton.Style := tbsDropDown;
-    FButton.ShowHint := True;
-    FButton.ParentShowHint := False;
-    CreatePopup;
+    RemoveUI(LRestored);
     if Assigned(LRestored) then
-    begin
-      FStreamCapture.Consume;
-      RemoveLegacyButtons(True);
-    end
-    else
-      RemoveLegacyButtons;
-    EnsureOwnButtonFitsHorizontally;
-    FLastInstallError := '';
-  except
-    RemoveUI;
-    raise;
+      if LRestoreGuard.Button <> LRestored then
+        LRestored := nil;
+    for LIndex := 0 to LToolbar.ButtonCount - 1 do
+      if LToolbar.Buttons[LIndex] <> LRestored then
+        if SameText(LToolbar.Buttons[LIndex].Name, CDAIButtonName) then
+          if not IsMarkedButton(LToolbar.Buttons[LIndex], LToolbar, LActionList) then
+            raise EInvalidOperation.Create(DAIText('Der DAI-Schalter ist bereits durch eine andere Instanz registriert.',
+              'The DAI button is already registered by another instance.',
+              'Le bouton DAI est déjà inscrit par une autre instance.',
+              'DAI ボタンは別のインスタンスによって登録されています。'));
+    for LIndex := 0 to LActionList.ActionCount - 1 do
+      if SameText(LActionList.Actions[LIndex].Name, CDAIActionName) then
+        raise EInvalidOperation.Create(DAIText('Die DAI-Aktion ist bereits durch eine andere Instanz registriert.',
+          'The DAI action is already registered by another instance.',
+          'L’action DAI est déjà inscrite par une autre instance.',
+          'DAI アクションは別のインスタンスによって登録されています。'));
+    InstallImages(LServices, LImages);
+    FToolbar := LToolbar;
+    FToolbar.FreeNotification(Self);
+    FActionList := LActionList;
+    FActionList.FreeNotification(Self);
+    try
+      // Release duplicate marked records before assigning the canonical Name.
+      RemoveMarkedButtons(LRestored);
+      FAction := TAction.Create(FActionList.Owner);
+      FAction.Name := CDAIActionName;
+      FAction.Category := 'DAI';
+      FAction.Caption := DAIText('DAI inaktiv', 'DAI inactive', 'DAI inactif', 'DAI 停止中');
+      FAction.ActionList := FActionList;
+      FAction.ImageIndex := FImages[sgInactive];
+      FAction.OnExecute := ToggleServer;
+      FAction.FreeNotification(Self);
+      if Assigned(LRestored) then
+        FButton := LRestored
+      else
+      begin
+        LControl := LServices.AddToolButton(sDebugToolBar, CDAIButtonName, FAction);
+        if not (LControl is TToolButton) then
+        begin
+          LControl.Free;
+          raise EInvalidOperation.Create(DAIText('Die Debugger-Werkzeugleiste liefert keinen VCL-ToolButton.',
+            'The debugger toolbar did not provide a VCL ToolButton.',
+            'La barre d’outils du débogueur n’a pas fourni de bouton VCL.',
+            'デバッガーツールバーが VCL ToolButton を返しませんでした。'));
+        end;
+        FButton := TToolButton(LControl);
+      end;
+      FButton.FreeNotification(Self);
+      FButton.Name := CDAIButtonName;
+      FButton.Tag := CDAIButtonTag;
+      FButton.Action := FAction;
+      FButton.Style := tbsDropDown;
+      FButton.ShowHint := True;
+      FButton.ParentShowHint := False;
+      CreatePopup;
+      if LCaptured then
+        FStreamCapture.Consume;
+      RemoveLegacyButtons(LCaptured);
+      RemoveMarkedButtons;
+      EnsureOwnButtonFitsHorizontally;
+      FLastInstallError := '';
+    except
+      RemoveUI;
+      raise;
+    end;
+  finally
+    LRestoreGuard.Free;
   end;
 end;
 
@@ -1547,7 +1649,7 @@ begin
   end;
   if TDAIIDEToolbar.FUpdateAvailable then
   begin
-    if not LAccessShown then
+    if LActive and not LAccessShown then
     begin
       LImage := FImages[sgUpdateAvailable];
       LCaption := DAIText('DAI: Neue Version verfügbar',
@@ -1563,10 +1665,11 @@ begin
       LHint := LHint + ': ' + TDAIIDEToolbar.FUpdateVersion;
     LHint := LHint + '.';
   end;
-  // Registration problems retain priority over an optional software update.
+  // A stopped MCP always displays Pause; retain all diagnostics in its hint.
+  // Active registration problems retain priority over an optional update.
   if FRegistrationChecked then
   begin
-    if not LAccessShown then
+    if LActive and not LAccessShown then
       case FRegistrationHealth of
         rhNotRegistered:
           begin
@@ -1592,9 +1695,12 @@ begin
   end;
   if LError <> '' then
   begin
-    LCaption := DAIText('DAI Fehler', 'DAI error', 'Erreur DAI', 'DAI エラー');
     LHint := LHint + sLineBreak + DAIText('Fehler: ', 'Error: ', 'Erreur : ', 'エラー: ') + LError;
-    LImage := FImages[sgError];
+    if LActive then
+    begin
+      LCaption := DAIText('DAI Fehler', 'DAI error', 'Erreur DAI', 'DAI エラー');
+      LImage := FImages[sgError];
+    end;
   end;
   if FBusy then
   begin

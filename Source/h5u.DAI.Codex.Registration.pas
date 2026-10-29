@@ -712,9 +712,14 @@ begin
     - Listen können mit `merge_mode: "merge"` erben oder mit `"replace"` überschreiben; Standard `"preserve"` erhält den bisherigen Modus.
     - Optionsänderungen bleiben im IDE-Projekt; erst `project_save` speichert sie. Bei anderem aktiven Projekt wird der Zugriff abgewiesen.
     - Lese vor Änderungen mit `file_read` (`file`, `interfaces_only: false`, `maximum_characters: 0`) den vollständigen aktuellen Inhalt.
-    - Prüfe `source`, `content_complete` und `truncated`; verwende zum Schreiben immer vollständigen Inhalt.
+    - Prüfe `source`, `content_complete` und `truncated`; Änderungen müssen auf dem vollständigen aktuellen Inhalt beruhen.
     - `sha256` beschreibt den vollständigen aktuellen Inhalt, auch wenn `implementation_omitted` oder `truncated` nur eine Teilansicht liefern.
-    - `file_write` erwartet `file`, den gesamten `content`, den gelesenen `sha256` als `expected_sha256` und optional `save`.
+    - Für kleine Änderungen `file_edit` verwenden: `file`, `expected_sha256`, `edits` mit `old_text`/`new_text` und optional `save`.
+    - Jeder nichtleere `old_text` muss im gelesenen Original genau einmal vorkommen; mit eindeutigen Kontextzeilen verankern.
+    - Alle Ersetzungen beziehen sich auf dasselbe Original und dürfen sich nicht überschneiden; Einfügen mit Kontext, Löschen mit leerem `new_text`.
+    - `file_write` bleibt für vollständigen `content` verfügbar; es erwartet ebenfalls `expected_sha256` und optional `save`.
+    - Auch bei `file_write` ändert DAI im IDE-Puffer nur die ermittelten Unterschiede über einen gemeinsamen Undo-fähigen Writer.
+    - Vorhandene Schlussleerzeilen bei Änderungen erhalten; die Anzahl abschließender Zeilenumbrüche nur auf ausdrücklichen Auftrag ändern.
     - Bei `.pas` prüft DAI vor dem Ersetzen echte Unit-, Interface-/Implementation-Abschnitte und abschließendes `end.`; der Compiler prüft die Syntax.
     - Bei einem Hashkonflikt erneut lesen und die Änderung auf den aktuellen Inhalt anwenden. Prüfe danach `target`, `saved` und `sha256`.
     - Geöffnete Dateien werden im Undo-fähigen Editorpuffer geändert; `save: false` lässt Änderungen ungespeichert.
@@ -797,12 +802,15 @@ begin
     - `form_component_move`: component mit x/y/width/height und optional parent/parent_mode verschieben; fehlende Werte bleiben erhalten.
     - `form_palette_list`: query/category filtern registrierte Klassen; include_unavailable ergänzt deaktivierte Einträge, maximum_results ist 500.
     - `form_component_create`: class_name aus der Palette über CreateComponent einfügen; optional name, Parent, Integerposition/-größe und select.
+    - `form_component_delete`: component nativ samt untergeordneten Komponenten löschen; Root und geerbte Komponenten sind geschützt. Speichert nicht.
     - parent wählt explizit; parent_mode ist explicit/selected/selected_parent/root. Create nutzt selected mit Containerfallback, Move behält sonst den Parent.
     - Create-Koordinaten -1 überlassen den Wert dem Designer; bei Move unterstützt FMX auch Dezimalpositionen. Owner und visuellen Parent unterscheiden.
     - Mutationen benötigen Projektlese- und Projektschreibrechte, sind Workspace-begrenzt und speichern nie automatisch. Tatsächlichen modified-Status prüfen.
     - Parentwechsel darf nativ erfolgen und meldet Designeränderung; keine gemeinsame Undo-Transaktion behaupten. Komplexe Properties nicht frei erfinden.
     - Beim Erzeugen/Umbenennen tatsächlichen Namen prüfen; source_declaration_verified: false bedeutet keine unabhängig bestätigte Pascal-Feldsynchronisierung.
-    - DFM/FMX bevorzugt über native Designerwerkzeuge ändern; direkte Textänderungen nur im IDE-Textpuffer mit `file_read`/`file_write`.
+    - DFM/FMX möglichst mit `form_component_create`, `form_component_delete`, `form_component_set_property` und `form_component_move` bearbeiten.
+    - Für unterstützte Operationen diese nativen Designerwerkzeuge bevorzugen; Computer Use nur, wenn das passende DAI-Werkzeug fehlt.
+    - Formulartext nur für dort nicht unterstützte Änderungen und ausschließlich im IDE-Textpuffer mit `file_read`/`file_edit`/`file_write` bearbeiten.
     - Delphi entscheidet beim Speichern über die Codierung; Designerobjekte nicht frei erfinden.
     - `form_show_as_text` schaltet normalerweise den vorhandenen PAS-Editor-Tab auf DFM-/FMX-Text um; standardmäßig gibt es keine getrennten PAS-/DFM-Tabs.
     - Das ist erwartetes IDE-Verhalten. Nach dem Wechsel die gewünschte DFM-/FMX-Datei über den vollständigen Pfad erneut mit `file_read` lesen.
@@ -938,9 +946,14 @@ begin
     '- Listen können mit `merge_mode: "merge"` erben oder mit `"replace"` überschreiben; Standard `"preserve"` erhält den bisherigen Modus.' + sLineBreak +
     '- Optionsänderungen bleiben im IDE-Projekt; erst `project_save` speichert sie. Bei anderem aktiven Projekt wird der Zugriff abgewiesen.' + sLineBreak +
     '- Lese vor Änderungen mit `file_read` (`file`, `interfaces_only: false`, `maximum_characters: 0`) den vollständigen aktuellen Inhalt.' + sLineBreak +
-    '- Prüfe `source`, `content_complete` und `truncated`; verwende zum Schreiben immer vollständigen Inhalt.' + sLineBreak +
+    '- Prüfe `source`, `content_complete` und `truncated`; Änderungen müssen auf dem vollständigen aktuellen Inhalt beruhen.' + sLineBreak +
     '- `sha256` beschreibt den vollständigen aktuellen Inhalt, auch wenn `implementation_omitted` oder `truncated` nur eine Teilansicht liefern.' + sLineBreak +
-    '- `file_write` erwartet `file`, den gesamten `content`, den gelesenen `sha256` als `expected_sha256` und optional `save`.' + sLineBreak +
+    '- Für kleine Änderungen `file_edit` verwenden: `file`, `expected_sha256`, `edits` mit `old_text`/`new_text` und optional `save`.' + sLineBreak +
+    '- Jeder nichtleere `old_text` muss im gelesenen Original genau einmal vorkommen; mit eindeutigen Kontextzeilen verankern.' + sLineBreak +
+    '- Alle Ersetzungen beziehen sich auf dasselbe Original und dürfen sich nicht überschneiden; Einfügen mit Kontext, Löschen mit leerem `new_text`.' + sLineBreak +
+    '- `file_write` bleibt für vollständigen `content` verfügbar; es erwartet ebenfalls `expected_sha256` und optional `save`.' + sLineBreak +
+    '- Auch bei `file_write` ändert DAI im IDE-Puffer nur die ermittelten Unterschiede über einen gemeinsamen Undo-fähigen Writer.' + sLineBreak +
+    '- Vorhandene Schlussleerzeilen bei Änderungen erhalten; die Anzahl abschließender Zeilenumbrüche nur auf ausdrücklichen Auftrag ändern.' + sLineBreak +
     '- Bei `.pas` prüft DAI vor dem Ersetzen echte Unit-, Interface-/Implementation-Abschnitte und abschließendes `end.`; der Compiler prüft die Syntax.' + sLineBreak +
     '- Bei einem Hashkonflikt erneut lesen und die Änderung auf den aktuellen Inhalt anwenden. Prüfe danach `target`, `saved` und `sha256`.' + sLineBreak +
     '- Geöffnete Dateien werden im Undo-fähigen Editorpuffer geändert; `save: false` lässt Änderungen ungespeichert.' + sLineBreak +
@@ -1025,6 +1038,7 @@ begin
     '- `form_component_move`: component mit x/y/width/height und optional parent/parent_mode verschieben; fehlende Werte bleiben erhalten.' + sLineBreak +
     '- `form_palette_list`: query/category filtern registrierte Klassen; include_unavailable ergänzt deaktivierte Einträge, maximum_results ist 500.' + sLineBreak +
     '- `form_component_create`: class_name aus der Palette über CreateComponent einfügen; optional name, Parent, Integerposition/-größe und select.' + sLineBreak +
+    '- `form_component_delete`: component nativ samt untergeordneten Komponenten löschen; Root und geerbte Komponenten sind geschützt. Speichert nicht.' + sLineBreak +
     '- parent wählt explizit; parent_mode ist explicit/selected/selected_parent/root. ' +
     'Create nutzt selected mit Containerfallback, Move behält sonst den Parent.' + sLineBreak +
     '- Create-Koordinaten -1 überlassen den Wert dem Designer; bei Move unterstützt FMX auch Dezimalpositionen. ' +
@@ -1035,7 +1049,9 @@ begin
     'Komplexe Properties nicht frei erfinden.' + sLineBreak +
     '- Beim Erzeugen/Umbenennen tatsächlichen Namen prüfen; source_declaration_verified: false bedeutet ' +
     'keine unabhängig bestätigte Pascal-Feldsynchronisierung.' + sLineBreak +
-    '- DFM/FMX bevorzugt über native Designerwerkzeuge ändern; direkte Textänderungen nur im IDE-Textpuffer mit `file_read`/`file_write`.' + sLineBreak +
+    '- DFM/FMX möglichst mit `form_component_create`, `form_component_delete`, `form_component_set_property` und `form_component_move` bearbeiten.' + sLineBreak +
+    '- Für unterstützte Operationen diese nativen Designerwerkzeuge bevorzugen; Computer Use nur, wenn das passende DAI-Werkzeug fehlt.' + sLineBreak +
+    '- Formulartext nur für dort nicht unterstützte Änderungen und ausschließlich im IDE-Textpuffer mit `file_read`/`file_edit`/`file_write` bearbeiten.' + sLineBreak +
     '- Delphi entscheidet beim Speichern über die Codierung; Designerobjekte nicht frei erfinden.' + sLineBreak +
     '- `form_show_as_text` schaltet normalerweise den vorhandenen PAS-Editor-Tab auf DFM-/FMX-Text um; standardmäßig gibt es keine getrennten ' +
     'PAS-/DFM-Tabs.' + sLineBreak +

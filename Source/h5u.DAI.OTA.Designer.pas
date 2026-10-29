@@ -16,6 +16,7 @@ type
     class function SetProperty(const AFileName: string; const AArguments: TJSONObject): TJSONObject; static;
     class function MoveComponent(const AFileName: string; const AArguments: TJSONObject): TJSONObject; static;
     class function CreateComponent(const AFileName: string; const AArguments: TJSONObject): TJSONObject; static;
+    class function DeleteComponent(const AFileName: string; const AArguments: TJSONObject): TJSONObject; static;
   end;
 
 implementation
@@ -1805,6 +1806,96 @@ begin
             raise;
           end;
         end;
+      end);
+    Result := LResult;
+  except
+    LResult.Free;
+    raise;
+  end;
+end;
+
+class function TDAIDesignerService.DeleteComponent(const AFileName: string; const AArguments: TJSONObject): TJSONObject;
+var
+  LFileName, LComponentName: string;
+  LResult: TJSONObject;
+begin
+  LFileName := DesignerFileName(AFileName);
+  LComponentName := DesignerRequiredString(AArguments, 'component');
+  LResult := TJSONObject.Create;
+  try
+    TDAIOTA.RunOnMainThread(
+      procedure
+      var
+        LFormEditor: IOTAFormEditor;
+        LDesigner: IDesigner;
+        LComponent, LSelected: IOTAComponent;
+        LNative, LRoot, LOwner: TComponent;
+        LSelection: IDesignerSelections;
+        LHandle: TOTAHandle;
+        LActualName: string;
+      begin
+        LFormEditor := LoadedDesigner(LFileName);
+        LDesigner := NativeDesigner(LFormEditor);
+        RequireWritableDesigner(LFormEditor, LDesigner);
+        LComponent := RequiredComponent(LFormEditor, LComponentName);
+        LNative := NativeComponent(LComponent);
+        LRoot := NativeComponent(LFormEditor.GetRootComponent);
+        if LNative = LRoot then
+          raise EArgumentException.Create('Die Root-Komponente des Formulars kann nicht gelöscht werden.');
+        if not BelongsToRoot(LNative, LRoot) then
+          raise EDAIAccessDenied.Create('Die Komponente gehört nicht zu diesem Designer.');
+        if csAncestor in LNative.ComponentState then
+          raise EArgumentException.Create('Eine geerbte Komponente kann nicht gelöscht werden.');
+        LOwner := LNative.Owner;
+        while Assigned(LOwner) and (LOwner <> LRoot) do
+        begin
+          if (csInline in LOwner.ComponentState) or (csAncestor in LOwner.ComponentState) then
+            raise EArgumentException.Create('Eine Komponente eines geerbten oder eingebetteten Owners kann nicht gelöscht werden.');
+          LOwner := LOwner.Owner;
+        end;
+        LActualName := ComponentString(LComponent, 'Name');
+        LHandle := LComponent.GetComponentHandle;
+        // Use the native designer operation, as the SDK's component editors do.
+        // Replace the selection explicitly so unrelated selected objects survive.
+        LSelection := CreateSelectionList;
+        try
+          LSelection.Add(LNative);
+          LDesigner.SetSelections(LSelection);
+        finally
+          LSelection := nil;
+          LComponent := nil;
+        end;
+        // Selection notifications may redirect or reject the selection. Validate
+        // fresh OTA objects before invoking a command that consumes the selection.
+        try
+          LComponent := LFormEditor.FindComponent(LActualName);
+          if not Assigned(LComponent) or (LComponent.GetComponentHandle <> LHandle) then
+            raise EInvalidOperation.Create('Die Komponente ist nach dem Auswählen nicht mehr unverändert im Designer vorhanden.');
+          if LFormEditor.GetSelCount <> 1 then
+            raise EInvalidOperation.Create('Der Designer hat die Auswahl der zu löschenden Komponente nicht unverändert übernommen.');
+          LSelected := LFormEditor.GetSelComponent(0);
+          if not Assigned(LSelected) or (LSelected.GetComponentHandle <> LHandle) then
+            raise EInvalidOperation.Create('Der Designer hat eine andere Komponente ausgewählt; es wurde nichts gelöscht.');
+        finally
+          // Deletion invalidates component interfaces, including descendants.
+          // Retain only immutable identity data across the native operation.
+          LSelected := nil;
+          LComponent := nil;
+        end;
+        try
+          LDesigner.DeleteSelection(True);
+          if Assigned(LFormEditor.FindComponent(LActualName)) then
+            raise EInvalidOperation.Create('Die IDE hat die angeforderte Komponente nicht gelöscht.');
+          LDesigner.Modified;
+        except
+          on E: Exception do
+            RaiseDesignerMutationFailure(LDesigner, E);
+        end;
+        LResult.AddPair('component', LActualName);
+        LResult.AddPair('deleted', TJSONBool.Create(True));
+        AddMutationStatus(LResult, LFormEditor);
+        LResult.AddPair('source_declaration_verified', TJSONBool.Create(False));
+        LResult.AddPair('source_sync_note', 'Die IDE hat die Komponente entfernt; die Entfernung ihrer Pascal-Felddeklaration wurde nicht gesondert geprüft.');
       end);
     Result := LResult;
   except

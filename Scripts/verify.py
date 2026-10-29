@@ -38,6 +38,7 @@ REQUIRED_TOOLS = {
     "form_component_set_property",
     "form_component_move",
     "form_component_create",
+    "form_component_delete",
     "form_palette_list",
     "debugger_status",
     "debugger_cursor_expression",
@@ -79,6 +80,7 @@ REQUIRED_TOOLS = {
     "project_option_remove",
 
     "file_write",
+    "file_edit",
     "project_create",
     "project_open",
     "project_save",
@@ -883,11 +885,16 @@ def check_encoding_policy(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.OTA.Files.pas: Dateiinhalt darf nicht pauschal als UTF-8 geschrieben werden")
     if "Formulardateien werden ausschließlich über einen verfügbaren IDE-Textpuffer geändert" not in files_content:
         fail(errors, "h5u.DAI.OTA.Files.pas: DFM-Direktschreibschutz fehlt")
-    write_branch = re.search(r"(?s)if SameText\(AName, 'file_write'\) then(.*?)if SameText\(AName, 'project_create'\)", tools_content)
+    write_branch = re.search(r"(?s)if SameText\(AName, 'file_write'\) then(.*?)if SameText\(AName, 'file_edit'\)", tools_content)
     if not write_branch or "RequirePermission(pcProjectWrite," not in write_branch.group(1):
         fail(errors, "h5u.DAI.MCP.Tools.pas: alle Dateischreibwege benötigen das gemeinsame Projektschreibrecht")
     if write_branch and re.search(r"pcEditInsideIDE|pcEditOutsideIDE|IsFileOpenInEditor", write_branch.group(1)):
         fail(errors, "h5u.DAI.MCP.Tools.pas: Schreibberechtigung darf nicht vom Editorstatus abhängen")
+    edit_branch = re.search(r"(?s)if SameText\(AName, 'file_edit'\) then(.*?)if SameText\(AName, 'project_create'\)", tools_content)
+    if not edit_branch or "RequirePermission(pcProjectWrite," not in edit_branch.group(1):
+        fail(errors, "h5u.DAI.MCP.Tools.pas: gezielte Textänderungen benötigen das gemeinsame Projektschreibrecht")
+    if edit_branch and "RequiredArgumentString(AArguments, 'expected_sha256')" not in edit_branch.group(1):
+        fail(errors, "h5u.DAI.MCP.Tools.pas: file_edit benötigt einen ausdrücklichen Konfliktschutz-Hash")
     for required in (
         "tekANSI",
         "tekUTF8BOM",

@@ -42,10 +42,11 @@ begin
   Check(LRequest.Context.ClientName = Context.ClientName, 'Scope changes preserve the client identity');
 end;
 
-procedure CheckFileWrite(const AEditorOpen, AAllowed, ASave: Boolean; const AFile: string);
+procedure CheckFileWrite(const AEditorOpen, AAllowed, ASave: Boolean; const AFile: string; const ALocalized: Boolean = False);
 var
   LArguments, LResult: TJSONObject;
   LDenied: Boolean;
+  LTool: string;
 begin
   TDAIPermissionManager.Instance.Reset(not AAllowed, AAllowed);
   TDAIFileService.Reset;
@@ -55,11 +56,18 @@ begin
   LDenied := False;
   try
     LArguments.AddPair('file', AFile);
-    LArguments.AddPair('content', 'complete source text');
+    LTool := 'FILE_WRITE';
+    if ALocalized then
+    begin
+      LTool := 'FILE_EDIT';
+      LArguments.AddPair('edits', TJSONObject.ParseJSONValue('[{"old_text":"old","new_text":"new"}]'));
+    end
+    else
+      LArguments.AddPair('content', 'complete source text');
     LArguments.AddPair('expected_sha256', 'synthetic-full-content-hash');
     LArguments.AddPair('save', TJSONBool.Create(ASave));
     try
-      LResult := DispatchProjectMutation('FILE_WRITE', LArguments, Context);
+      LResult := DispatchProjectMutation(LTool, LArguments, Context);
     except
       on E: EAbort do
         LDenied := True;
@@ -71,7 +79,10 @@ begin
     begin
       Check(TDAIFileService.PermissionCountAtWrite = 1, 'Permission precedes the file service');
       Check(TDAIFileService.LastFile = AFile, 'File path is forwarded without reclassification');
-      Check(TDAIFileService.LastContent = 'complete source text', 'Complete content is forwarded');
+      if ALocalized then
+        Check(TDAIFileService.LastContent = '[{"old_text":"old","new_text":"new"}]', 'Patch array reaches the guarded edit service')
+      else
+        Check(TDAIFileService.LastContent = 'complete source text', 'Complete content is forwarded');
       Check(TDAIFileService.LastHash = 'synthetic-full-content-hash', 'Conflict-check hash is preserved');
       Check(TDAIFileService.LastSave = ASave, 'The writer retains editor/disk save semantics');
       if AEditorOpen then
@@ -82,6 +93,41 @@ begin
   finally
     LResult.Free;
     LArguments.Free;
+  end;
+end;
+
+procedure CheckFileEditArgumentTypes;
+const
+  CArguments: array[0..6] of string = (
+    '{}',
+    '{"file":123,"expected_sha256":"hash","edits":[]}',
+    '{"file":"C:\\SyntheticDAITest\\Unit1.pas","edits":[]}',
+    '{"file":"C:\\SyntheticDAITest\\Unit1.pas","expected_sha256":123,"edits":[]}',
+    '{"file":"C:\\SyntheticDAITest\\Unit1.pas","expected_sha256":null,"edits":[]}',
+    '{"file":"C:\\SyntheticDAITest\\Unit1.pas","expected_sha256":"hash","edits":[],"save":"false"}',
+    '{"file":"C:\\SyntheticDAITest\\Unit1.pas","expected_sha256":"hash","edits":[],"save":0}');
+var
+  LJson: string;
+  LArguments, LResult: TJSONObject;
+  LRejected: Boolean;
+begin
+  for LJson in CArguments do
+  begin
+    TDAIFileService.Reset;
+    TDAIPermissionManager.Instance.Reset(True, True);
+    LArguments := TJSONObject(TJSONObject.ParseJSONValue(LJson));
+    try
+      LRejected := False;
+      try
+        LResult := DispatchProjectMutation('file_edit', LArguments, Context);
+        LResult.Free;
+      except
+        on E: EArgumentException do LRejected := True;
+      end;
+      Check(LRejected and (TDAIFileService.WriteCalls = 0), 'Invalid explicit file-edit argument types never reach mutation service');
+    finally
+      LArguments.Free;
+    end;
   end;
 end;
 
@@ -230,7 +276,7 @@ begin
     LResolved := ResolveValidatedArguments('file_read', LArguments, Context);
     Check(LResolved.ProjectKey = 'C:\SyntheticDAITest\Denied\Other.dproj', 'Valid file reads resolve the real owner project');
     LArguments.AddPair('project', Context.ProjectKey);
-    for LName in ['file_read', 'file_write', 'form_designer_inspect'] do
+    for LName in ['file_read', 'file_write', 'file_edit', 'form_designer_inspect'] do
     begin
       TDAIOTA.ResolveCalls := 0;
       LRejected := False;
@@ -316,12 +362,16 @@ begin
     Context.TransportSessionId := 'isolated-project-session';
     Context.ClientName := 'isolated-permission-test';
     CheckContextValidation;
+    CheckFileEditArgumentTypes;
     CheckSourceReadPermissions;
     for LExtension in CExtensions do
       for LOpen := False to True do
         for LAllowed := False to True do
           for LSave := False to True do
+          begin
             CheckFileWrite(LOpen, LAllowed, LSave, 'C:\SyntheticDAITest\Unit1' + LExtension);
+            CheckFileWrite(LOpen, LAllowed, LSave, 'C:\SyntheticDAITest\Unit1' + LExtension, True);
+          end;
     for LCreate := False to True do
       for LGlobalAllowed := False to True do
         for LProjectAllowed := False to True do

@@ -43,7 +43,8 @@ type
   public
     Instance: TComponent;
     Editor: TTestFormEditor;
-    constructor Create(AInstance: TComponent; AEditor: TTestFormEditor);
+    constructor Create(AInstance: TComponent; AEditor: TTestFormEditor);
+    procedure RequireLive;
     function GetComponentType: string;
     function GetComponentHandle: TOTAHandle;
     function GetParent: IOTAComponent;
@@ -176,6 +177,9 @@ type
     ModuleInterface: IOTAModule;
     CreateCount, SelectCount, FocusCount: Integer;
     NativeSetCount: Integer;
+    DeleteCount, DeleteMode, SelectMode, InvalidInterfaceReads: Integer;
+    LastDeleteAll: Boolean;
+    LookupOverride: TComponent;
     LastX, LastY, LastW, LastH: Integer;
     LastContainer: string;
     CreateParent: TComponent;
@@ -327,14 +331,25 @@ begin
     Result := LNative.GetComponent;
 end;
 
+procedure TTestComponent.RequireLive;
+begin
+  if not Assigned(Instance) then
+  begin
+    Inc(Editor.InvalidInterfaceReads);
+    raise EInvalidOperation.Create('fixture: deleted component interface reused');
+  end;
+end;
+
 function TTestComponent.GetComponentType: string;
 begin
+  RequireLive;
   RequireMainThreadDispatch;
   Result := Instance.ClassName;
 end;
 
 function TTestComponent.GetComponentHandle: TOTAHandle;
-begin
+begin
+  RequireLive;
   Result := Instance;
 end;
 
@@ -471,11 +486,13 @@ end;
 
 function TTestComponent.GetPersistent: TPersistent;
 begin
+  RequireLive;
   Result := Instance;
 end;
 
 function TTestComponent.GetComponent: TComponent;
 begin
+  RequireLive;
   Result := Instance;
 end;
 
@@ -547,9 +564,12 @@ end;
 procedure TTestDesigner.SetSelections(const List: IDesignerSelections);
 var LIndex: Integer;
 begin
+  RequireMainThreadDispatch;
+  if Editor.SelectMode = 1 then Exit;
   Editor.Selection.Clear;
   for LIndex := 0 to List.Count - 1 do
     if List[LIndex] is TComponent then Editor.Selection.Add(Editor.Wrap(TComponent(List[LIndex])));
+  if Editor.SelectMode = 2 then Editor.Selection.Add(Editor.Wrap(Editor.Root.FindComponent('Panel2')));
 end;
 
 procedure TTestDesigner.ShowMethod(const Name: string);
@@ -670,8 +690,65 @@ procedure TTestDesigner.PasteSelection;
 begin
 end;
 
-procedure TTestDesigner.DeleteSelection(ADoAll: Boolean);
-begin
+procedure TTestDesigner.DeleteSelection(ADoAll: Boolean);
+var
+  LTarget, LCandidate, LCurrent: TComponent;
+  LAll: TList<TComponent>;
+  LRemove: TList<TComponent>;
+  LItem: IOTAComponent;
+  LWrapper: TTestComponent;
+  LIndex: Integer;
+  procedure Collect(const AComponent: TComponent);
+  var LChild: Integer;
+  begin
+    LAll.Add(AComponent);
+    for LChild := 0 to AComponent.ComponentCount - 1 do Collect(AComponent.Components[LChild]);
+  end;
+begin
+  RequireMainThreadDispatch;
+  Inc(Editor.DeleteCount);
+  Editor.LastDeleteAll := ADoAll;
+  if Editor.DeleteMode = 1 then Exit;
+  if Editor.DeleteMode = 2 then raise EInvalidOperation.Create('fixture delete failure');
+  if Editor.Selection.Count <> 1 then raise EInvalidOperation.Create('fixture: exact one-component delete expected');
+  LTarget := Editor.Native(Editor.Selection[0]);
+  if LTarget = Editor.Root then raise EInvalidOperation.Create('fixture: root cannot be deleted');
+  LAll := TList<TComponent>.Create;
+  LRemove := TList<TComponent>.Create;
+  try
+    Collect(Editor.Root);
+    for LCandidate in LAll do
+    begin
+      LCurrent := LCandidate;
+      while Assigned(LCurrent) do
+      begin
+        if LCurrent = LTarget then
+        begin
+          LRemove.Add(LCandidate);
+          Break;
+        end;
+        // Visual children may share the form Owner; native containers still delete them.
+        if LCurrent.HasParent then LCurrent := LCurrent.GetParentComponent else LCurrent := LCurrent.Owner;
+      end;
+    end;
+    for LIndex := Editor.Components.Count - 1 downto 0 do
+    begin
+      LItem := Editor.Components[LIndex];
+      LWrapper := LItem as TTestComponent;
+      if LRemove.Contains(LWrapper.Instance) then
+      begin
+        LWrapper.Instance := nil;
+        Editor.Selection.Remove(LItem);
+        Editor.Components.Delete(LIndex);
+      end;
+    end;
+    LItem := nil;
+    LTarget.Free;
+    Editor.ModifiedFlag := True;
+  finally
+    LRemove.Free;
+    LAll.Free;
+  end;
 end;
 
 procedure TTestDesigner.ClearSelection;
@@ -923,6 +1000,8 @@ end;
 function TTestFormEditor.FindComponent(const Name: string): IOTAComponent;
 begin
   RequireMainThreadDispatch;
+  if Assigned(LookupOverride) then
+    if SameText(Name, LookupOverride.Name) then Exit(Wrap(LookupOverride));
   if SameText(Name, Root.Name) then Result := Wrap(Root) else Result := Wrap(Root.FindComponent(Name));
 end;
 

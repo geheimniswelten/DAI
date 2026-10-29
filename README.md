@@ -25,7 +25,8 @@ Das DAI-Dropdown verwendet feste Tastenkürzel, damit der Statustimer keinen Neu
 Transparente Serversymbole zeigen eine graue Pause für inaktiv, ein grünes Play-Dreieck für aktiv und ein rotes X bei Fehlern.
 Bei aktivem Server zeigt ein gelber Kreis MCP-Zugriff innerhalb der letzten 15 Sekunden, danach ein ockerfarbener Kreis bis 15 Minuten.
 Ohne Zugriff oder nach mehr als 15 Minuten zeigt ein violettes Fragezeichen fehlende KI-Registrierung; ein orangefarbenes Warnsymbol empfiehlt eine Aktualisierung oder Prüfung.
-Bei aktueller Registrierung erscheint wieder Play. Inaktiv unterdrückt die Zugriffsanzeige; Fehler haben Vorrang vor allen Registrierungshinweisen.
+Bei aktueller Registrierung erscheint wieder Play. Inaktiv zeigt immer Pause, auch bei Fehlern, Registrierungswarnungen und verfügbaren Updates.
+Bei aktivem Server haben Fehler Vorrang vor Registrierungshinweisen. Alle Diagnosen bleiben unabhängig vom Symbol im Tooltip erhalten.
 Die Registrierungsprüfung läuft nach dem Package-Start, beim Aktivieren/Deaktivieren und nach Registrieren, Deregistrieren, Bereinigen oder Speichern der Einstellungen.
 Sie berücksichtigt den gewählten Verbindungsbereich und alle unterstützten KI-Clients. Fehlende weitere Clients stören eine vorhandene aktuelle Registrierung nicht.
 Während der beiden Zugriffszustände bleibt das Zugriffssymbol erhalten; der Tooltip enthält weiterhin den Registrierungshinweis. Die Prüfung schreibt keine Clientdateien.
@@ -37,6 +38,10 @@ Es gibt dafür noch keine automatische Updateprüfung oder Netzwerkabfrage. Fehl
 eine bekannte neue Version steht auch dann im Tooltip.
 Die primäre Größe beträgt 16×16; weitere Auflösungen werden der IDE über `INTAServices280.AddImage` angeboten. Dafür wird Delphis Standardpackage `vclimg` verwendet.
 Die DAI-Aktion hat denselben stabilen Besitzer wie die IDE-ActionList. Beim Entfernen werden auch Toolbar-Klone derselben Aktion beseitigt.
+Der DAI-Button trägt zusätzlich die persistente Standardproperty `Tag = $44414931` (DAI1). Diese Kennung übersteht das Leeren des
+Komponentennamens beim Toolbarrestore und ermöglicht die Wiederverwendung des eigenen Buttons auch ohne Aktion oder Menü.
+DAI verbindet diese Referenzen erneut und entfernt nur eindeutig eigene markierte Duplikate; fremde Kennungen bleiben erhalten.
+Bereits vorhandene namenlose Altreste ohne Marker erhalten dadurch nachträglich keinen Eigentumsnachweis.
 Ein öffentlicher ToolsAPI-Lesenotifier erfasst den ursprünglich benannten DAI-Button beim Toolbarrestore. Nach dem Lesen wird dieses
 eigene Objekt wieder mit Aktion und Menü verbunden; auch ein Restore vor dem ersten UI-Aufbau erzeugt damit keinen zusätzlichen Button.
 Nur unmittelbar nach dieser bestätigten Wiederverwendung darf außerdem ein einzelner vollständig inerter historischer Altrest entfernt werden.
@@ -184,6 +189,16 @@ Der Zugriff ist mit einem Bearer-Token geschützt. Autostart, Port, Token, Loggi
 `Tools → Options → Third Party → DAI` verwaltet. Der Options-Frame zeigt neben dem frei änderbaren Port den Standardwert `7331`.
 
 DAI registriert `Bearer` über Indys `OnParseAuthentication`. Dadurch erreicht der Authorization-Header den MCP-Handler, der den Token prüft und bei einem falschen Wert kontrolliert HTTP 401 zurückgibt.
+
+`unauthorized`/HTTP 401 entsteht vor der Werkzeug- und Berechtigungsprüfung. Deshalb öffnet sich dabei auch bei **Nachfragen** kein Freigabedialog.
+Zuerst URL und Token des Clients mit dem laufenden Server abgleichen. Bereits gestartete Bridge-/Starthelferprozesse behalten ihre beim Start
+übernommenen Verbindungsdaten; nach einer Änderung müssen auch diese Clientverbindungen neu gestartet werden. Die Datei kann bereits korrekt
+registriert sein, während eine ältere Verbindung noch den vorherigen Token verwendet.
+
+Server-, Client-, Codex- und Skillstatus in den DAI-Optionen sind randlose, schreibgeschützte Textfelder mit Umbruch und Scrollen.
+Mit **Strg+A**, **Strg+C** lassen sich vollständige Fehlermeldungen und Pfade kopieren. Die Clientliste zeigt die konkrete Registrierungsursache.
+Ein Konflikt um einen nicht sicher zugeordneten Eintrag kann auch das Deregistrieren blockieren; die Meldung bezieht sich dann weiterhin auf
+vorhandene Konfiguration und verschwindet erst nach bewusster Bereinigung des betreffenden Eintrags.
 
 Ein Bearer-Token muss keine GUID sein. DAI erzeugt standardmäßig eine kleingeschriebene GUID ohne geschweifte Klammern, weil dieses Format kompakt,
 zufällig sowie problemlos in HTTP-Headern und der verwalteten Codex-TOML-Konfiguration verwendbar ist. Über `Token erzeugen` kann ein neuer Wert erstellt
@@ -403,7 +418,12 @@ Bei einer expliziten Projekt- oder Dateiangabe wird die Berechtigung dem zugehö
 ## Datei- und Editorzugriffe
 
 Für geöffnete Dateien ist immer der aktuelle `IOTASourceEditor` maßgeblich. Das gilt auch dann, wenn das MCP-Werkzeug die Datei über ihren
-Festplattenpfad adressiert. Schreibvorgänge verwenden einen Undo-fähigen `IOTAEditWriter`; beim Speichern behandelt die IDE die Dateicodierung.
+Festplattenpfad adressiert. Schreibvorgänge ändern nur die ermittelten Unterschiede über einen gemeinsamen Undo-fähigen `IOTAEditWriter`; unveränderte Bereiche bleiben stehen.
+Das gilt auch bei vollständig übergebenem `file_write`-Inhalt. Delphi verwaltet den Undo-Verlauf; beim Speichern behandelt die IDE die Dateicodierung.
+Vor und nach einem Schreibvorgang setzt DAI den Cursor der passenden Editoransicht an den Anfang der ersten Änderung, damit Rückgängig dorthin zurückführt.
+Die IDE rechnet UTF-8-Offsets und Tabulatorspalten selbst um. Identischer Inhalt bewegt den Cursor nicht.
+Die vorhandene Anzahl abschließender Zeilenumbrüche bleibt bei Inhaltsänderungen erhalten. Beabsichtigte Schlussleerzeilen dienen etwa der
+Cursornavigation hinter `end.` und werden nicht pauschal gekürzt oder ergänzt. Änderungen daran müssen ausdrücklich beauftragt sein.
 `save: false` setzt einen vorhandenen Editorpuffer voraus. Für geschlossene Dateien ist `save: true` ausdrücklich erforderlich.
 
 `file_read` und `reference_file_read` verwenden standardmäßig `interfaces_only: true`. Bei `.pas`-Units liefern sie den Text vor dem echten
@@ -411,6 +431,21 @@ Festplattenpfad adressiert. Schreibvorgänge verwenden einen Undo-fähigen `IOTA
 `implementation_omitted` zeigt den tatsächlichen Schnitt, `truncated` ausschließlich das Zeichenlimit; nur `content_complete: true` bestätigt
 den vollständigen aktuellen Inhalt. `original_characters` und `sha256` bleiben auf diesen vollständigen Inhalt bezogen (`sha256_scope: complete_content`);
 `view_characters` zählt die gewählte Ansicht vor dem Zeichenlimit. Der Hash einer Interfaceansicht macht ihren Text nicht zum vollständigen Schreibinhalt.
+
+Für kleine Änderungen bevorzugt `file_edit` verwenden. `expected_sha256` ist verpflichtend und stammt aus dem vollständigen aktuellen `file_read`.
+`edits` enthält eine oder mehrere exakte Ersetzungen mit `old_text` und `new_text`. Jeder nichtleere `old_text` muss im ursprünglichen Puffer genau
+einmal vorkommen; bei Bedarf eindeutige Kontextzeilen mitgeben. Alle Ersetzungen beziehen sich auf denselben ursprünglichen Inhalt und dürfen sich
+nicht überschneiden. Einfügen erfolgt mit einem Kontextblock, Löschen mit leerem `new_text`. DAI prüft alle Blöcke vor der Änderung.
+`save` ist standardmäßig `false`; Berechtigungen, Konfliktschutz, Strukturprüfung und DFM-/Projektmodellgrenzen gelten wie bei `file_write`.
+
+```json
+{
+  "file": "C:\\Projekt\\Unit1.pas",
+  "expected_sha256": "<sha256 aus file_read>",
+  "edits": [{"old_text": "  Count := 1;", "new_text": "  Count := 2;"}],
+  "save": false
+}
+```
 
 Vor jedem vollständigen `.pas`-Ersetzen prüft DAI lexikalisch Unit-Kopf, `interface`, `implementation` und abschließendes `end.`.
 Unvollständige Inhalte, unterminierte Kommentare/Strings und versehentlich zurückgeschriebene Interfaceansichten werden vor jeder Mutation abgewiesen.
@@ -829,6 +864,7 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `ide_window_control`: IDE-Fenster steuern; normaler Schließauftrag bewahrt Speicherrückfragen.
 
 - `file_write`
+- `file_edit`
 - `project_create`
 - `project_open`
 - `project_save`
@@ -849,6 +885,7 @@ begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
 - `form_component_set_property`
 - `form_component_move`
 - `form_component_create`
+- `form_component_delete`
 - `breakpoint_set`
 - `breakpoint_remove`
 - `ui_message_box`
@@ -961,7 +998,9 @@ Ein vorhandener fremder `dai-delphi-ide`-Skill wird nicht überschrieben. Die au
 `form_show_designer(file)` öffnet das Formular bei Bedarf und zeigt dessen Designer.
 Die Komponentenwerkzeuge arbeiten mit diesem geladenen Designer; `file` bezeichnet dessen PAS-, DFM- oder FMX-Datei.
 
-DFM-/FMX-Änderungen erfolgen bevorzugt über die Designerwerkzeuge oder als Text im IDE-Puffer. `form_show_as_text` schaltet normalerweise den
+DFM-/FMX-Änderungen möglichst mit den nativen Designerwerkzeugen ausführen: Komponenten anlegen/löschen, Properties ändern sowie Position,
+Größe und Parent anpassen. Für unterstützte Operationen diese Werkzeuge bevorzugen; Computer Use nur bei fehlendem passendem DAI-Werkzeug.
+Formulartext nur für dort nicht unterstützte Änderungen und ausschließlich im IDE-Puffer bearbeiten. `form_show_as_text` schaltet normalerweise den
 vorhandenen Editor-Tab der PAS-Unit auf Formulartext um; PAS und DFM erscheinen standardmäßig nicht in getrennten Tabs. Nach dem Wechsel die
 gewünschte DFM-/FMX-Datei über ihren vollständigen Pfad erneut lesen und den tatsächlichen Inhalt prüfen. Ungespeicherte PAS-Änderungen
 nicht ungefragt speichern oder verwerfen, um den Ansichtswechsel zu ermöglichen.
@@ -974,6 +1013,7 @@ nicht ungefragt speichern oder verwerfen, um den Ansichtswechsel zu ermöglichen
 | `form_component_set_property` | `component`, `property` und skalaren JSON-`value` über den offiziellen Designer-Propertyeditor setzen, einschließlich `Name`. |
 | `form_component_move` | Position mit `x`/`y`, Größe mit `width`/`height` und optional Parent ändern. Nicht angegebene Werte bleiben erhalten. |
 | `form_component_create` | Registrierte `class_name` über `IOTAFormEditor.CreateComponent` einfügen; optional `name`, Parent, Position/Größe und `select` (Standard `true`). |
+| `form_component_delete` | Benannte `component` mit dem nativen Designer samt Unterkomponenten löschen. Root, geerbte und eingebettete Unterkomponenten sind geschützt; speichert nicht. |
 | `form_palette_list` | Komponenten und Kategorien der IDE-Palette auslesen; `query`, `category`, `include_unavailable` und `maximum_results` (500, höchstens 4096). |
 
 Beim Einfügen und Parentwechsel wählt `parent` einen expliziten Container. `parent_mode` erlaubt `explicit`, `selected`, `selected_parent` oder `root`.
@@ -996,6 +1036,9 @@ Die Create-Koordinaten sind Ganzzahlen; `-1` überlässt den jeweiligen Wert dem
 ```
 
 Eigenschaftsänderungen und Umbenennungen verwenden die IDE-Propertyeditoren, Auswahl und Erzeugen die öffentliche ToolsAPI.
+Löschen ersetzt die Auswahl durch die benannte Komponente und verwendet die native Designer-Löschaktion; andere zuvor ausgewählte Komponenten
+werden nicht mitgelöscht. Die IDE verwaltet Unterkomponenten, Referenzen und Quelltextanpassungen. Anschließend wird das Entfernen erneut geprüft.
+Eine einzelne gemeinsame Undo-Transaktion wird für Designeroperationen nicht zugesichert.
 Bei Umbenennungen und beim Erzeugen wird der tatsächliche Komponentenname zurückgelesen. `source_declaration_verified: false` kennzeichnet,
 dass DAI die Pascal-Felddeklaration nicht unabhängig verifiziert; insbesondere wird bei selbst umbenennenden Komponenten keine Synchronisierung aus `ValidateRename` abgeleitet.
 Der Parentwechsel kann über die native Komponente erfolgen und meldet die Änderung dem Designer.
@@ -1135,11 +1178,11 @@ DCP, Importbibliotheken und Bridge derselben Plattform werden jeweils durch den 
 `Build.ps1` prüft die beim aktuellen Build neu geschriebene versionierte BPL sowie die Bridge auf PE-Signatur, Zielarchitektur und DLL-/EXE-Typ.
 Eine vorhandene alte `DAI.bpl` oder eine unveränderte BPL eines früheren Builds zählt dabei nicht als erfolgreiches Build-Ergebnis.
 
-Das gemeinsame PreBuild-Ereignis der `DAI.dproj` führt vor dem Package-Build `taskkill /F /IM DAI.McpBridge.exe` aus.
-Damit werden laufende STDIO-Bridges und `dai_start`-Helfer beendet und die Bridge-EXE für den anschließenden DCC-Build freigegeben.
-Das gilt beim Build in der IDE sowie über `Build.ps1` und `Build+Register.cmd`, für Debug/Release und Win32/Win64.
-Eine nicht laufende Bridge verhindert den Build nicht. Ohne `/T` werden keine Kindprozesse beendet; eine vom Helfer gestartete IDE läuft weiter.
-Betroffene STDIO-Clients müssen ihre MCP-Verbindung anschließend neu herstellen.
+Nur das PreBuild-Ereignis der `DAI.McpBridge.dproj` beendet vor dem Bridge-Build laufende `DAI.McpBridge.exe`-Prozesse.
+Der Package-Build der `DAI.dproj` beendet keine Bridges. `Build.ps1` und `Build+Register.cmd` geben die Bridge-EXE
+ebenfalls erst unmittelbar vor ihrem eigenen Build frei, für Debug/Release und Win32/Win64.
+Der Aufruf `taskkill /F /IM DAI.McpBridge.exe` beendet laufende STDIO-Bridges und `dai_start`-Helfer.
+Eine nicht laufende Bridge verhindert den Build nicht. Betroffene STDIO-Clients müssen ihre MCP-Verbindung anschließend neu herstellen.
 
 Kann der Compiler die aktuelle BPL wegen einer Dateisperre nicht erstellen (`F2039`), versucht `Build.ps1`, sie nach
 `DAI<Version>.bpl.deleted` umzubenennen, und wiederholt den Package-Build einmal. Eine vorhandene Sicherung wird gelöscht;
@@ -1250,6 +1293,7 @@ Die isolierten Tests verwenden eigene Fixtures und IDE-/Settings-Stubs:
 .\Scripts\Test.SearchDispatch.ps1 -Platform Both
 .\Scripts\Test.SourcePaths.ps1 -Platform Both -StrictSeparators
 .\Scripts\Test.EditorWrite.ps1 -Platform Both
+.\Scripts\Test.EditorChanges.ps1 -Platform Both
 .\Scripts\Test.ProjectSummary.ps1 -Platform Both
 .\Scripts\Test.PackageSummary.ps1 -Platform Both
 .\Scripts\Test.Packages.ps1 -Platform Both
@@ -1279,6 +1323,21 @@ python .\Scripts\test_bridge.py
 
 Die Instanztests verwenden eigene zufällige Objektnamen und prüfen auch getrennte Win32-/Win64-Prozesse sowie Prozessabbruch.
 Dabei werden keine tatsächlichen Client-Konfigurationen verändert und keine Designer-/Debuggeraktionen in der laufenden IDE ausgelöst.
+
+Der native Dateiende-Test benötigt eine laufende Delphi-IDE mit DAI. Ohne `-Execute` führt er keine Aktion aus. Mit `-Execute` erzeugt er
+ausschließlich temporäre Test-Units, ändert und speichert diese über DAI und prüft Editor- sowie Dateiinhalte einschließlich Schlussumbrüchen.
+Er verändert keine Benutzerdateien oder Projektgruppen und startet oder beendet keine IDE. Gespeicherte Test-Tabs werden geschlossen;
+Belegdateien bleiben im gemeldeten temporären Verzeichnis erhalten. DAI-Berechtigungen bleiben wirksam.
+
+```powershell
+.\Scripts\Test.EditorEof.ps1 -Execute
+.\Scripts\Test.EditorEof.ps1 -Execute -DeferredSave
+.\Scripts\Test.EditorEof.ps1 -Execute -Suite Stress
+.\Scripts\Test.EditorEof.ps1 -Execute -Suite Stress -DeferredSave
+```
+
+Die Basisfälle prüfen null, einen und zwei Schlussumbrüche. Die Stressfälle prüfen große ANSI-/Unicode-Dateien, LF/CRLF und Änderungen
+der letzten Quelltextzeile. `-DeferredSave` ändert mehrfach ungespeichert und speichert erst danach dieselbe Testdatei.
 
 ## Statische Prüfung
 

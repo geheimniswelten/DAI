@@ -109,7 +109,7 @@ begin
   LValue := AArguments.GetValue(AName);
   if not Assigned(LValue) then
     Exit;
-  if not (LValue is TJSONString) then
+  if not (LValue is TJSONString) or (LValue is TJSONNumber) then
     raise EArgumentException.Create(AName + ' muss als JSON-String angegeben werden.');
   Result := LValue.Value;
 end;
@@ -259,6 +259,8 @@ begin
   end;
   if not SameText(AName, 'form_component_create') then
     RequiredArgumentString(AArguments, 'component');
+  if SameText(AName, 'form_component_delete') then
+    Exit;
   if SameText(AName, 'form_component_properties') then
   begin
     LNames := StrictArgumentStringArray(AArguments, 'properties');
@@ -1019,6 +1021,14 @@ begin
     );
   end;
 
+  if SameText(AName, 'file_edit') then
+  begin
+    LFileName := RequiredArgumentString(AArguments, 'file');
+    RequirePermission(pcProjectWrite, 'Projektdatei gezielt bearbeiten', LFileName, LContext);
+    Exit(TDAIFileService.EditFile(LFileName, RequiredArgumentString(AArguments, 'expected_sha256'),
+      AArguments.GetValue('edits'), StrictArgumentBoolean(AArguments, 'save', False), LUsedEditorBuffer));
+  end;
+
   if SameText(AName, 'project_create') then
   begin
     LContext.ProjectKey := '';
@@ -1141,7 +1151,8 @@ begin
 
   if SameText(AName, 'form_components_search') or SameText(AName, 'form_components_select') or
      SameText(AName, 'form_component_properties') or SameText(AName, 'form_component_set_property') or
-     SameText(AName, 'form_component_move') or SameText(AName, 'form_component_create') then
+     SameText(AName, 'form_component_move') or SameText(AName, 'form_component_create') or
+     SameText(AName, 'form_component_delete') then
   begin
     ValidateDesignerArguments(AName, AArguments);
     LFileName := RequiredArgumentString(AArguments, 'file');
@@ -1157,6 +1168,8 @@ begin
       Exit(TDAIDesignerService.SetProperty(LFileName, AArguments));
     if SameText(AName, 'form_component_move') then
       Exit(TDAIDesignerService.MoveComponent(LFileName, AArguments));
+    if SameText(AName, 'form_component_delete') then
+      Exit(TDAIDesignerService.DeleteComponent(LFileName, AArguments));
     Exit(TDAIDesignerService.CreateComponent(LFileName, AArguments));
   end;
 
@@ -2267,9 +2280,23 @@ begin
   AddTool(
     Result,
     'file_write',
-    'Ersetzt Editorpuffer; geschlossene Workspace-Dateien benötigen save=true. DFM/FMX werden ausschließlich über IDE-Textpuffer geschrieben.',
+    'Ersetzt Editorpuffer; geschlossene Workspace-Dateien benötigen save=true. Für DFM/FMX möglichst die nativen Designerwerkzeuge verwenden; ' +
+    'Formulartext ausschließlich im IDE-Textpuffer ändern.',
     '{"type":"object","properties":{"file":{"type":"string"},"content":{"type":"string"},"expected_sha256":{"type":"string"},' +
     '"save":{"type":"boolean"}},"required":["file","content"],"additionalProperties":false}',
+    False
+  );
+  AddTool(
+    Result,
+    'file_edit',
+    'Ersetzt eindeutige Textstellen im aktuellen vollständigen Inhalt. Alle edits beziehen sich auf denselben ursprünglichen Inhalt; ' +
+    'old_text muss genau einmal vorkommen. Für Einfügungen Kontext mit angeben, für Löschen new_text leer lassen. ' +
+    'Offene Editorpuffer werden gezielt und Undo-fähig geändert; save ist standardmäßig false. ' +
+    'Für DFM/FMX möglichst die nativen Designerwerkzeuge verwenden.',
+    '{"type":"object","properties":{"file":{"type":"string","minLength":1},"expected_sha256":{"type":"string","minLength":1},' +
+    '"edits":{"type":"array","minItems":1,"maxItems":1000,"items":{"type":"object","properties":{' +
+    '"old_text":{"type":"string","minLength":1},"new_text":{"type":"string"}},"required":["old_text","new_text"],"additionalProperties":false}},' +
+    '"save":{"type":"boolean","default":false}},"required":["file","expected_sha256","edits"],"additionalProperties":false}',
     False
   );
   AddTool(
@@ -2403,7 +2430,8 @@ begin
   AddTool(
     Result,
     'form_show_as_text',
-    'Öffnet die DFM-Datei eines Formulars im Texteditor.',
+    'Zeigt DFM/FMX als Text im vorhandenen Editor-Tab. Änderungen möglichst mit den nativen Designerwerkzeugen ausführen; ' +
+    'Formulartext nur verwenden, wenn die benötigte Operation dort nicht unterstützt wird.',
     '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}',
     False
   );
@@ -2539,22 +2567,29 @@ begin
     '{"type":"object","properties":{"file":{"type":"string","minLength":1},"component":{"type":"string","minLength":1},' +
     '"properties":{"type":"array","items":{"type":"string","minLength":1},"maxItems":1000}},' +
     '"required":["file","component"],"additionalProperties":false}', True);
-  AddTool(Result, 'form_component_set_property', 'Ändert eine Property einschließlich Name über den offiziellen Designer-Propertyeditor; speichert nicht.',
+  AddTool(Result, 'form_component_set_property', 'Ändert eine Property einschließlich Name über den offiziellen Designer-Propertyeditor. Für DFM/FMX bevorzugen; speichert nicht.',
     '{"type":"object","properties":{"file":{"type":"string","minLength":1},"component":{"type":"string","minLength":1},' +
     '"property":{"type":"string","minLength":1},"value":{"type":["string","number","boolean","null"]}},' +
     '"required":["file","component","property","value"],"additionalProperties":false}', False);
-  AddTool(Result, 'form_component_move', 'Ändert Position/Größe und optional Parent im geladenen Designer; Parentwechsel kann nativ erfolgen. Speichert nicht.',
+  AddTool(Result, 'form_component_move',
+    'Ändert Position (x/y = Left/Top), Größe (width/height) und optional Parent im geladenen Designer. Fehlende Werte bleiben erhalten. ' +
+    'Ohne Parent-Angabe bleibt der bisherige Parent bestehen. Für DFM/FMX bevorzugen; speichert nicht.',
     '{"type":"object","properties":{"file":{"type":"string","minLength":1},"component":{"type":"string","minLength":1},' +
     '"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number","minimum":0},"height":{"type":"number","minimum":0},' +
     '"parent":{"type":"string"},"parent_mode":{"type":"string","enum":["explicit","selected","selected_parent","root"],"default":"explicit"}},' +
     '"required":["file","component"],"additionalProperties":false}', False);
-  AddTool(Result, 'form_component_create', 'Fügt eine Komponentenklasse über IOTAFormEditor.CreateComponent ein; Parent explizit oder aus Auswahl. Speichert nicht.',
+  AddTool(Result, 'form_component_create',
+    'Fügt eine Komponentenklasse über IOTAFormEditor.CreateComponent ein. Für DFM/FMX bevorzugen; Parent explizit oder aus Auswahl. Speichert nicht.',
     '{"type":"object","properties":{"file":{"type":"string","minLength":1},"class_name":{"type":"string","minLength":1},"name":{"type":"string"},' +
     '"parent":{"type":"string"},"parent_mode":{"type":"string","enum":["explicit","selected","selected_parent","root"],"default":"selected"},' +
     '"x":{"type":"integer","minimum":-1,"maximum":2147483647,"default":-1},"y":{"type":"integer","minimum":-1,"maximum":2147483647,"default":-1},' +
     '"width":{"type":"integer","minimum":-1,"maximum":2147483647,"default":-1},' +
     '"height":{"type":"integer","minimum":-1,"maximum":2147483647,"default":-1},"select":{"type":"boolean","default":true}},' +
     '"required":["file","class_name"],"additionalProperties":false}', False);
+  AddTool(Result, 'form_component_delete',
+    'Löscht eine benannte Komponente samt untergeordneten Komponenten nativ im Designer. Für DFM/FMX bevorzugen; speichert nicht.',
+    '{"type":"object","properties":{"file":{"type":"string","minLength":1},"component":{"type":"string","minLength":1}},' +
+    '"required":["file","component"],"additionalProperties":false}', False);
   AddTool(Result, 'form_palette_list', 'Liest registrierte Komponenten und Kategorien der IDE-Palette; optional auch momentan nicht verfügbare Einträge.',
     '{"type":"object","properties":{"query":{"type":"string","default":""},"category":{"type":"string","default":""},' +
     '"include_unavailable":{"type":"boolean","default":false},"maximum_results":{"type":"integer","minimum":1,"maximum":4096,"default":500}},' +

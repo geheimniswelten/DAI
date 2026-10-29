@@ -104,19 +104,10 @@ begin
   Check(Assigned(Result), 'Server button exists');
 end;
 
-function StatusControl(AFrame: TDAIOptionsFrame): TLabel;
-var
-  LComponent: TComponent;
+function StatusControl(AFrame: TDAIOptionsFrame): TMemo;
 begin
-  Result := nil;
-  for LComponent in AFrame do
-    if LComponent is TLabel then
-      if StartsText('Status:', TLabel(LComponent).Caption) then
-      begin
-        Check(not Assigned(Result), 'Server status label is unique');
-        Result := TLabel(LComponent);
-      end;
-  Check(Assigned(Result), 'Server status label exists');
+  Result := AFrame.FindComponent('DAIServerStatusMemo') as TMemo;
+  Check(Assigned(Result), 'Copyable server status memo exists');
 end;
 
 function PermissionCombo(const AFrame: TDAIOptionsFrame; const AScopeName: string; const ACategory: TDAIPermissionCategory): TComboBox;
@@ -192,7 +183,6 @@ procedure CheckStatusFormatting(const AFrame: TDAIOptionsFrame);
 var
   LStatus: TJSONObject;
   LClients: TJSONArray;
-  LComponent: TComponent;
   LMemo: TMemo;
   LIndex: Integer;
   LLine: string;
@@ -209,11 +199,7 @@ begin
       .AddPair('path', '').AddPair('message', #10 + 'Hinweis.' + #10).AddPair('backup', ''));
     TDAIClientRegistration.StatusJSON := LStatus.ToJSON;
     AFrame.RefreshRegistrationStatus;
-    LMemo := nil;
-    for LComponent in AFrame do
-      if LComponent is TMemo then
-        if TMemo(LComponent).ReadOnly then
-          LMemo := TMemo(LComponent);
+    LMemo := AFrame.FindComponent('DAIClientStatusMemo') as TMemo;
     Check(Assigned(LMemo), 'Client status memo exists and is readonly');
     Check(LMemo.Lines.Count = 11, 'Client details consume no empty separator lines');
     Check(LMemo.Lines[0] = 'Codex', 'First client has its own name header');
@@ -238,6 +224,65 @@ begin
     CheckNoPersistence;
   finally
     TDAIClientRegistration.StatusJSON := '';
+    LStatus.Free;
+  end;
+end;
+
+procedure CheckCopyableStatus(const AFrame: TDAIOptionsFrame);
+const
+  CStatusNames: array[0..3] of string = ('DAIServerStatusMemo', 'DAIClientStatusMemo', 'DAICodexStatusMemo', 'DAISkillStatusMemo');
+var
+  LName, LMessage, LOriginalText: string;
+  LMemo: TMemo;
+  LKey: Word;
+  LStatus: TJSONObject;
+  LClients: TJSONArray;
+  LOldColor: TColor;
+begin
+  LOldColor := AFrame.Color;
+  LStatus := TJSONObject.Create;
+  try
+    AFrame.Color := clInfoBk;
+    for LName in CStatusNames do
+    begin
+      LMemo := AFrame.FindComponent(LName) as TMemo;
+      Check(Assigned(LMemo) and LMemo.ReadOnly and LMemo.TabStop, 'Status text can receive focus and remains read-only');
+      Check((LMemo.BorderStyle = bsNone) and LMemo.ParentColor and (LMemo.Color = AFrame.Color),
+        'Status display remains borderless and follows the current options background');
+      Check(LMemo.WordWrap and (LMemo.ScrollBars = ssVertical), 'Long status text wraps and supports vertical scrolling');
+      Check(not LMemo.WantTabs and not LMemo.WantReturns, 'Status text preserves Tab and dialog-key navigation');
+      Check(Assigned(LMemo.OnKeyDown), 'Status text supports Ctrl+A explicitly');
+      LMemo.SelStart := 0;
+      LMemo.SelLength := 0;
+      LKey := Ord('A');
+      LMemo.OnKeyDown(LMemo, LKey, [ssCtrl]);
+      Check((LKey = 0) and (LMemo.SelText = LMemo.Text), 'Ctrl+A selects the complete copyable status text');
+      LOriginalText := LMemo.Text;
+      LMemo.Perform(WM_CHAR, Ord('Z'), 0);
+      Check(LMemo.Text = LOriginalText, 'Native memo editing cannot overwrite status output');
+    end;
+    LMessage := 'Die Registrierung konnte nicht eindeutig geprüft werden. ' +
+      DupeString('Die vorhandene Client-Konfiguration prüfen. ', 50) + 'Vollständige Diagnose: 日本語 ✓';
+    LClients := TJSONArray.Create;
+    LStatus.AddPair('clients', LClients);
+    LClients.AddElement(TJSONObject.Create
+      .AddPair('label', 'Claude Code (CLI / VS Code)').AddPair('status', 'conflict')
+      .AddPair('message', LMessage).AddPair('bearer_token', 'synthetic-secret-not-for-status'));
+    TDAIClientRegistration.StatusJSON := LStatus.ToJSON;
+    AFrame.RefreshRegistrationStatus;
+    LMemo := AFrame.FindComponent('DAIClientStatusMemo') as TMemo;
+    Check(Pos(LMessage, LMemo.Text) > 0, 'Complete concrete backend registration error remains visible in the options dialog');
+    Check((Pos('synthetic-secret-not-for-status', LMemo.Text) = 0) and (Pos('"clients"', LMemo.Text) = 0),
+      'Status presentation uses selected readable fields rather than raw backend JSON');
+    LMemo.Perform(EM_LINESCROLL, 0, 10000);
+    Check(LMemo.Perform(EM_GETFIRSTVISIBLELINE, 0, 0) > 0, 'Overflowing registration details remain reachable by native scrolling');
+    LKey := Ord('A');
+    LMemo.OnKeyDown(LMemo, LKey, [ssCtrl]);
+    Check(Pos('Vollständige Diagnose: 日本語 ✓', LMemo.SelText) > 0, 'Select-all includes Unicode details beyond the visible memo area');
+    CheckNoPersistence;
+  finally
+    TDAIClientRegistration.StatusJSON := '';
+    AFrame.Color := LOldColor;
     LStatus.Free;
   end;
 end;
@@ -777,7 +822,7 @@ var
   LTokenEdit: TEdit;
   LStart: TButton;
   LStop: TButton;
-  LStatus: TLabel;
+  LStatus: TMemo;
   LStoredPort: Integer;
   LStoredToken: string;
 begin
@@ -820,6 +865,8 @@ begin
       LTokenEdit.Text := '  synthetic-current-options-token  ';
       TestStage := 'ClientStatusFormatting';
       CheckStatusFormatting(LFrame);
+      TestStage := 'CopyableStatus';
+      CheckCopyableStatus(LFrame);
       TestStage := 'CatalogDialog';
       CheckCatalogDialog(LFrame);
       TestStage := 'CleanupDialog';
@@ -842,8 +889,8 @@ begin
       Check(TDAISettings.Instance.Token = LStoredToken, 'Start leaves stored token unchanged');
       Check(not TDAISettings.Instance.Enabled, 'Manual start leaves autostart disabled');
       Check(not LStart.Enabled and LStop.Enabled, 'Active server button state');
-      Check(Pos('http://' + CDAIDefaultBindAddress + ':7102' + CDAIMcpPath, LStatus.Caption) > 0, 'Status displays actual runtime port');
-      Check(Pos(':' + IntToStr(LStoredPort) + CDAIMcpPath, LStatus.Caption) = 0, 'Status does not display differing stored port');
+      Check(Pos('http://' + CDAIDefaultBindAddress + ':7102' + CDAIMcpPath, LStatus.Text) > 0, 'Status displays actual runtime port');
+      Check(Pos(':' + IntToStr(LStoredPort) + CDAIMcpPath, LStatus.Text) = 0, 'Status does not display differing stored port');
       CheckNoPersistence;
 
       // Simulate a separately changed stored value; an active listener keeps its own port.
@@ -851,8 +898,8 @@ begin
       LFrame.LoadFromSettings;
       Check(TDAIRuntime.StartCount = 1, 'Refreshing frame does not restart runtime');
       Check(LPortEdit.Text = '7109', 'Refresh loads newly stored synthetic port into edit');
-      Check(Pos(':7102' + CDAIMcpPath, LStatus.Caption) > 0, 'Refresh still displays runtime listener port');
-      Check(Pos(':7109' + CDAIMcpPath, LStatus.Caption) = 0, 'Refresh does not confuse edit and listener ports');
+      Check(Pos(':7102' + CDAIMcpPath, LStatus.Text) > 0, 'Refresh still displays runtime listener port');
+      Check(Pos(':7109' + CDAIMcpPath, LStatus.Text) = 0, 'Refresh does not confuse edit and listener ports');
       CheckNoPersistence;
 
       LStop.Click;
@@ -860,7 +907,7 @@ begin
       Check(not TDAIRuntime.ServerActive, 'Stop clears active state');
       Check(TDAIRuntime.ServerPort = 0, 'Stop clears listener port');
       Check(LStart.Enabled and not LStop.Enabled, 'Stopped buttons refreshed');
-      Check(Pos('gestoppt', LStatus.Caption) > 0, 'Stopped status refreshed');
+      Check(Pos('gestoppt', LStatus.Text) > 0, 'Stopped status refreshed');
       Check(TDAISettings.Instance.Port = 7109, 'Stop leaves stored synthetic port unchanged');
       Check(TDAISettings.Instance.Token = LStoredToken, 'Stop leaves stored token unchanged');
       CheckNoPersistence;
@@ -872,7 +919,7 @@ begin
       Check(TDAIRuntime.LegacyStartCount = 0, 'Second start also avoids persisted configuration API');
       Check(TDAIRuntime.CapturedPort = 65535, 'Second start accepts valid upper port bound');
       Check(TDAIRuntime.CapturedToken = 'synthetic-options-test-token-2', 'Second start trims replacement token');
-      Check(Pos(':65535' + CDAIMcpPath, LStatus.Caption) > 0, 'Second start status uses replacement runtime port');
+      Check(Pos(':65535' + CDAIMcpPath, LStatus.Text) > 0, 'Second start status uses replacement runtime port');
       Check(TDAISettings.Instance.Port = 7109, 'Second start leaves stored port unchanged');
       Check(TDAISettings.Instance.Token = LStoredToken, 'Second start leaves stored token unchanged');
       CheckNoPersistence;
@@ -1440,7 +1487,6 @@ var
   LProbe: TManualRegistrationProbe;
   LButton: TButton;
   LClients: TComboBox;
-  LComponent: TComponent;
   LMemo: TMemo;
   LStatus: TJSONObject;
   LStatusClients: TJSONArray;
@@ -1493,10 +1539,7 @@ begin
       Check((LClients.Items[1] = 'Codex') and (LClients.Items[2] = 'Claude Code (CLI / VS Code)'), 'Product names remain unchanged');
       Check(PermissionCombo(LFrame, 'Global', pcCompile).Items[5] = CAlwaysCaptions[LLanguage], 'Permission levels are localized');
       Check(PermissionCombo(LFrame, 'Project', pcCompile).ItemIndex = 6, 'Localized inheritance retains its semantic index');
-      LMemo := nil;
-      for LComponent in LFrame do
-        if (LComponent is TMemo) and TMemo(LComponent).ReadOnly then
-          LMemo := TMemo(LComponent);
+      LMemo := LFrame.FindComponent('DAIClientStatusMemo') as TMemo;
       Check(Assigned(LMemo) and (LMemo.Lines[1] = CStatusLines[LLanguage]), 'Client state uses localized presentation text');
       Check((Pos('dai_bds37_0_start', LMemo.Text) > 0) and (Pos('日本語', LMemo.Text) > 0),
         'Technical server names and Unicode paths remain intact');

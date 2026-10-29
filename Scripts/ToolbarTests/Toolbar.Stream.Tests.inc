@@ -1,4 +1,5 @@
-﻿function BuildToolbarStream(const ALegacyCount, AOwnCount: Integer; const AForeignLink: Boolean = False; const AFixedLayout: Boolean = False): TMemoryStream;
+﻿function BuildToolbarStream(const ALegacyCount, AOwnCount: Integer; const AForeignLink: Boolean = False; const AFixedLayout: Boolean = False;
+  const AMarker: NativeInt = 0; const AAnonymous: Boolean = False; const AInterposedMac: Boolean = False): TMemoryStream;
 var
   LOwner: TForm;
   LToolbar: TToolBar;
@@ -44,6 +45,12 @@ begin
     LButton.Action := LAnchorAction;
     for LIndex := 1 to ALegacyCount do
       NewInertDropdown(LOwner, LToolbar);
+    if AInterposedMac then
+    begin
+      LButton := NewInertDropdown(LOwner, LToolbar);
+      LButton.Name := 'h5uDMacStatusButton';
+      LButton.Tag := $444D4143;
+    end;
     LAction := TAction.Create(LOwner);
     if AForeignLink then
       LAction.Name := 'RunUntilReturnCommandForeign'
@@ -65,6 +72,9 @@ begin
       LButton.DropdownMenu := LPopup;
       LButton.ParentShowHint := False;
       LButton.ShowHint := True;
+      LButton.Tag := AMarker;
+      if AAnonymous then
+        LButton.Name := '';
     end;
     LWriter := TWriter.Create(Result, 4096);
     try
@@ -337,6 +347,286 @@ begin
   Check(GHost.AddCount = 0, 'Failed unregister after registration shutdown cannot create toolbar UI');
 end;
 
+
+const
+  CTestDAIButtonTag = $44414931;
+  CTestDMacButtonTag = $444D4143;
+
+function FindTaggedButton(const AToolbar: TToolBar; const ATag: NativeInt): TToolButton;
+var
+  LIndex: Integer;
+begin
+  Result := nil;
+  for LIndex := 0 to AToolbar.ButtonCount - 1 do
+    if AToolbar.Buttons[LIndex].Tag = ATag then
+      Exit(AToolbar.Buttons[LIndex]);
+end;
+
+procedure TestPersistentMarkerRestore;
+var
+  LStream: TMemoryStream;
+  LText: TStringStream;
+  LRestored, LMac, LFirstBlank, LSecondBlank: TToolButton;
+  LCurrentAdds: Integer;
+begin
+  NewHost;
+  GHost.ForeignAction.Name := 'RunUntilReturnCommand';
+  LStream := BuildToolbarStream(2, 1, False, False, CTestDAIButtonTag, True, True);
+  LText := TStringStream.Create('', TEncoding.UTF8);
+  try
+    ObjectBinaryToText(LStream, LText);
+    Check(Pos('Tag = ' + IntToStr(CTestDAIButtonTag), LText.DataString) > 0,
+      'Genuine VCL writer persists the DAI marker as a standard Tag property');
+    Check(Pos('DAIServerToolButton:', LText.DataString) = 0,
+      'Anonymous-marker stream contains no original own button name to capture');
+    TDAIIDEToolbar.Install;
+    ReadToolbarStream(LStream);
+    LRestored := FindTaggedButton(GHost.Toolbar, CTestDAIButtonTag);
+    LMac := FindTaggedButton(GHost.Toolbar, CTestDMacButtonTag);
+    Check(Assigned(LRestored), 'Genuine VCL reader preserves the marker without an original component name');
+    Check(Assigned(LMac), 'Genuine VCL reader also preserves the unrelated plugin marker');
+    Check(GHost.LastReadButton = nil, 'The positive original-name callback deliberately supplied no DAI evidence');
+    Check(LRestored.Name = '', 'Recovered marker candidate has no current component name');
+    Check(LRestored.Action = nil, 'Saved DAI action reference is unresolved in this native reader fixture');
+    Check(LRestored.DropdownMenu = nil, 'Saved DAI popup reference is unresolved in this native reader fixture');
+    Check(GHost.Toolbar.ButtonCount = 5, 'Restore includes anchor, two anonymous old records, DMac and the DAI marker');
+    LFirstBlank := GHost.Toolbar.Buttons[1];
+    LSecondBlank := GHost.Toolbar.Buttons[2];
+    LCurrentAdds := GHost.AddCount;
+    TDAIIDEToolbar.Refresh;
+    Check(GHost.DAIButton = LRestored, 'DAI adopts the exact marked button independently of a stream name');
+    Check(GHost.AddCount = LCurrentAdds, 'Marker recovery does not create a second DAI factory button');
+    Check(LRestored.Tag = CTestDAIButtonTag, 'Recovery keeps the same stable persistent marker');
+    Check(LRestored.Action = GHost.DAIAction, 'Marker recovery reconnects the own action');
+    Check(Assigned(LRestored.DropdownMenu), 'Marker recovery reconnects its own popup');
+    Check(LRestored.Index = 4, 'Marker recovery preserves its position behind the interposed foreign plugin');
+    Check((GHost.Toolbar.Buttons[1] = LFirstBlank) and (GHost.Toolbar.Buttons[2] = LSecondBlank),
+      'Unmarked historical records are not assigned an invented origin by marker recovery');
+    Check(GHost.Toolbar.Buttons[3] = LMac, 'Interposed DMac record remains in its original position');
+    TDAIIDEToolbar.Refresh;
+    Check(GHost.AddCount = LCurrentAdds, 'Repeated marker recovery is idempotent');
+    TDAIIDEToolbar.Shutdown;
+    Check(GHost.Toolbar.ButtonCount = 4, 'Shutdown removes only the positively marked own button');
+    Check(FindTaggedButton(GHost.Toolbar, CTestDAIButtonTag) = nil, 'No own marked record remains after shutdown');
+    Check(FindTaggedButton(GHost.Toolbar, CTestDMacButtonTag) = LMac, 'Shutdown preserves another plugin marker');
+  finally
+    LText.Free;
+    LStream.Free;
+  end;
+end;
+
+procedure TestPersistentMarkerDoesNotClaimOldSingle;
+var
+  LStream: TMemoryStream;
+  LBlank, LMarked: TToolButton;
+begin
+  NewHost;
+  GHost.ForeignAction.Name := 'RunUntilReturnCommand';
+  LStream := BuildToolbarStream(1, 1, False, False, CTestDAIButtonTag, True);
+  try
+    TDAIIDEToolbar.Install;
+    ReadToolbarStream(LStream);
+    LBlank := GHost.Toolbar.Buttons[1];
+    LMarked := FindTaggedButton(GHost.Toolbar, CTestDAIButtonTag);
+    Check(GHost.LastReadButton = nil, 'Marker-only stream supplied no old original-name evidence');
+    TDAIIDEToolbar.Refresh;
+    Check(GHost.DAIButton = LMarked, 'Marker-only recovery reuses the positively marked record');
+    Check(GHost.Toolbar.ButtonCount = 3, 'Marker recovery alone does not authorize deleting an adjacent unmarked single');
+    Check(GHost.Toolbar.Buttons[1] = LBlank, 'The anonymous single keeps its unknown origin');
+    TDAIIDEToolbar.Refresh;
+    Check(GHost.Toolbar.ButtonCount = 3, 'Later refresh cannot promote marker evidence to historical-single ownership');
+    TDAIIDEToolbar.Shutdown;
+    Check(GHost.Toolbar.ButtonCount = 2, 'Shutdown preserves the unmarked single next to the native debugger action');
+  finally
+    LStream.Free;
+  end;
+end;
+
+procedure TestPersistentMarkerLoading(const ALoadActionList: Boolean);
+var
+  LMarked: TToolButton;
+  LTarget: TComponent;
+  LText: TStringStream;
+  LBinary: TMemoryStream;
+  LReader: TReader;
+  LObserved: Boolean;
+begin
+  NewHost;
+  LMarked := NewInertDropdown(GHost.Form, GHost.Toolbar);
+  LMarked.Tag := CTestDAIButtonTag;
+  TDAIIDEToolbar.Install;
+  if ALoadActionList then
+    LTarget := GHost.ActionList
+  else
+    LTarget := GHost.Form;
+  LObserved := False;
+  LText := TStringStream.Create('object ' + LTarget.Name + ': ' + LTarget.ClassName + sLineBreak + 'end', TEncoding.UTF8);
+  LBinary := TMemoryStream.Create;
+  try
+    ObjectTextToBinary(LText, LBinary);
+    LBinary.Position := 0;
+    LReader := TReader.Create(LBinary, 4096);
+    try
+      GDuringNativeRead :=
+        procedure
+        begin
+          LObserved := True;
+          Check(LTarget.ComponentState * [csLoading, csReading] <> [], 'Native reader really marks the selected host dependency as loading');
+          TDAIIDEToolbar.Refresh;
+          Check(GHost.AddCount = 0, 'Refresh during root or action-list loading cannot append a new factory button');
+          Check(GHost.Toolbar.ButtonCount = 2, 'Refresh during host loading leaves the pending marked object intact');
+          Check(LMarked.Name = '', 'A marker is not adopted while its root or action list is still loading');
+          Check((LMarked.Action = nil) and (LMarked.DropdownMenu = nil), 'Loading deferral does not rebind dependencies prematurely');
+        end;
+      LReader.ReadRootComponent(LTarget);
+    finally
+      GDuringNativeRead := nil;
+      LReader.Free;
+    end;
+    Check(LObserved, 'Loading deferral was tested from a genuine native ReadState callback');
+    Check(LTarget.ComponentState * [csLoading, csReading] = [], 'Genuine reader completed the host loading cycle');
+    TDAIIDEToolbar.Refresh;
+    Check(GHost.DAIButton = LMarked, 'The same pending marker is adopted once host loading completes');
+    Check(GHost.AddCount = 0, 'Completed loading still needs no duplicate factory record');
+    TDAIIDEToolbar.Shutdown;
+    Check(GHost.Toolbar.ButtonCount = 1, 'Loading deferral leaves no marked record after shutdown');
+  finally
+    GDuringNativeRead := nil;
+    LBinary.Free;
+    LText.Free;
+  end;
+end;
+
+procedure TestPersistentMarkerDuplicates(const ALastNamed: Boolean);
+var
+  LFirst, LDuplicate: TToolButton;
+  LOtherBar: TToolBar;
+  LOtherBarButton: TToolButton;
+begin
+  NewHost;
+  LFirst := NewInertDropdown(GHost.Form, GHost.Toolbar);
+  LFirst.Tag := CTestDAIButtonTag;
+  LDuplicate := NewInertDropdown(GHost.Form, GHost.Toolbar);
+  LDuplicate.Tag := CTestDAIButtonTag;
+  if ALastNamed then
+    LDuplicate.Name := 'DAIServerToolButton';
+  LOtherBar := TToolBar.Create(GHost.Form);
+  LOtherBar.Parent := GHost.Form;
+  LOtherBarButton := NewInertDropdown(GHost.Form, LOtherBar);
+  LOtherBarButton.Tag := CTestDAIButtonTag;
+  TDAIIDEToolbar.Install;
+  TDAIIDEToolbar.Refresh;
+  Check(GHost.DAIButton = LFirst, 'Two own marked records reuse the first without a new factory button');
+  Check(GHost.AddCount = 0, 'Marked duplicate cleanup does not append another control');
+  Check(GHost.Toolbar.ButtonCount = 2, 'Only one own marker survives beside the native debugger control');
+  Check(LOtherBar.ButtonCount = 1, 'Same marker on a different toolbar is outside the recovery scope');
+  Check(LOtherBar.Buttons[0] = LOtherBarButton, 'Another toolbar is not searched for orphan candidates');
+  TDAIIDEToolbar.Shutdown;
+  Check(GHost.Toolbar.ButtonCount = 1, 'Recovered marker and duplicates cannot leak after shutdown');
+  Check(LOtherBar.ButtonCount = 1, 'Shutdown preserves an unbound marker on a different toolbar');
+end;
+
+procedure TestPersistentMarkerForeign(const AVariant: Integer);
+var
+  LForeign: TToolButton;
+  LOtherOwner: TComponent;
+  LForeignPopup: TPopupMenu;
+begin
+  NewHost;
+  LForeignPopup := nil;
+  if AVariant = 1 then
+  begin
+    LOtherOwner := TComponent.Create(GHost.Form);
+    LForeign := NewInertDropdown(LOtherOwner, GHost.Toolbar);
+  end
+  else if AVariant = 5 then
+  begin
+    LForeign := TForeignToolButton.Create(GHost.Form);
+    LForeign.Left := GHost.Toolbar.ButtonCount * 64;
+    LForeign.Parent := GHost.Toolbar;
+    LForeign.Style := tbsDropDown;
+    LForeign.ShowHint := True;
+    LForeign.ParentShowHint := False;
+  end
+  else
+    LForeign := NewInertDropdown(GHost.Form, GHost.Toolbar);
+  LForeign.Tag := CTestDAIButtonTag;
+  case AVariant of
+    2: LForeign.Action := GHost.ForeignAction;
+    3:
+      begin
+        LForeignPopup := TPopupMenu.Create(GHost.Form);
+        LForeign.DropdownMenu := LForeignPopup;
+      end;
+    4: LForeign.OnClick := GHost.DummyClick;
+    6: LForeign.Tag := CTestDMacButtonTag;
+  end;
+  TDAIIDEToolbar.Install;
+  TDAIIDEToolbar.Refresh;
+  Check(GHost.Toolbar.ButtonCount = 3, 'A conflicting or foreign marker candidate is not removed or adopted');
+  Check(GHost.AddCount = 1, 'Foreign candidate leaves normal own button creation available');
+  Check(GHost.DAIButton <> LForeign, 'Marker is insufficient when owner, class or behavior belongs elsewhere');
+  Check(GHost.DAIButton.Tag = CTestDAIButtonTag, 'A newly created own button always receives the persistent marker');
+  if AVariant = 2 then
+    Check(LForeign.Action = GHost.ForeignAction, 'Marker recovery cannot steal a foreign action');
+  if AVariant = 3 then
+    Check(LForeign.DropdownMenu = LForeignPopup, 'Marker recovery cannot replace a foreign popup');
+  if AVariant = 5 then
+  begin
+    LForeign.Click;
+    Check(TForeignToolButton(LForeign).ClickCount = 1, 'Foreign virtual behavior remains usable');
+  end;
+  TDAIIDEToolbar.Shutdown;
+  Check(GHost.Toolbar.ButtonCount = 2, 'Shutdown preserves the conflicting or foreign marked control');
+end;
+
+procedure TestKnownButtonOwnerTransfer(const ATransferAction: Boolean);
+var
+  LButton: TToolButton;
+  LAction: TAction;
+  LPopup: TPopupMenu;
+  LAlternateOwner: TComponent;
+  LAdds: Integer;
+begin
+  NewHost;
+  TDAIIDEToolbar.Install;
+  TDAIIDEToolbar.Refresh;
+  LButton := GHost.DAIButton;
+  LAction := GHost.DAIAction;
+  LPopup := LButton.DropdownMenu;
+  LAdds := GHost.AddCount;
+  LAlternateOwner := TComponent.Create(nil);
+  try
+    if ATransferAction then
+    begin
+      GHost.Form.RemoveComponent(LAction);
+      LAlternateOwner.InsertComponent(LAction);
+      LAlternateOwner.RemoveComponent(LAction);
+      GHost.Form.InsertComponent(LAction);
+      Check(LButton.Action = nil, 'Real RTL owner transfer detached the existing button action');
+    end
+    else
+    begin
+      GHost.Form.RemoveComponent(LPopup);
+      LAlternateOwner.InsertComponent(LPopup);
+      LAlternateOwner.RemoveComponent(LPopup);
+      GHost.Form.InsertComponent(LPopup);
+      Check(LButton.DropdownMenu = nil, 'Real RTL owner transfer detached the existing dropdown menu');
+    end;
+    TDAIIDEToolbar.Refresh;
+    Check(GHost.DAIButton = LButton, 'Owner transfer repairs the existing button object');
+    Check(GHost.AddCount = LAdds, 'Owner transfer repair creates no duplicate factory record');
+    Check(LButton.Action = LAction, 'Owner transfer repair reconnects the exact own action');
+    Check(LButton.DropdownMenu = LPopup, 'Owner transfer repair reconnects the exact own popup');
+    Check(LAction.ActionList = GHost.ActionList, 'Owner transfer retains the official IDE action-list registration');
+    Check(LButton.Tag = CTestDAIButtonTag, 'Known current button retains its persistent identity');
+    TDAIIDEToolbar.Shutdown;
+    Check(GHost.Toolbar.ButtonCount = 1, 'Owner transfer leaves no inert own record after shutdown');
+  finally
+    LAlternateOwner.Free;
+  end;
+end;
+
 procedure TestToolbarStream;
 var
   LVariant: Integer;
@@ -352,4 +642,14 @@ begin
     TestRejectedStreamRestore(LVariant);
   TestDetachedReadNotifier;
   TestReadNotifierFailures;
+  TestPersistentMarkerRestore;
+  TestPersistentMarkerDoesNotClaimOldSingle;
+  TestPersistentMarkerLoading(False);
+  TestPersistentMarkerLoading(True);
+  TestPersistentMarkerDuplicates(False);
+  TestPersistentMarkerDuplicates(True);
+  for LVariant := 1 to 6 do
+    TestPersistentMarkerForeign(LVariant);
+  TestKnownButtonOwnerTransfer(True);
+  TestKnownButtonOwnerTransfer(False);
 end;

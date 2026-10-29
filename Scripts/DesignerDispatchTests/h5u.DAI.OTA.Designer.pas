@@ -15,6 +15,7 @@ type
     class function SetProperty(const AFileName: string; const AArguments: TJSONObject): TJSONObject; static;
     class function MoveComponent(const AFileName: string; const AArguments: TJSONObject): TJSONObject; static;
     class function CreateComponent(const AFileName: string; const AArguments: TJSONObject): TJSONObject; static;
+    class function DeleteComponent(const AFileName: string; const AArguments: TJSONObject): TJSONObject; static;
   end;
 implementation
 uses h5u.DAI.Permissions.Manager;
@@ -45,4 +46,6 @@ class function TDAIDesignerService.MoveComponent(const AFileName: string; const 
 begin Result := Response('move', AFileName, AArguments); end;
 class function TDAIDesignerService.CreateComponent(const AFileName: string; const AArguments: TJSONObject): TJSONObject;
 begin Result := Response('create', AFileName, AArguments); end;
+class function TDAIDesignerService.DeleteComponent(const AFileName: string; const AArguments: TJSONObject): TJSONObject;
+begin Result := Response('delete', AFileName, AArguments); end;
 end.

@@ -23,6 +23,7 @@ type
     class function ReferenceRoots: TJSONArray; static;
     class function ReadFile(const AFileName: string; const AMaximumCharacters: Integer; const AInterfacesOnly: Boolean = True): TJSONObject; static;
     class function ReadIndexFiles(const AFileNames: TArray<string>; const AMaximumBytes: Integer): TArray<TDAIIndexFileText>; static;
+    class function EditFile(const AFileName, AExpectedSha256: string; const AEdits: TJSONValue; const ASave: Boolean; out AUsedEditorBuffer: Boolean): TJSONObject; static;
     class function WriteFile(const AFileName: string; const AContent: string; const AExpectedSha256: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean):
       TJSONObject; static;
   end;
@@ -822,6 +823,126 @@ begin
         .AddPair('read_only', TJSONBool.Create(True))
     );
   end;
+end;
+
+procedure RequireWellFormedEditText(const AText, AName: string; const AEditIndex: Integer);
+var
+  LPosition: Integer;
+begin
+  LPosition := 1;
+  while LPosition <= Length(AText) do
+  begin
+    if AText[LPosition].IsHighSurrogate then
+    begin
+      if LPosition < Length(AText) then
+        if AText[LPosition + 1].IsLowSurrogate then
+        begin
+          Inc(LPosition, 2);
+          Continue;
+        end;
+      raise EArgumentException.CreateFmt('edits[%d].%s enthält ein ungepaartes UTF-16-Surrogat.', [AEditIndex, AName]);
+    end;
+    if AText[LPosition].IsLowSurrogate then
+      raise EArgumentException.CreateFmt('edits[%d].%s enthält ein ungepaartes UTF-16-Surrogat.', [AEditIndex, AName]);
+    Inc(LPosition);
+  end;
+end;
+
+class function TDAIFileService.EditFile(const AFileName, AExpectedSha256: string; const AEdits: TJSONValue; const ASave: Boolean; out AUsedEditorBuffer: Boolean): TJSONObject;
+type
+  TTextEdit = record
+    StartPosition, EndPosition: Integer;
+    NewText: string;
+  end;
+var
+  LArray: TJSONArray;
+  LBuilder: TStringBuilder;
+  LContent, LFileName, LHash, LOldText: string;
+  LEdit: TTextEdit;
+  LEdits: TArray<TTextEdit>;
+  LIndex, LNextPosition: Integer;
+  LObject, LSnapshot: TJSONObject;
+  LTargetCharacters: Int64;
+  LPair: TJSONPair;
+  LValue: TJSONValue;
+begin
+  AUsedEditorBuffer := False;
+  if Trim(AFileName) = '' then
+    raise EArgumentException.Create('file darf nicht leer sein.');
+  if Trim(AExpectedSha256) = '' then
+    raise EArgumentException.Create('file_edit erfordert expected_sha256 aus dem aktuellen vollständigen file_read.');
+  if not (AEdits is TJSONArray) then
+    raise EArgumentException.Create('edits muss ein JSON-Array sein.');
+  LArray := TJSONArray(AEdits);
+  if (LArray.Count = 0) or (LArray.Count > 1000) then
+    raise EArgumentException.Create('edits muss zwischen 1 und 1000 Einträge enthalten.');
+  // Every match refers to this one complete snapshot, never to a previous replacement.
+  LSnapshot := ReadFile(AFileName, 0, False);
+  try
+    LContent := LSnapshot.GetValue<string>('content');
+    LFileName := LSnapshot.GetValue<string>('file');
+    LHash := LSnapshot.GetValue<string>('sha256');
+  finally
+    LSnapshot.Free;
+  end;
+  if not SameText(LHash, Trim(AExpectedSha256)) then
+    raise EInvalidOperation.CreateFmt('Die Datei wurde zwischenzeitlich geändert. Erwartet: %s; aktuell: %s.', [AExpectedSha256, LHash]);
+  SetLength(LEdits, LArray.Count);
+  LTargetCharacters := Length(LContent);
+  for LIndex := 0 to LArray.Count - 1 do
+  begin
+    if not (LArray.Items[LIndex] is TJSONObject) then
+      raise EArgumentException.CreateFmt('edits[%d] muss ein JSON-Objekt sein.', [LIndex]);
+    LObject := TJSONObject(LArray.Items[LIndex]);
+    for LPair in LObject do
+      if (LPair.JsonString.Value <> 'old_text') and (LPair.JsonString.Value <> 'new_text') then
+        raise EArgumentException.CreateFmt('Unbekanntes Argument in edits[%d]: %s.', [LIndex, LPair.JsonString.Value]);
+    LValue := LObject.GetValue('old_text');
+    if not (LValue is TJSONString) or (LValue is TJSONNumber) then
+      raise EArgumentException.CreateFmt('edits[%d].old_text muss ausdrücklich als JSON-String angegeben werden.', [LIndex]);
+    LOldText := LValue.Value;
+    if LOldText = '' then
+      raise EArgumentException.CreateFmt('edits[%d].old_text darf nicht leer sein; für Einfügungen eindeutigen Kontext mit angeben.', [LIndex]);
+    LValue := LObject.GetValue('new_text');
+    if not (LValue is TJSONString) or (LValue is TJSONNumber) then
+      raise EArgumentException.CreateFmt('edits[%d].new_text muss ausdrücklich als JSON-String angegeben werden.', [LIndex]);
+    LEdits[LIndex].NewText := LValue.Value;
+    RequireWellFormedEditText(LOldText, 'old_text', LIndex);
+    RequireWellFormedEditText(LEdits[LIndex].NewText, 'new_text', LIndex);
+    LEdits[LIndex].StartPosition := Pos(LOldText, LContent);
+    if LEdits[LIndex].StartPosition = 0 then
+      raise EInvalidOperation.CreateFmt('edits[%d].old_text wurde im ursprünglichen Inhalt nicht gefunden.', [LIndex]);
+    if PosEx(LOldText, LContent, LEdits[LIndex].StartPosition + 1) > 0 then
+      raise EInvalidOperation.CreateFmt('edits[%d].old_text ist nicht eindeutig; mehr unveränderten Kontext angeben.', [LIndex]);
+    LEdits[LIndex].EndPosition := LEdits[LIndex].StartPosition + Length(LOldText);
+    Inc(LTargetCharacters, Int64(Length(LEdits[LIndex].NewText)) - Length(LOldText));
+  end;
+  TArray.Sort<TTextEdit>(LEdits, TComparer<TTextEdit>.Construct(
+    function(const ALeft, ARight: TTextEdit): Integer
+    begin
+      Result := CompareValue(ALeft.StartPosition, ARight.StartPosition);
+    end));
+  for LIndex := 1 to High(LEdits) do
+    if LEdits[LIndex].StartPosition < LEdits[LIndex - 1].EndPosition then
+      raise EArgumentException.Create('Die Änderungen in edits überschneiden sich im ursprünglichen Inhalt.');
+  if LTargetCharacters > CDAIMaxTextFileBytes then
+    raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
+  LBuilder := TStringBuilder.Create;
+  try
+    LNextPosition := 1;
+    for LEdit in LEdits do
+    begin
+      LBuilder.Append(Copy(LContent, LNextPosition, LEdit.StartPosition - LNextPosition));
+      LBuilder.Append(LEdit.NewText);
+      LNextPosition := LEdit.EndPosition;
+    end;
+    LBuilder.Append(Copy(LContent, LNextPosition, MaxInt));
+    // WriteFile repeats the conflict check and retains all editor, designer, format and workspace guards.
+    Result := WriteFile(LFileName, LBuilder.ToString, LHash, ASave, AUsedEditorBuffer);
+  finally
+    LBuilder.Free;
+  end;
+  Result.AddPair('edit_count', TJSONNumber.Create(Length(LEdits)));
 end;
 
 class function TDAIFileService.WriteFile(const AFileName: string; const AContent: string; const AExpectedSha256: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean):

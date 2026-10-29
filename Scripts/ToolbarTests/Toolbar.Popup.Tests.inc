@@ -226,14 +226,15 @@ begin
     Check(FRegistrationChanged, 'The registration changes while the popup is tracking');
     PumpFor(650);
     Check(TDAIClientRegistration.HealthCount = FInitialHealthCount + 1, 'One registration scan runs after native popup close');
-    CheckHealthGlyph('NotRegistered', 'Deferred registration notice appears after native popup close');
+    CheckHealthGlyph('Inactive', 'Deferred registration diagnostics do not override Pause after native popup close');
+    Check(Pos(TDAIClientRegistration.HealthDetails, GHost.DAIAction.Hint) > 0, 'Deferred registration details appear after native popup close');
   end;
   if FChangeUpdate then
   begin
     Check(FUpdateChanged, 'The software-update flag changes while the popup is tracking');
     PumpFor(650);
     Check(TDAIClientRegistration.HealthCount = FInitialHealthCount, 'A software update does not rescan registrations after popup close');
-    CheckHealthGlyph('UpdateAvailable', 'The deferred software-update notice appears after native popup close');
+    CheckHealthGlyph('Inactive', 'The deferred software-update notice does not override Pause after native popup close');
     CheckUpdateHint('4.0.0');
   end;
   if FChangeRuntime then

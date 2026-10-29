@@ -18,7 +18,7 @@ type
     FServerEnabledCheckBox: TCheckBox;
     FAllowIDEStartStopCheckBox: TCheckBox;
     FLoadedAllowIDEStartStop: Boolean;
-    FServerStatusLabel: TLabel;
+    FServerStatusMemo: TMemo;
     FStartServerButton: TButton;
     FStopServerButton: TButton;
     FLoggingCheckBox: TCheckBox;
@@ -45,14 +45,16 @@ type
     FPermissionModified: array[TDAIPermissionScope, TDAIPermissionCategory] of Boolean;
     FClientComboBox: TComboBox;
     FClientStatusMemo: TMemo;
-    FCodexStatusLabel: TLabel;
-    FSkillStatusLabel: TLabel;
+    FCodexStatusMemo: TMemo;
+    FSkillStatusMemo: TMemo;
     FRegisterButton: TButton;
     FUnregisterButton: TButton;
     FFindRegistrationsButton: TButton;
     FManualRegistrationButton: TButton;
     FManualClientRegistrationCheckBox: TCheckBox;
     FShowToolsButton: TButton;
+    function NewStatusMemo(const AName: string; const ATop, AWidth, AHeight: Integer): TMemo;
+    procedure StatusMemoKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure BuildControls;
     procedure RefreshServerStatus;
     procedure DisplayClientStatus(const AStatus: TJSONObject);
@@ -531,6 +533,39 @@ begin
   Inc(ATop, 50);
 end;
 
+function TDAIOptionsFrame.NewStatusMemo(const AName: string; const ATop, AWidth, AHeight: Integer): TMemo;
+begin
+  Result := TMemo.Create(Self);
+  Result.Name := AName;
+  Result.Parent := Self;
+  Result.SetBounds(24, ATop, AWidth, AHeight);
+  Result.BorderStyle := bsNone;
+  Result.ParentColor := True;
+  Result.ReadOnly := True;
+  Result.TabStop := True;
+  Result.HideSelection := False;
+  Result.ScrollBars := ssVertical;
+  Result.WordWrap := True;
+  Result.WantReturns := False;
+  Result.WantTabs := False;
+  Result.OnKeyDown := StatusMemoKeyDown;
+  Result.Hint := DAIText(
+    'Text markieren und mit Strg+C kopieren; Strg+A markiert den gesamten Statustext.',
+    'Select text and press Ctrl+C to copy; Ctrl+A selects the complete status text.',
+    'Sélectionnez le texte et appuyez sur Ctrl+C pour le copier ; Ctrl+A sélectionne tout le texte d’état.',
+    'テキストを選択してCtrl+Cでコピーします。Ctrl+Aで状態テキスト全体を選択できます。');
+  Result.ShowHint := True;
+end;
+
+procedure TDAIOptionsFrame.StatusMemoKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+begin
+  if (Sender is TMemo) and (Key = Ord('A')) and (Shift = [ssCtrl]) then
+  begin
+    TMemo(Sender).SelectAll;
+    Key := 0;
+  end;
+end;
+
 procedure TDAIOptionsFrame.BuildControls;
 var
   LCategory: TDAIPermissionCategory;
@@ -638,11 +673,7 @@ begin
   FGenerateTokenButton.OnClick := GenerateTokenClicked;
   Inc(LTop, 32);
 
-  FServerStatusLabel := NewLabel(Self, '', 24, LTop);
-  FServerStatusLabel.AutoSize := False;
-  FServerStatusLabel.WordWrap := True;
-  FServerStatusLabel.Width := 760;
-  FServerStatusLabel.Height := 72;
+  FServerStatusMemo := NewStatusMemo('DAIServerStatusMemo', LTop, 760, 72);
   Inc(LTop, 76);
 
   FStartServerButton := TButton.Create(Self);
@@ -816,28 +847,12 @@ begin
   FClientComboBox.OnChange := ClientChanged;
   Inc(LTop, 34);
 
-  FClientStatusMemo := TMemo.Create(Self);
-  FClientStatusMemo.Parent := Self;
-  FClientStatusMemo.Left := 24;
-  FClientStatusMemo.Top := LTop;
-  FClientStatusMemo.Width := 736;
-  FClientStatusMemo.Height := 154;
-  FClientStatusMemo.ReadOnly := True;
-  FClientStatusMemo.ScrollBars := ssBoth;
-  FClientStatusMemo.WordWrap := False;
+  FClientStatusMemo := NewStatusMemo('DAIClientStatusMemo', LTop, 736, 154);
   Inc(LTop, 164);
 
-  FCodexStatusLabel := NewLabel(Self, '', 24, LTop);
-  FCodexStatusLabel.AutoSize := False;
-  FCodexStatusLabel.WordWrap := True;
-  FCodexStatusLabel.Width := 736;
-  FCodexStatusLabel.Height := 36;
+  FCodexStatusMemo := NewStatusMemo('DAICodexStatusMemo', LTop, 736, 36);
   Inc(LTop, 40);
-  FSkillStatusLabel := NewLabel(Self, '', 24, LTop);
-  FSkillStatusLabel.AutoSize := False;
-  FSkillStatusLabel.WordWrap := True;
-  FSkillStatusLabel.Width := 736;
-  FSkillStatusLabel.Height := 36;
+  FSkillStatusMemo := NewStatusMemo('DAISkillStatusMemo', LTop, 736, 36);
   Inc(LTop, 44);
 
   FRegisterButton := TButton.Create(Self);
@@ -1312,7 +1327,7 @@ begin
   FStartServerButton.Enabled := not TDAIRuntime.ServerActive;
   FStopServerButton.Enabled := TDAIRuntime.ServerActive;
   if TDAIRuntime.ServerActive then
-    FServerStatusLabel.Caption := Format(DAIText('Status: aktiv auf http://%s:%d%s', 'Status: active at http://%s:%d%s', 'État : actif sur http://%s:%d%s',
+    FServerStatusMemo.Text := Format(DAIText('Status: aktiv auf http://%s:%d%s', 'Status: active at http://%s:%d%s', 'État : actif sur http://%s:%d%s',
       '状態: 稼働中 http://%s:%d%s'), [CDAIDefaultBindAddress, TDAIRuntime.ServerPort, CDAIMcpPath])
   else
   begin
@@ -1320,20 +1335,20 @@ begin
     if LError = '' then
     begin
       if TDAISettings.Instance.Enabled then
-        FServerStatusLabel.Caption := DAIText(
+        FServerStatusMemo.Text := DAIText(
           'Status: gestoppt; bereit zum Starten in dieser IDE.',
           'Status: stopped; ready to start in this IDE.',
           'État : arrêté ; prêt à démarrer dans cet IDE.',
           '状態: 停止中。このIDEで開始できます。')
       else
-        FServerStatusLabel.Caption := DAIText(
+        FServerStatusMemo.Text := DAIText(
           'Status: gestoppt; automatischer Start deaktiviert.',
           'Status: stopped; automatic startup disabled.',
           'État : arrêté ; démarrage automatique désactivé.',
           '状態: 停止中。自動起動は無効です。');
     end
     else
-      FServerStatusLabel.Caption := DAIText('Status: nicht aktiv. ', 'Status: inactive. ', 'État : inactif. ', '状態: 稼働していません。') + LError;
+      FServerStatusMemo.Text := DAIText('Status: nicht aktiv. ', 'Status: inactive. ', 'État : inactif. ', '状態: 稼働していません。') + LError;
   end;
 end;
 
@@ -1345,21 +1360,21 @@ begin
   try
     try
       LStatus := TDAICodexRegistration.Status;
-      FCodexStatusLabel.Caption := 'Codex: ' + LStatus.GetValue<string>('codex_config') + ' – ' +
+      FCodexStatusMemo.Text := 'Codex: ' + LStatus.GetValue<string>('codex_config') + ' – ' +
         IfThen(LStatus.GetValue<Boolean>('codex_entry_registered'), DAIText('registriert', 'registered', 'inscrit', '登録済み'), DAIText('nicht registriert',
           'not registered', 'non inscrit', '未登録'));
-      FSkillStatusLabel.Caption := DAIText('Skill: ', 'Skill: ', 'Skill : ', 'スキル: ') + LStatus.GetValue<string>('skill_file') + ' – ' +
+      FSkillStatusMemo.Text := DAIText('Skill: ', 'Skill: ', 'Skill : ', 'スキル: ') + LStatus.GetValue<string>('skill_file') + ' – ' +
         IfThen(LStatus.GetValue<Boolean>('skill_registered'), DAIText('registriert', 'registered', 'inscrit', '登録済み'), DAIText('nicht registriert', 'not registered',
           'non inscrit', '未登録'));
     except
       on E: Exception do
       begin
-        FCodexStatusLabel.Caption := DAIText(
+        FCodexStatusMemo.Text := DAIText(
           'Codex-Status nicht lesbar; Details in der Ergebnisliste.',
           'Cannot read Codex status; see the result list for details.',
           'Impossible de lire l’état de Codex ; consultez la liste des résultats.',
           'Codexの状態を読み取れません。結果一覧で詳細を確認してください。');
-        FSkillStatusLabel.Caption := DAIText('Skill-Status konnte nicht geprüft werden.', 'Could not check skill status.', 'Impossible de vérifier l’état du skill.',
+        FSkillStatusMemo.Text := DAIText('Skill-Status konnte nicht geprüft werden.', 'Could not check skill status.', 'Impossible de vérifier l’état du skill.',
           'スキルの状態を確認できませんでした。');
       end;
     end;

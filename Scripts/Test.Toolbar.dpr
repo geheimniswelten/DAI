@@ -34,6 +34,16 @@ uses
   h5u.DAI.Symbols.Service;
 
 type
+  TLoadingProbeForm = class(TForm)
+  protected
+    procedure ReadState(Reader: TReader); override;
+  end;
+
+  TLoadingProbeActionList = class(TActionList)
+  protected
+    procedure ReadState(Reader: TReader); override;
+  end;
+
   TForeignToolButton = class(TToolButton)
   public
     ClickCount: Integer;
@@ -98,6 +108,7 @@ type
   end;
 
 var
+  GDuringNativeRead: TProc;
   GChecks: Integer;
   GHost: TTestHost;
   GHostKeepAlive: IInterface;
@@ -116,6 +127,20 @@ begin
     raise Exception.Create(ADescription);
 end;
 
+procedure TLoadingProbeForm.ReadState(Reader: TReader);
+begin
+  if Assigned(GDuringNativeRead) then
+    GDuringNativeRead();
+  inherited;
+end;
+
+procedure TLoadingProbeActionList.ReadState(Reader: TReader);
+begin
+  if Assigned(GDuringNativeRead) then
+    GDuringNativeRead();
+  inherited;
+end;
+
 procedure TForeignToolButton.Click;
 begin
   Inc(ClickCount);
@@ -126,7 +151,7 @@ begin
   inherited;
   FImageIds := TStringList.Create;
   FNotifiers := TDictionary<Integer, IOTANotifier>.Create;
-  Form := TForm.CreateNew(nil);
+  Form := TLoadingProbeForm.CreateNew(nil);
   Form.Name := 'TestIDE';
   ImageCollection := TImageCollection.Create(Form);
   Images := TVirtualImageList.Create(Form);
@@ -134,7 +159,7 @@ begin
   Glyphs := TObjectList<TPngImage>.Create(True);
   Images.Width := 16;
   Images.Height := 16;
-  ActionList := TActionList.Create(Form);
+  ActionList := TLoadingProbeActionList.Create(Form);
   ActionList.Name := 'MainActionList';
   ActionList.Images := Images;
   Toolbar := TToolBar.Create(Form);
@@ -540,7 +565,6 @@ end;
 procedure TestFailures;
 var
   LAction: TAction;
-  LErrorImage: Integer;
 begin
   NewHost;
   TDAIIDEToolbar.Install;
@@ -550,21 +574,19 @@ begin
   TDAIRuntime.MCPAccessAgeMs := 0;
   TDAIRuntime.FailStart := True;
   LAction.Execute;
-  Check(LAction.Caption = 'DAI Fehler', 'Bind failure becomes an error status');
+  Check(LAction.Caption = 'DAI inaktiv', 'A failed start retains the inactive status');
   Check(Pos('isolated bind failed', LAction.Hint) > 0, 'Bind failure is available in the tooltip');
   Check(not TDAIRuntime.Active, 'Failed start does not claim activation');
-  LErrorImage := LAction.ImageIndex;
-  Check(Pos('ServerGlyph.v4.Error', LAction.ImageName) > 0, 'A failed start displays the error X despite recent MCP activity');
+  Check(Pos('ServerGlyph.v4.Inactive', LAction.ImageName) > 0, 'A failed start displays Pause despite recent MCP activity');
   TDAIRuntime.FailStart := False;
   LAction.Execute;
   Check(LAction.Caption = 'DAI aktiv', 'Successful retry clears the failure state');
-  Check(LAction.ImageIndex <> LErrorImage, 'Successful retry restores the active glyph');
   Check(Pos('ServerGlyph.v4.RecentAccess', LAction.ImageName) > 0, 'Successful retry shows recent activity once the error clears');
   TDAIRuntime.FailStop := True;
   LAction.Execute;
   Check(TDAIRuntime.Active, 'Failed drain does not falsely report a stopped server');
   Check(LAction.Caption = 'DAI Fehler', 'Failed stop becomes an error status');
-  Check(LAction.ImageIndex = LErrorImage, 'A live server with a stop error displays the error X before activity');
+  Check(Pos('ServerGlyph.v4.Error', LAction.ImageName) > 0, 'A live server with a stop error displays the error X');
   Check(Pos('aktiv auf Port 7331', LAction.Hint) > 0, 'Failed stop retains the actual live endpoint');
   Check(Pos('isolated drain failed', LAction.Hint) > 0, 'Failed stop exposes its reason');
   TDAIRuntime.FailStop := False;
@@ -579,6 +601,7 @@ begin
   TDAIRuntime.RaiseStart := True;
   LAction.Execute;
   Check(Pos('isolated start exception', LAction.Hint) > 0, 'Unexpected start exceptions are also contained');
+  Check(Pos('ServerGlyph.v4.Inactive', LAction.ImageName) > 0, 'A start exception retains Pause while the server is stopped');
   TDAIRuntime.RaiseStart := False;
   LAction.Execute;
   Check(TDAIRuntime.Active, 'The action remains usable after a start exception');
@@ -866,6 +889,7 @@ begin
     ObjectBinaryToText(LBinary, LText);
     Check(Pos('DAIServerToggleAction', LText.DataString) > 0, 'Native VCL streaming records the DAI action reference');
     Check(Pos('DAIServerToggleAction.Owner', LText.DataString) = 0, 'Action reference does not require an unnamed Owner path');
+    Check(Pos('Tag = ' + IntToStr($44414931), LText.DataString) > 0, 'Native streaming persists the marker assigned to the actual DAI button');
   finally
     LText.Free;
     LBinary.Free;

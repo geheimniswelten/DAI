@@ -14,6 +14,7 @@ type
     class var LastFile, LastContent, LastHash: string;
     class procedure Reset; static;
     class function ReadFile(const AFile: string; const AMaximumCharacters: Integer; const AInterfacesOnly: Boolean): TJSONObject; static;
+    class function EditFile(const AFile, AHash: string; const AEdits: TJSONValue; const ASave: Boolean; out AUsedEditorBuffer: Boolean): TJSONObject; static;
     class function WriteFile(const AFile, AContent, AHash: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean): TJSONObject; static;
   end;
 
@@ -52,6 +53,11 @@ begin
     Result.AddPair('source', 'editor_buffer')
   else
     Result.AddPair('source', 'disk');
+end;
+
+class function TDAIFileService.EditFile(const AFile, AHash: string; const AEdits: TJSONValue; const ASave: Boolean; out AUsedEditorBuffer: Boolean): TJSONObject;
+begin
+  Result := WriteFile(AFile, AEdits.ToJSON, AHash, ASave, AUsedEditorBuffer);
 end;
 
 class function TDAIFileService.WriteFile(const AFile, AContent, AHash: string; const ASave: Boolean; out AUsedEditorBuffer: Boolean): TJSONObject;

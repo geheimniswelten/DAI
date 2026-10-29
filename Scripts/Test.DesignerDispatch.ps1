@@ -16,7 +16,7 @@ $generatedDirectory = Join-Path $projectRoot 'Build\Tests-DesignerDispatch-Produ
 $utf8Bom = [Text.UTF8Encoding]::new($true)
 $crlf = "`r`n"
 $toolNames = @('form_components_search', 'form_components_select', 'form_component_properties',
-    'form_component_set_property', 'form_component_move', 'form_component_create', 'form_palette_list')
+    'form_component_set_property', 'form_component_move', 'form_component_create', 'form_palette_list', 'form_component_delete')
 function Extract-One([string]$pattern, [string]$description, [string]$content = $sourceText) {
     $found = [regex]::Matches($content, $pattern,
         [Text.RegularExpressions.RegexOptions]::Singleline -bor [Text.RegularExpressions.RegexOptions]::Multiline)
