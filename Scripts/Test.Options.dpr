@@ -25,6 +25,7 @@ uses
   h5u.DAI.OTA.Helpers in 'OptionsTests\h5u.DAI.OTA.Helpers.pas',
   h5u.DAI.Permissions.Dialog in 'OptionsTests\h5u.DAI.Permissions.Dialog.pas',
   h5u.DAI.Permissions.Manager in 'OptionsTests\h5u.DAI.Permissions.Manager.pas',
+  h5u.DAI.PortReservations in 'OptionsTests\h5u.DAI.PortReservations.pas',
   h5u.DAI.Runtime in 'OptionsTests\h5u.DAI.Runtime.pas',
   h5u.DAI.Registry.Editor in 'OptionsTests\h5u.DAI.Registry.Editor.pas',
   h5u.DAI.Settings in 'OptionsTests\h5u.DAI.Settings.pas',
@@ -40,6 +41,16 @@ const
   CCloseCaptions: array[TDAILanguage] of string = ('Close', 'Schließen', 'Fermer', '閉じる');
 
 type
+  TPortWarningProbe = class
+  public
+    Seen: Boolean;
+    SeenCount: Integer;
+    Ticks: Integer;
+    ReplyButton: Integer;
+    Timer: TTimer;
+    procedure Dismiss(Sender: TObject);
+  end;
+
   TCatalogProbe = class
   public
     Failure: string;
@@ -1181,6 +1192,422 @@ begin
   end;
 end;
 
+function FindPortWarning(const AWindow: HWND; const AData: LPARAM): BOOL; stdcall;
+var
+  LTitle: array[0..127] of Char;
+  LProbe: TPortWarningProbe;
+  LButton, LIndex: Integer;
+  LControl: TWinControl;
+  LComponent: TComponent;
+begin
+  Result := True;
+  if not IsWindowVisible(AWindow) then
+    Exit;
+  FillChar(LTitle, SizeOf(LTitle), 0);
+  GetWindowText(AWindow, LTitle, Length(LTitle));
+  if string(LTitle) <> '' then
+  begin
+    LProbe := TPortWarningProbe(Pointer(AData));
+    LProbe.Seen := True;
+    Inc(LProbe.SeenCount);
+    SetWindowPos(AWindow, 0, -20000, -20000, 0, 0, SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+    LButton := LProbe.ReplyButton;
+    if LButton = 0 then
+      LButton := IDOK;
+    Result := False;
+    LControl := FindControl(AWindow);
+    if LControl is TCustomForm then
+    begin
+      for LIndex := 0 to TCustomForm(LControl).ComponentCount - 1 do
+      begin
+        LComponent := TCustomForm(LControl).Components[LIndex];
+        if (LComponent is TButton) and (TButton(LComponent).ModalResult = LButton) then
+        begin
+          TButton(LComponent).Click;
+          Exit;
+        end;
+      end;
+      TCustomForm(LControl).ModalResult := LButton;
+    end
+    else
+      PostMessage(AWindow, WM_USER + 102, LButton, 0); // TDM_CLICK_BUTTON for a native task dialog.
+  end;
+end;
+
+procedure TPortWarningProbe.Dismiss(Sender: TObject);
+begin
+  Inc(Ticks);
+  EnumThreadWindows(GetCurrentThreadId, @FindPortWarning, LPARAM(Self));
+  if Ticks > 200 then
+  begin
+    Timer.Enabled := False;
+    PostQuitMessage(1);
+  end;
+end;
+
+procedure CheckPortManagementOptions;
+var
+  LFrame: TDAIOptionsFrame;
+  LHost: TForm;
+  LApplicationHandle: HWND;
+  LSetup, LReserve, LSearch: TButton;
+  LMemo: TMemo;
+  LPortEdit: TEdit;
+  LProbe: TPortWarningProbe;
+  LSaved, LRegistrationCount: Integer;
+  LFailed: Boolean;
+begin
+  TestStage := 'PortManagementOptions';
+  TDAIRuntime.Reset;
+  TDAISettings.Reset;
+  TDAIPermissionManager.Reset;
+  TDAIPortReservations.Available := False;
+  TDAIPortReservations.ApplicationAvailable := False;
+  TDAIPortReservations.DenyWrite := False;
+  TDAIPortReservations.Ports := '';
+  TDAIPortReservations.ReserveCount := 0;
+  TDAIPortReservations.FailReserve := False;
+  TDAIPortReservations.RangeAvailable := False;
+  TDAIPortReservations.OtherPortReserved := False;
+  TDAIPortReservations.SearchCount := 0;
+  TDAIPortReservations.SearchPort := 7105;
+  LHost := TForm.CreateNew(nil);
+  LProbe := TPortWarningProbe.Create;
+  LProbe.Timer := TTimer.Create(nil);
+  LProbe.Timer.Enabled := False;
+  LProbe.Timer.Interval := 25;
+  LProbe.Timer.OnTimer := LProbe.Dismiss;
+  LFrame := nil;
+  LApplicationHandle := Application.Handle;
+  try
+    LHost.Visible := False;
+    Application.Handle := LHost.Handle;
+    LFrame := TDAIOptionsFrame.Create(nil);
+    LFrame.Visible := False;
+    LFrame.Parent := LHost;
+    LFrame.LoadFromSettings;
+    LSetup := LFrame.FindComponent('DAIPortReservationSetupButton') as TButton;
+    LReserve := LFrame.FindComponent('DAIPortReservationReserveButton') as TButton;
+    LSearch := LFrame.FindComponent('DAIPortSearchButton') as TButton;
+    LMemo := LFrame.FindComponent('DAIPortReservationStatusMemo') as TMemo;
+    LPortEdit := EditControl(LFrame, True);
+    Check(Assigned(LSetup) and Assigned(LReserve) and Assigned(LSearch) and Assigned(LMemo), 'Port management controls exist');
+    Check(LSearch.Enabled, 'Free-port search is available without shared configuration');
+    LRegistrationCount := TDAIClientRegistration.RegisterCount;
+    LSearch.Click;
+    Check((LPortEdit.Text = '7105') and (TDAIPortReservations.LastSearchPort = 7101), 'Standalone search starts from the displayed port');
+    Check((TDAISettings.Instance.SaveCount = 0) and (TDAIPortReservations.ReserveCount = 0), 'Searching only changes the draft');
+    Check(TDAIClientRegistration.RegisterCount = LRegistrationCount, 'Searching never changes client registrations');
+    Check(Pos('noch nicht reserviert oder gespeichert', LMemo.Text) > 0, 'Search result is visibly a suggestion');
+    LPortEdit.Text := '7101';
+    Check(LSetup.Enabled and not LReserve.Enabled, 'Missing management can be initialized but not yet used');
+    Check(Pos('Portverwaltung', LMemo.Text) > 0, 'Missing management is explained');
+    LFrame.StoreToSettings;
+    Check(TDAIPortReservations.ReserveCount = 0, 'Ordinary options save does not enable port management');
+    LSetup.Click;
+    Check(TDAIPortReservations.Available and LReserve.Enabled, 'Explicit setup enables reservation controls');
+    Check(TDAISettings.Instance.SaveCount = 1, 'Setup itself does not persist DAI connection settings');
+    TDAIPortReservations.RangeAvailable := True;
+    TDAIPortReservations.RangeStart := 17331;
+    TDAIPortReservations.RangeEnd := 17430;
+    LFrame.LoadFromSettings;
+    Check((Pos('17331–17430', LMemo.Text) > 0) and (Pos('außerhalb', LMemo.Text) > 0), 'Outside configured port stays visible and allowed');
+    LPortEdit.Text := '17350';
+    Check((Pos('17331–17430', LMemo.Text) > 0) and (Pos('außerhalb', LMemo.Text) = 0), 'Range hint follows manual edits');
+    LPortEdit.Text := '7115';
+    TDAIPortReservations.SearchPort := 17331;
+    LSearch.Click;
+    Check((LPortEdit.Text = '17331') and (TDAIPortReservations.LastSearchPort = 7115), 'Shared search explicitly replaces only the draft');
+    Check((TDAISettings.Instance.Port = 7101) and (TDAISettings.Instance.SaveCount = 1), 'Search leaves saved settings unchanged');
+    LPortEdit.Text := '7115';
+    TDAIPortReservations.DenyWrite := True;
+    LFrame.LoadFromSettings;
+    Check(not LReserve.Enabled and (Pos('nur lesbar', LMemo.Text) > 0), 'Read-only management is explained and disables reservation');
+    TDAIPortReservations.DenyWrite := False;
+    LFrame.LoadFromSettings;
+    Check(LReserve.Enabled, 'Reservation action returns when write access is available');
+    TDAIPortReservations.OtherPortReserved := True;
+    LPortEdit.Text := '7116';
+    LProbe.Seen := False;
+    LProbe.Ticks := 0;
+    LProbe.Timer.Enabled := True;
+    ButtonControl(LFrame, 'Server starten').Click;
+    LProbe.Timer.Enabled := False;
+    Check(LProbe.Seen and (TDAIRuntime.StartCount = 0), 'Foreign reservation blocks an unregistered scope');
+    TDAIPortReservations.OtherPortReserved := False;
+    TDAIPortReservations.Ports := '7101';
+    EditControl(LFrame, True).Text := '7115';
+    LProbe.Seen := False;
+    LProbe.Ticks := 0;
+    LProbe.Timer.Enabled := True;
+    LReserve.Click;
+    LProbe.Timer.Enabled := False;
+    Check(LProbe.Seen and (LPortEdit.Text = '7115'), 'Explicit reservation preserves a chosen port outside the range');
+    Check((TDAIPortReservations.LastPort = 7115) and not TDAIPortReservations.LastAllowFallback,
+      'Reservation uses the precise entered port without silent fallback');
+    Check(TDAISettings.Instance.SaveCount = 1, 'Reserving alone does not save the connection settings');
+    LFrame.StoreToSettings;
+    Check(TDAIPortReservations.ReserveCount = 2, 'An enrolled connection reserves a manually changed port on save');
+    Check((TDAIPortReservations.LastKey = 'DAI:dai') and (TDAIPortReservations.LastPort = 7115),
+      'Save reserves the exact port for the shared connection');
+    Check(not TDAIPortReservations.LastAllowFallback, 'Save never silently changes the requested port');
+    TDAIPortReservations.Ports := '7101, 7115';
+    TDAIPortReservations.OtherPortReserved := True;
+    EditControl(LFrame, True).Text := '7116';
+    LProbe.Seen := False;
+    LProbe.Ticks := 0;
+    LProbe.Timer.Enabled := True;
+    ButtonControl(LFrame, 'Server starten').Click;
+    LProbe.Timer.Enabled := False;
+    Check(LProbe.Seen and (TDAIRuntime.StartCount = 0), 'Another scope reservation blocks a transient server start');
+    Check(TDAIPortReservations.ReserveCount = 2, 'Rejected transient start does not create a reservation');
+    TDAIPortReservations.OtherPortReserved := False;
+    ButtonControl(LFrame, 'Server starten').Click;
+    Check((TDAIRuntime.StartCount = 1) and (TDAIRuntime.CapturedPort = 7116), 'An unreserved alternate port can start transiently');
+    Check(TDAIPortReservations.ReserveCount = 2, 'Starting an alternate port does not create a reservation');
+    ButtonControl(LFrame, 'Server stoppen').Click;
+    EditControl(LFrame, True).Text := '7115';
+    ButtonControl(LFrame, 'Server starten').Click;
+    Check((TDAIRuntime.StartCount = 2) and (TDAIRuntime.CapturedPort = 7115), 'A reserved draft port can start normally');
+    Check(TDAIPortReservations.ReserveCount = 2, 'Starting the reserved draft does not change reservations');
+    ButtonControl(LFrame, 'Server stoppen').Click;
+    LSaved := TDAISettings.Instance.SaveCount;
+    TDAIPortReservations.FailReserve := True;
+    EditControl(LFrame, True).Text := '7116';
+    LFailed := False;
+    try
+      LFrame.StoreToSettings;
+    except
+      on E: Exception do
+        LFailed := E.Message = 'Synthetic reservation conflict';
+    end;
+    Check(LFailed, 'A reservation conflict is propagated');
+    Check(TDAISettings.Instance.SaveCount = LSaved, 'A reservation conflict prevents saving connection settings');
+    Check(TDAISettings.Instance.Port = 7115, 'A reservation conflict leaves the stored port unchanged');
+    TDAIPortReservations.FailReserve := False;
+    SharedConnectionControl(LFrame).Checked := False;
+    LFrame.StoreToSettings;
+    Check(TDAIPortReservations.LastKey = 'DAI:dai_bds37_0', 'Local IDE profile uses a distinct reservation key');
+    LSearch.Click;
+    Check(Pos('noch nicht reserviert oder gespeichert', LMemo.Text) > 0, 'Search result is marked as an unsaved suggestion');
+    LFrame.StoreToSettings;
+    Check(Pos('noch nicht reserviert oder gespeichert', LMemo.Text) = 0, 'Saving clears the stale suggestion notice');
+  finally
+    TDAIPortReservations.Available := False;
+    TDAIPortReservations.ApplicationAvailable := False;
+    TDAIPortReservations.DenyWrite := False;
+    TDAIPortReservations.Ports := '';
+    TDAIPortReservations.FailReserve := False;
+    TDAIPortReservations.RangeAvailable := False;
+    TDAIPortReservations.OtherPortReserved := False;
+    LProbe.Timer.Free;
+    LProbe.Free;
+    LFrame.Free;
+    Application.Handle := LApplicationHandle;
+    LHost.Free;
+  end;
+end;
+
+procedure CheckPortSetupSuggestion;
+var
+  LHost: TForm;
+  LFrame: TDAIOptionsFrame;
+  LProbe: TPortWarningProbe;
+  LApplicationHandle: HWND;
+  LSaved, LRegistered: Integer;
+  LFailed: Boolean;
+  LLanguage: TDAILanguage;
+
+  procedure NewFrame;
+  begin
+    FreeAndNil(LFrame);
+    LFrame := TDAIOptionsFrame.Create(nil);
+    LFrame.Visible := False;
+    LFrame.Parent := LHost;
+    LFrame.LoadFromSettings;
+  end;
+
+  procedure SaveWithReply(const AButton: Integer);
+  begin
+    LProbe.Seen := False;
+    LProbe.Ticks := 0;
+    LProbe.ReplyButton := AButton;
+    LProbe.Timer.Enabled := True;
+    try
+      LFrame.StoreToSettings;
+    finally
+      LProbe.Timer.Enabled := False;
+    end;
+  end;
+
+begin
+  TestStage := 'PortSetupSuggestion';
+  TDAIRuntime.Reset;
+  TDAISettings.Reset;
+  TDAIPermissionManager.Reset;
+  TDAIClientRegistration.RegisterCount := 0;
+  TDAIPortReservations.Available := False;
+  TDAIPortReservations.ApplicationAvailable := False;
+  TDAIPortReservations.DenyWrite := False;
+  TDAIPortReservations.RangeAvailable := False;
+  TDAIPortReservations.Ports := '';
+  TDAIPortReservations.FailReserve := False;
+  TDAIPortReservations.InitializeCount := 0;
+  TDAIPortReservations.ReserveCount := 0;
+  TDAIPortReservations.WindowsServer := False;
+  LHost := TForm.CreateNew(nil);
+  LFrame := nil;
+  LProbe := TPortWarningProbe.Create;
+  LProbe.Timer := TTimer.Create(nil);
+  LProbe.Timer.Enabled := False;
+  LProbe.Timer.Interval := 25;
+  LProbe.Timer.OnTimer := LProbe.Dismiss;
+  LHost.Visible := False;
+  LApplicationHandle := Application.Handle;
+  Application.Handle := LHost.Handle;
+  try
+    NewFrame;
+    SaveWithReply(IDNO);
+    Check(not LProbe.Seen, 'A desktop saves without recommending shared management');
+    Check((TDAIPortReservations.InitializeCount = 0) and (TDAIPortReservations.ReserveCount = 0),
+      'Desktop save does not set up or reserve anything');
+    TDAIPortReservations.WindowsServer := True;
+    NewFrame;
+    EditControl(LFrame, True).Text := '7116';
+    LRegistered := TDAIClientRegistration.RegisterCount;
+    LSaved := TDAISettings.Instance.SaveCount;
+    LProbe.Seen := False;
+    LProbe.Ticks := 0;
+    LProbe.ReplyButton := IDCANCEL;
+    LProbe.Timer.Enabled := True;
+    try
+      Check(not LFrame.ValidateContentsForSave, 'Cancelling the server question cancels IDE validation');
+    finally
+      LProbe.Timer.Enabled := False;
+    end;
+    Check(LProbe.Seen and (TDAISettings.Instance.SaveCount = LSaved), 'Cancelled validation keeps the settings unsaved');
+    Check((TDAIPortReservations.InitializeCount = 0) and (TDAIPortReservations.ReserveCount = 0),
+      'Cancelled validation creates no shared files or reservations');
+    SaveWithReply(IDNO);
+    Check(LProbe.Seen, 'Server asks before setting up shared management');
+    Check(TDAISettings.Instance.SaveCount = LSaved + 1, 'Declining still saves the user settings');
+    Check((TDAISettings.Instance.Port = 7116) and (TDAIPortReservations.InitializeCount = 0),
+      'Declining preserves the chosen port without setup');
+    Check((TDAIPortReservations.ReserveCount = 0) and (TDAIClientRegistration.RegisterCount = LRegistered),
+      'Declining does not reserve or change client registrations');
+    SaveWithReply(IDNO);
+    Check(not LProbe.Seen, 'A declined suggestion is not repeated within the same options frame');
+
+    NewFrame;
+    LSaved := TDAISettings.Instance.SaveCount;
+    LProbe.SeenCount := 0;
+    LProbe.Ticks := 0;
+    LProbe.ReplyButton := IDCANCEL;
+    LProbe.Timer.Enabled := True;
+    try
+      ButtonControl(LFrame, 'Registrieren').Click;
+    finally
+      LProbe.Timer.Enabled := False;
+    end;
+    Check(LProbe.SeenCount = 1, 'Cancelling registration does not show an additional error');
+    Check((TDAISettings.Instance.SaveCount = LSaved) and (TDAIClientRegistration.RegisterCount = LRegistered),
+      'Cancelling the question stops registration without saving or registering');
+
+    NewFrame;
+    EditControl(LFrame, True).Text := '7117';
+    TDAIPortReservations.FailReserve := True;
+    LSaved := TDAISettings.Instance.SaveCount;
+    LFailed := False;
+    try
+      SaveWithReply(IDYES);
+    except
+      on E: Exception do
+        LFailed := E.Message = 'Synthetic reservation conflict';
+    end;
+    Check(LProbe.Seen and LFailed, 'Accepted setup reports a reservation conflict');
+    Check((TDAISettings.Instance.SaveCount = LSaved) and (TDAISettings.Instance.Port = 7116),
+      'A reservation conflict does not save or replace the prior port');
+    TDAIPortReservations.FailReserve := False;
+    SaveWithReply(IDYES);
+    Check(LProbe.Seen, 'A failed setup can be confirmed again on retry');
+    Check((TDAISettings.Instance.SaveCount = LSaved + 1) and (TDAISettings.Instance.Port = 7117),
+      'Accepted setup saves the exact selected port');
+    Check((TDAIPortReservations.LastPort = 7117) and not TDAIPortReservations.LastAllowFallback,
+      'Accepted setup reserves the exact port without fallback');
+    Check(TDAIClientRegistration.RegisterCount = LRegistered, 'Accepted setup does not change client registrations');
+    Check(TDAIPortReservations.InitializeCount = 2, 'Setup can be safely retried after a reservation conflict');
+
+    TDAIPortReservations.Ports := '';
+    TDAIPortReservations.Available := False;
+    TDAIPortReservations.ApplicationAvailable := False;
+    NewFrame;
+    EditControl(LFrame, True).Text := '7118';
+    LSaved := TDAISettings.Instance.SaveCount;
+    TDAIPortReservations.FailReserve := True;
+    LProbe.SeenCount := 0;
+    LProbe.Ticks := 0;
+    LProbe.ReplyButton := IDYES;
+    LProbe.Timer.Enabled := True;
+    try
+      Check(not LFrame.ValidateContentsForSave, 'Reservation failure rejects IDE validation while the dialog is still open');
+    finally
+      LProbe.Timer.Enabled := False;
+    end;
+    Check(LProbe.SeenCount >= 2, 'IDE validation presents the setup question and the reservation error');
+    Check((LFrame.FindComponent('DAIPortReservationReserveButton') as TButton).Enabled,
+      'The open dialog refreshes its port controls after partial setup');
+    Check((TDAISettings.Instance.SaveCount = LSaved) and (TDAISettings.Instance.Port = 7117),
+      'Failed validation leaves the saved port and connection untouched');
+    TDAIPortReservations.FailReserve := False;
+    LProbe.Seen := False;
+    LProbe.Ticks := 0;
+    LProbe.ReplyButton := IDYES;
+    LProbe.Timer.Enabled := True;
+    try
+      Check(LFrame.ValidateContentsForSave, 'The IDE validation accepts successful setup');
+    finally
+      LProbe.Timer.Enabled := False;
+    end;
+    Check(LProbe.Seen and (TDAIPortReservations.LastPort = 7118), 'IDE validation shows and performs the confirmed reservation');
+    Check(TDAISettings.Instance.SaveCount = LSaved, 'IDE validation does not save connection settings');
+    Check(TDAIClientRegistration.RegisterCount = LRegistered, 'IDE validation does not register clients');
+    TDAIPortReservations.Ports := '7118';
+    SaveWithReply(IDNO);
+    Check(not LProbe.Seen and (TDAISettings.Instance.Port = 7118), 'The subsequent IDE save does not show a second question');
+
+    TDAIPortReservations.Ports := '7117';
+    NewFrame;
+    SaveWithReply(IDNO);
+    Check(not LProbe.Seen, 'An already participating connection does not prompt again');
+    Check((TDAIPortReservations.LastPort = 7118) and not TDAIPortReservations.LastAllowFallback,
+      'An existing participant retains the exact port on save');
+
+    TDAIPortReservations.Ports := '';
+    TDAIPortReservations.Available := False;
+    TDAIPortReservations.ApplicationAvailable := False;
+    for LLanguage := Low(TDAILanguage) to High(TDAILanguage) do
+    begin
+      DAISetLanguageForTests(LLanguage);
+      NewFrame;
+      SaveWithReply(IDNO);
+      Check(LProbe.Seen, 'Server setup question appears in each IDE language');
+      Check(TDAIClientRegistration.RegisterCount = LRegistered, 'Localized decline leaves client registrations unchanged');
+    end;
+  finally
+    DAISetLanguageForTests(dlGerman);
+    TDAIPortReservations.WindowsServer := False;
+    TDAIPortReservations.Available := False;
+    TDAIPortReservations.ApplicationAvailable := False;
+    TDAIPortReservations.Ports := '';
+    TDAIPortReservations.FailReserve := False;
+    LProbe.Timer.Free;
+    LProbe.Free;
+    LFrame.Free;
+    Application.Handle := LApplicationHandle;
+    LHost.Free;
+  end;
+end;
+
 procedure CheckRegistrationHealthRefresh;
 var
   LHost: TForm;
@@ -1474,6 +1901,9 @@ procedure CheckOptionsLanguages;
 const
   CStartCaptions: array[TDAILanguage] of string = ('Start server', 'Server starten', 'Démarrer le serveur', 'サーバーを開始');
   CManualCaptions: array[TDAILanguage] of string = ('Register manually…', 'Manuell registrieren…', 'Inscription manuelle…', '手動で登録…');
+  CReserveCaptions: array[TDAILanguage] of string = ('Reserve port', 'Port reservieren', 'Réserver un port', 'ポートを予約');
+  CSearchCaptions: array[TDAILanguage] of string = ('Find available port', 'Freien Port suchen', 'Rechercher un port libre', '空きポートを検索');
+  CRangeOutside: array[TDAILanguage] of string = ('outside', 'außerhalb', 'hors plage', '範囲外');
   CAllClients: array[TDAILanguage] of string = ('All detected clients', 'Alle erkannten Clients',
     'Tous les clients détectés', '検出されたすべてのクライアント');
   CAlwaysCaptions: array[TDAILanguage] of string = ('Always allow', 'Immer erlauben', 'Toujours autoriser', '常に許可');
@@ -1499,6 +1929,12 @@ begin
   TDAIPermissionManager.Reset;
   TDAIClientRegistration.RegisterCount := 0;
   TDAIClientRegistration.UnregisterCount := 0;
+  TDAIPortReservations.Available := True;
+  TDAIPortReservations.ApplicationAvailable := True;
+  TDAIPortReservations.RangeAvailable := True;
+  TDAIPortReservations.RangeStart := 17331;
+  TDAIPortReservations.RangeEnd := 17430;
+  TDAIPortReservations.Ports := '7101';
   LPort := TDAISettings.Instance.Port;
   LToken := TDAISettings.Instance.Token;
   LStatus := TJSONObject.Create;
@@ -1532,6 +1968,13 @@ begin
       LFrame.Parent := LHost;
       LFrame.LoadFromSettings;
       Check(Assigned(ButtonControl(LFrame, CStartCaptions[LLanguage])), 'Server action uses the selected IDE language');
+      LButton := LFrame.FindComponent('DAIPortReservationReserveButton') as TButton;
+      Check(Assigned(LButton) and (LButton.Caption = CReserveCaptions[LLanguage]), 'Port reservation action is localized');
+      LButton := LFrame.FindComponent('DAIPortSearchButton') as TButton;
+      Check(Assigned(LButton) and (LButton.Caption = CSearchCaptions[LLanguage]), 'Free-port search action is localized');
+      LMemo := LFrame.FindComponent('DAIPortReservationStatusMemo') as TMemo;
+      Check((Pos('17331–17430', LMemo.Text) > 0) and (Pos(CRangeOutside[LLanguage], LMemo.Text) > 0),
+        'Configured range and the allowed outside-port hint are localized');
       LButton := LFrame.FindComponent('DAIManualRegistrationButton') as TButton;
       Check(LButton.Caption = CManualCaptions[LLanguage], 'Manual registration action uses the selected IDE language');
       LClients := LFrame.FindComponent('DAIClientComboBox') as TComboBox;
@@ -1567,6 +2010,10 @@ begin
     CheckNoPersistence;
   finally
     DAISetLanguageForTests(dlGerman);
+    TDAIPortReservations.Available := False;
+    TDAIPortReservations.ApplicationAvailable := False;
+    TDAIPortReservations.RangeAvailable := False;
+    TDAIPortReservations.Ports := '';
     TDAIClientRegistration.StatusJSON := '';
     LStatus.Free;
     LProbe.Timer.Free;
@@ -1800,6 +2247,8 @@ begin
     RunChecks;
     CheckLifecycleOptions;
     CheckConnectionScopeOptions;
+    CheckPortManagementOptions;
+    CheckPortSetupSuggestion;
     CheckPermissionColumns;
     CheckRegistrationHealthRefresh;
     CheckManualRegistrationOptions;

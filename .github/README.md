@@ -53,6 +53,7 @@
   - Search source code (read-only): OpenToolsAPI, Delphi sources (RTL/VCL/FMX), demos, installed GetIt packages (user and shared repositories), and optional additional directories
   - Local SQLite declaration indexes for Delphi/ToolsAPI, GetIt, the project and project group
   - DAI user interface in English, German, French or Japanese, following the IDE language
+  - Optional shared Windows port reservations for multiple users and participating applications
     <details>
       <summary><b>Details</b></summary>
 
@@ -99,6 +100,7 @@
   - Quelltexte durchsuchen (read-only): OpenToolsAPI, Delphi-Sourcen (RTL/VCL/FMX), Demos, installierte GetIt-Pakete (Benutzer- und globale Repositories) und zusätzliche Verzeichnisse
   - Lokale SQLite-Deklarationsindizes für Delphi/ToolsAPI, GetIt, Projekt und Projektgruppe
   - DAI-Oberfläche auf Deutsch, Englisch, Französisch oder Japanisch, entsprechend der IDE-Sprache
+  - Optionale gemeinsame Windows-Portreservierung für mehrere Benutzer und beteiligte Anwendungen
     <details>
       <summary><b>Details</b></summary>
 

@@ -80,7 +80,7 @@ end;
 function TDAIOptionsPage.ValidateContents: Boolean;
 begin
   if FFrame is TDAIOptionsFrame then
-    Result := TDAIOptionsFrame(FFrame).ValidateContents
+    Result := TDAIOptionsFrame(FFrame).ValidateContentsForSave
   else
     Result := True;
 end;

@@ -1,6 +1,12 @@
-﻿# Änderungsprotokoll
+# Änderungsprotokoll
 
 ## 1.2.36
+
+- Bei Portkonflikten weist DAI auf die optionale gemeinsame Portverwaltung hin. Windows Server fragt beim Speichern oder Registrieren vor der Einrichtung; normale Desktops bleiben ohne Nachfrage.
+
+- Freie Portsuche mit gemeinsamem Bereich oder ab dem eingetragenen Port sowie exklusivem TCP-Bindetest. Eigene Ports außerhalb des Bereichs bleiben zulässig; Reservieren übernimmt ausschließlich den angezeigten Port.
+
+- Optionale gemeinsame Windows-Portverwaltung für mehrere Benutzer und Anwendungen: sitzungsübergreifende Vergabe, dauerhafte Reservierung pro Verbindungsbereich und sichere Benutzerdateien unter ProgramData. Vorhandene Clientregistrierungen bleiben bis zur bewussten Umstellung erhalten.
 
 - Der DAI-Toolbarbutton erhält eine persistente Tag-Kennung. Auch bei verlorenen Namen, Aktionen und Menüs wird das eigene markierte Objekt an seiner bisherigen Position wiederverwendet und verbunden; eigene markierte Duplikate werden bereinigt, fremde Buttons bleiben erhalten.
 

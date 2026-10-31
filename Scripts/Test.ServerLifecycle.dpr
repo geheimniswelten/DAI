@@ -12,6 +12,7 @@ uses
   IdSocketHandle,
   IdStack,
   h5u.DAI.Consts,
+  h5u.DAI.Localization,
   h5u.DAI.MCP.Server,
   h5u.DAI.MCP.Sessions,
   h5u.DAI.WinAPI.TCP;
@@ -231,6 +232,49 @@ begin
   end;
 end;
 
+procedure RunPortConflictHint;
+const
+  ExpectedHints: array[TDAILanguage] of string = ('shared port management', 'gemeinsame Portverwaltung',
+    'gestion partagée des ports', '共有ポート管理');
+var
+  LGuid: TGUID;
+  LName: string;
+  LServer: TDAIMCPServer;
+  LBlocker: TIdHTTPServer;
+  LBinding: TIdSocketHandle;
+  LPort: Integer;
+  LLanguage: TDAILanguage;
+begin
+  CreateGUID(LGuid);
+  LName := 'Local\DAI.ServerConflict.' + GUIDToString(LGuid);
+  LServer := TDAIMCPServer.Create(CDAIMCPSessionIdleTimeoutMs, 3, nil, LName);
+  LBlocker := TIdHTTPServer.Create(nil);
+  try
+    LPort := StartOnFreePort(LServer);
+    Check(LServer.Stop, 'Conflict fixture releases its initial port');
+    LBinding := LBlocker.Bindings.Add;
+    LBinding.IP := '127.0.0.1';
+    LBinding.Port := LPort;
+    LBlocker.Active := True;
+    Check(LBlocker.Active, 'Conflict fixture owns the port with an independent listener');
+    for LLanguage := Low(TDAILanguage) to High(TDAILanguage) do
+    begin
+      DAISetLanguageForTests(LLanguage);
+      Check(not LServer.Start(LPort, CFixtureToken), 'An occupied TCP port prevents server startup');
+      Check(Pos(ExpectedHints[LLanguage], LServer.LastError) > 0, 'Bind error suggests shared management in the IDE language');
+      Check(Pos('PID ' + IntToStr(GetCurrentProcessId), LServer.LastError) > 0, 'Bind error retains listener process diagnostics');
+      Check(not LServer.Active, 'Failed start leaves the MCP server stopped');
+    end;
+    LBlocker.Active := False;
+    Check(LServer.Start(LPort, CFixtureToken), 'The server can use the port after the blocker closes');
+    Check(LServer.Stop, 'Conflict fixture finishes cleanly');
+  finally
+    DAIResetLanguageForTests;
+    LBlocker.Free;
+    LServer.Free;
+  end;
+end;
+
 procedure RunInheritedListener;
 var
   LGuid: TGUID;
@@ -408,7 +452,10 @@ begin
       LoadHostPeers;
       RunInheritedListener;
       if not HasArgument('--inheritance-only') then
+      begin
+        RunPortConflictHint;
         RunLifecycle;
+      end;
     finally
       UnloadHostPeers;
     end;

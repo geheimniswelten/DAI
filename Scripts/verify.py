@@ -1007,6 +1007,26 @@ def check_options_frame_layout(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.Settings.pas: Bearer-Token-Erzeugung muss weiterhin eine neue GUID erzeugen")
 
 
+def supported_windows_property_text(dproj: str) -> str:
+    """Extract project properties that can apply to the supported Windows IDE builds."""
+    try:
+        root = ET.fromstring(dproj)
+    except ET.ParseError:
+        return ""  # check_dproj reports the actual XML error.
+    groups = []
+    for group in root.findall("{*}PropertyGroup"):
+        condition = group.get("Condition", "")
+        platform_names = re.findall(r"\$\((?:Base|Cfg_\d+)_(\w+)\)", condition, re.IGNORECASE)
+        platform_names += re.findall(r"'\$\(Platform\)'\s*==\s*'([^']+)'", condition, re.IGNORECASE)
+        if platform_names and not any(name.lower() in {"win32", "win64"} for name in platform_names):
+            continue
+        # ElementTree's namespace prefixes are unnecessary for the simple tag check below.
+        for child in group:
+            if child.tag.rsplit("}", 1)[-1] in {"VerInfo_IncludeVerInfo", "VerInfo_Keys"}:
+                groups.append(f"<{child.tag.rsplit('}', 1)[-1]}>{child.text or ''}</{child.tag.rsplit('}', 1)[-1]}>")
+    return "\n".join(groups)
+
+
 def check_version_consistency(errors: list[str]) -> None:
     expected = "1.2.36"
     consts = read_project_text(SOURCE / "h5u.DAI.Consts.pas")
@@ -1016,9 +1036,10 @@ def check_version_consistency(errors: list[str]) -> None:
 
     if f"CDAIVersion = '{expected}'" not in consts:
         fail(errors, f"h5u.DAI.Consts.pas: CDAIVersion muss {expected} sein")
-    # VERSIONINFO is optional; the current IDE-saved project does not enable it.
-    version_info_enabled = re.search(r"<VerInfo_IncludeVerInfo>\s*true\s*</VerInfo_IncludeVerInfo>", dproj, re.IGNORECASE)
-    if version_info_enabled and (f"FileVersion={expected}.0" not in dproj or f"ProductVersion={expected}.0" not in dproj):
+    # IDE-generated mobile/Win64x metadata does not apply to the Win32/Win64 IDE packages.
+    windows_properties = supported_windows_property_text(dproj)
+    version_info_enabled = re.search(r"<VerInfo_IncludeVerInfo>\s*true\s*</VerInfo_IncludeVerInfo>", windows_properties, re.IGNORECASE)
+    if version_info_enabled and (f"FileVersion={expected}.0" not in windows_properties or f"ProductVersion={expected}.0" not in windows_properties):
         fail(errors, f"DAI.dproj: aktivierte Datei- und Produktversion müssen {expected}.0 sein")
     if f"version = '{expected}'" not in test_client:
         fail(errors, f"Test-MCP.ps1: Clientversion muss {expected} sein")
@@ -1255,10 +1276,10 @@ def check_lexical_balance(errors: list[str]) -> None:
 
 def deliverable_files() -> list[Path]:
     """Check the shipped source, excluding builds, personal chats and permission files."""
-    files = [p for folder in (SOURCE, ROOT / "Scripts") for p in folder.rglob("*")
+    files = [p for folder in (SOURCE, ROOT / "Scripts", ROOT / "docs") for p in folder.rglob("*")
              if p.is_file() and "__pycache__" not in p.parts and p.suffix.lower() != ".pyc"]
     names = ("DAI.dpk", "DAI.dproj", "DAI.McpBridge.dpr", "Build.ps1", "Test-MCP.ps1", ".gitignore",
-             "README.md", "CHANGELOG.md", "FINAL_VERIFICATION.md", "GETIT_COMPARISON.txt", "OPENTOOLSAPI_CODE_INSIGHT.md")
+             "README.md", "CHANGELOG.md", "FINAL_VERIFICATION.md", "PORT_RESERVATION.md", "GETIT_COMPARISON.txt", "OPENTOOLSAPI_CODE_INSIGHT.md")
     files.extend(ROOT / name for name in names if (ROOT / name).is_file())
     return files
 

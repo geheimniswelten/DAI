@@ -167,6 +167,7 @@
         <DCCReference Include="Source\h5u.DAI.Clients.ConfigText.pas"/>
         <DCCReference Include="Source\h5u.DAI.Codex.Registration.pas"/>
         <DCCReference Include="Source\h5u.DAI.Consts.pas"/>
+        <DCCReference Include="Source\h5u.DAI.PortReservations.pas"/>
         <DCCReference Include="Source\h5u.DAI.Localization.pas"/>
         <DCCReference Include="Source\h5u.DAI.Usage.pas"/>
         <DCCReference Include="Source\h5u.DAI.Symbols.Parser.pas"/>

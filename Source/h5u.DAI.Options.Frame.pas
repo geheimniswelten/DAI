@@ -32,6 +32,18 @@ type
     FManualRegistrationLoaded: array[Boolean] of Boolean;
     FManualRegistrationDraft: array[Boolean] of Boolean;
     FPortEdit: TEdit;
+    FPortSearchButton: TButton;
+    FPortRangeAvailable: Boolean;
+    FPortRangeStart: Integer;
+    FPortRangeEnd: Integer;
+    FPortReservationBaseStatus: string;
+    FPortReservationPath: string;
+    FPortSearchMessage: string;
+    FPortSetupSuggested: Boolean;
+    FPortReservationStatusMemo: TMemo;
+    FPortReservationSetupButton: TButton;
+    FPortReservationReserveButton: TButton;
+    FPortReservationReleaseButton: TButton;
     FTokenEdit: TEdit;
     FGenerateTokenButton: TButton;
     FDirectoriesMemo: TMemo;
@@ -72,6 +84,15 @@ type
     procedure StartServerClicked(Sender: TObject);
     procedure StopServerClicked(Sender: TObject);
     procedure GenerateTokenClicked(Sender: TObject);
+    function PortReservationKey: string;
+    procedure SuggestPortManagement(const APort: Integer);
+    procedure RefreshPortReservationStatus;
+    procedure UpdatePortReservationText;
+    procedure PortEditChanged(Sender: TObject);
+    procedure PortSearchClicked(Sender: TObject);
+    procedure PortReservationSetupClicked(Sender: TObject);
+    procedure PortReservationReserveClicked(Sender: TObject);
+    procedure PortReservationReleaseClicked(Sender: TObject);
     procedure UsageLogLinkClicked(Sender: TObject; const Link: string; LinkType: TSysLinkType);
     procedure ClientChanged(Sender: TObject);
     function SelectedClient: string;
@@ -88,6 +109,7 @@ type
     procedure LoadFromSettings;
     procedure StoreToSettings;
     function ValidateContents: Boolean;
+    function ValidateContentsForSave: Boolean;
     procedure RefreshRegistrationStatus;
   end;
 
@@ -102,6 +124,7 @@ uses
   System.SysUtils,
   System.Types,
   System.UITypes,
+  Winapi.Windows,
   Vcl.Dialogs,
   Vcl.Clipbrd,
   Vcl.ComCtrls,
@@ -116,6 +139,7 @@ uses
   h5u.DAI.OTA.Helpers,
   h5u.DAI.Permissions.Dialog,
   h5u.DAI.Permissions.Manager,
+  h5u.DAI.PortReservations,
   h5u.DAI.Runtime,
   h5u.DAI.Registry.Editor,
   h5u.DAI.Settings;
@@ -643,13 +667,56 @@ begin
   NewLabel(Self, DAIText('Port', 'Port', 'Port', 'ポート'), 24, LTop + 4);
   FPortEdit := TEdit.Create(Self);
   FPortEdit.Parent := Self;
+  FPortEdit.Name := 'DAIPortEdit';
   FPortEdit.Left := 160;
   FPortEdit.Top := LTop;
   FPortEdit.Width := 100;
   FPortEdit.NumbersOnly := True;
   with NewLabel(Self, Format(DAIText('Standard: %d', 'Default: %d', 'Par défaut : %d', '既定: %d'), [CDAIDefaultPort]), FPortEdit.Left + FPortEdit.Width + 12, LTop + 4) do
     Font.Color := clGrayText;
+  FPortSearchButton := TButton.Create(Self);
+  FPortSearchButton.Parent := Self;
+  FPortSearchButton.Name := 'DAIPortSearchButton';
+  FPortSearchButton.SetBounds(380, LTop - 2, 220, 28);
+  FPortSearchButton.Caption := DAIText('Freien Port suchen', 'Find available port', 'Rechercher un port libre', '空きポートを検索');
+  FPortSearchButton.Hint := DAIText(
+    'Sucht anhand gemeinsamer Reservierungen und einer Windows-TCP-Prüfung. Das Ergebnis ist ein Vorschlag und noch nicht reserviert.',
+    'Searches shared reservations and checks Windows TCP. The result is a suggestion and is not yet reserved.',
+    'Vérifie les réservations partagées et le port TCP Windows. Le résultat est une proposition non réservée.',
+    '共有予約とWindowsのTCPポートを確認します。結果は候補であり、まだ予約されていません。');
+  FPortSearchButton.ShowHint := True;
+  FPortSearchButton.OnClick := PortSearchClicked;
+  FPortEdit.OnChange := PortEditChanged;
   Inc(LTop, 32);
+
+  FPortReservationStatusMemo := NewStatusMemo('DAIPortReservationStatusMemo', LTop, 760, 64);
+  Inc(LTop, 68);
+  FPortReservationSetupButton := TButton.Create(Self);
+  FPortReservationSetupButton.Parent := Self;
+  FPortReservationSetupButton.Name := 'DAIPortReservationSetupButton';
+  FPortReservationSetupButton.SetBounds(24, LTop, 210, 28);
+  FPortReservationSetupButton.Caption := DAIText('Portverwaltung einrichten', 'Set up port management',
+    'Configurer la gestion des ports', 'ポート管理を設定');
+  FPortReservationSetupButton.OnClick := PortReservationSetupClicked;
+  FPortReservationReserveButton := TButton.Create(Self);
+  FPortReservationReserveButton.Parent := Self;
+  FPortReservationReserveButton.Name := 'DAIPortReservationReserveButton';
+  FPortReservationReserveButton.SetBounds(242, LTop, 210, 28);
+  FPortReservationReserveButton.Caption := DAIText('Port reservieren', 'Reserve port', 'Réserver un port', 'ポートを予約');
+  FPortReservationReserveButton.Hint := DAIText(
+    'Reserviert sofort dauerhaft einen Port für diesen Bereich. Den angezeigten Port anschließend speichern und Clients neu registrieren.',
+    'Immediately reserves a port for this scope. Save the displayed port and register clients again afterwards.',
+    'Réserve immédiatement un port pour cette portée. Enregistrez ensuite le port et réinscrivez les clients.',
+    'この範囲のポートを直ちに予約します。その後、表示されたポートを保存し、クライアントを再登録してください。');
+  FPortReservationReserveButton.ShowHint := True;
+  FPortReservationReserveButton.OnClick := PortReservationReserveClicked;
+  FPortReservationReleaseButton := TButton.Create(Self);
+  FPortReservationReleaseButton.Parent := Self;
+  FPortReservationReleaseButton.Name := 'DAIPortReservationReleaseButton';
+  FPortReservationReleaseButton.SetBounds(460, LTop, 210, 28);
+  FPortReservationReleaseButton.Caption := DAIText('Port freigeben', 'Release port', 'Libérer le port', 'ポートを解放');
+  FPortReservationReleaseButton.OnClick := PortReservationReleaseClicked;
+  Inc(LTop, 36);
 
   NewLabel(Self, DAIText('Bearer-Token', 'Bearer token', 'Jeton Bearer', 'Bearerトークン'), 24, LTop + 4);
   FTokenEdit := TEdit.Create(Self);
@@ -1028,9 +1095,31 @@ begin
 end;
 
 procedure TDAIOptionsFrame.StartServerClicked(Sender: TObject);
+var
+  LManager: TDAIPortReservations;
 begin
   if not ValidateContents then
     Exit;
+  try
+    LManager := TDAIPortReservations.Create;
+    try
+      if LManager.Exists then
+        if LManager.ReservedByOther(PortReservationKey, StrToIntDef(Trim(FPortEdit.Text), 0)) then
+          raise EInvalidOperation.Create(DAIText(
+            'Dieser Port ist für einen anderen Benutzer oder Verbindungsbereich reserviert.',
+            'This port is reserved for another user or connection scope.',
+            'Ce port est réservé pour un autre utilisateur ou une autre connexion.',
+            'このポートは別のユーザーまたは接続範囲に予約されています。'));
+    finally
+      LManager.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);
+      Exit;
+    end;
+  end;
   if not TDAIRuntime.StartServer(StrToIntDef(Trim(FPortEdit.Text), 0), Trim(FTokenEdit.Text)) then
     TaskMessageDlg('DAI', TDAIRuntime.LastServerError, mtInformation, [mbOK], 0);
   RefreshServerStatus;
@@ -1052,6 +1141,271 @@ begin
   FTokenEdit.SelectAll;
 end;
 
+function TDAIOptionsFrame.PortReservationKey: string;
+begin
+  Result := 'DAI:' + DAIRegistrationServerName(FUseSharedConnectionSettingsCheckBox.Checked, TDAISettings.Instance.RegistryRoot);
+end;
+
+procedure TDAIOptionsFrame.SuggestPortManagement(const APort: Integer);
+var
+  LManager: TDAIPortReservations;
+  LActivePort, LChoice: Integer;
+begin
+  if FPortSetupSuggested or not TDAIPortReservations.IsWindowsServer then
+    Exit;
+  LManager := TDAIPortReservations.Create;
+  try
+    if LManager.Exists then
+      if LManager.OwnPorts(PortReservationKey) <> '' then
+        Exit;
+    FPortSetupSuggested := True;
+    LChoice := TaskMessageDlg('DAI', Format(DAIText(
+      'Auf Windows Server können mehrere Benutzer dieselben Ports benötigen. Die gemeinsame Portverwaltung einrichten und Port %d sofort reservieren? ' +
+        'Die Reservierung bleibt auch bei Abbruch bestehen; Port und Clientregistrierungen werden nicht automatisch geändert.',
+      'On Windows Server, multiple users may need the same ports. Set up shared port management and reserve port %d now? ' +
+        'The reservation remains if you cancel; the port and client registrations are not changed automatically.',
+      'Sur Windows Server, plusieurs utilisateurs peuvent avoir besoin des mêmes ports. Configurer la gestion partagée et réserver le port %d ? ' +
+        'La réservation persiste en cas d’annulation ; le port et les inscriptions ne changent pas automatiquement.',
+      'Windows Serverでは複数のユーザーが同じポートを必要とする場合があります。共有ポート管理を設定してポート%dを直ちに予約しますか？ ' +
+        '予約はキャンセル後も残ります。ポートとクライアント登録は自動的には変更されません。'), [APort]), mtConfirmation, [mbYes, mbNo, mbCancel], 0, mbNo);
+    if (LChoice <> mrYes) and (LChoice <> mrNo) then
+    begin
+      FPortSetupSuggested := False;
+      Abort;
+    end;
+    if LChoice = mrYes then
+      try
+        try
+          LManager.Initialize;
+          LActivePort := 0;
+          if TDAIRuntime.ServerActive then
+            LActivePort := TDAIRuntime.ServerPort;
+          LManager.Reserve(PortReservationKey, APort, LActivePort, False);
+        except
+          FPortSetupSuggested := False;
+          raise;
+        end;
+      finally
+        RefreshPortReservationStatus;
+      end;
+  finally
+    LManager.Free;
+  end;
+end;
+
+procedure TDAIOptionsFrame.RefreshPortReservationStatus;
+var
+  LManager: TDAIPortReservations;
+  LPorts, LMessage: string;
+  LAvailable, LAppAvailable, LWritable: Boolean;
+begin
+  if not Assigned(FPortReservationStatusMemo) or FLoadingConnectionSettings then
+    Exit;
+  LAppAvailable := False;
+  LWritable := False;
+  FPortRangeAvailable := False;
+  FPortReservationPath := '';
+  LManager := nil;
+  try
+    LManager := TDAIPortReservations.Create;
+    FPortReservationPath := LManager.Directory;
+    LAvailable := LManager.Exists;
+    if not LAvailable then
+    begin
+      if TDAIPortReservations.IsWindowsServer then
+        LMessage := DAIText('Windows Server: gemeinsame Portverwaltung kann eingerichtet werden.',
+          'Windows Server: shared port management can be set up.',
+          'Windows Server : la gestion partagée des ports peut être configurée.',
+          'Windows Server: 共有ポート管理を設定できます。')
+      else
+        LMessage := DAIText('Gemeinsame Portverwaltung ist nicht eingerichtet.', 'Shared port management is not set up.',
+          'La gestion partagée des ports n’est pas configurée.', '共有ポート管理は設定されていません。');
+    end
+    else
+    begin
+      LAppAvailable := LManager.AppExists;
+      if LAppAvailable then
+        FPortRangeAvailable := LManager.ConfiguredRange(FPortRangeStart, FPortRangeEnd);
+      LWritable := LManager.CanWrite;
+      if not LWritable then
+        LMessage := DAIText('Gemeinsame Portverwaltung ist für diesen Benutzer nur lesbar.',
+          'Shared port management is read-only for this user.', 'La gestion partagée des ports est en lecture seule pour cet utilisateur.',
+          'このユーザーは共有ポート管理を読み取ることのみできます。')
+      else if not LAppAvailable then
+        LMessage := DAIText('Gemeinsame Portverwaltung vorhanden; DAI kann eingerichtet werden.',
+          'Shared port management exists; DAI can be set up.', 'La gestion partagée existe ; DAI peut être configuré.',
+          '共有ポート管理があります。DAIを設定できます。')
+      else
+      begin
+        LPorts := LManager.OwnPorts(PortReservationKey);
+        if LPorts = '' then
+          LMessage := DAIText('Für diesen Verbindungsbereich ist kein Port reserviert.',
+            'No port is reserved for this connection scope.', 'Aucun port n’est réservé pour cette connexion.',
+            'この接続範囲のポートは予約されていません。')
+        else
+          LMessage := DAIText('Reservierte Ports dieses Verbindungsbereichs: ', 'Reserved ports for this connection scope: ',
+            'Ports réservés pour cette connexion : ', 'この接続範囲の予約ポート: ') + LPorts;
+      end;
+    end;
+    FPortReservationBaseStatus := LMessage;
+  except
+    on E: Exception do
+    begin
+      LAvailable := False;
+      LAppAvailable := False;
+      LWritable := False;
+      FPortRangeAvailable := False;
+      FPortReservationBaseStatus := DAIText('Portverwaltung nicht verfügbar: ', 'Port management unavailable: ',
+        'Gestion des ports indisponible : ', 'ポート管理を利用できません: ') + E.Message;
+    end;
+  end;
+  LManager.Free;
+  UpdatePortReservationText;
+  FPortReservationSetupButton.Enabled := not LAvailable or LWritable;
+  FPortReservationReserveButton.Enabled := LAvailable and LAppAvailable and LWritable;
+  FPortReservationReleaseButton.Enabled := LAvailable and LWritable;
+end;
+
+procedure TDAIOptionsFrame.UpdatePortReservationText;
+var
+  LText, LRange: string;
+  LPort: Integer;
+begin
+  if not Assigned(FPortReservationStatusMemo) then
+    Exit;
+  LText := FPortReservationBaseStatus;
+  if FPortRangeAvailable then
+  begin
+    LPort := StrToIntDef(Trim(FPortEdit.Text), 0);
+    if (LPort >= 1024) and (LPort <= 65535) and ((LPort < FPortRangeStart) or (LPort > FPortRangeEnd)) then
+      LRange := Format(DAIText('Gemeinsamer DAI-Portbereich: %d–%d. Der eingetragene Port liegt außerhalb und bleibt zulässig.',
+        'Shared DAI port range: %d–%d. The entered port is outside the range and remains allowed.',
+        'Plage DAI partagée : %d–%d. Le port saisi est hors plage et reste autorisé.',
+        '共有DAIポート範囲: %d–%d。入力したポートは範囲外ですが、使用できます。'), [FPortRangeStart, FPortRangeEnd])
+    else
+      LRange := Format(DAIText('Gemeinsamer DAI-Portbereich: %d–%d.', 'Shared DAI port range: %d–%d.',
+        'Plage DAI partagée : %d–%d.', '共有DAIポート範囲: %d–%d。'), [FPortRangeStart, FPortRangeEnd]);
+    LText := LText + sLineBreak + LRange;
+  end;
+  if FPortSearchMessage <> '' then
+    LText := LText + sLineBreak + FPortSearchMessage;
+  if FPortReservationPath <> '' then
+    LText := LText + sLineBreak + FPortReservationPath;
+  FPortReservationStatusMemo.Text := LText;
+end;
+
+procedure TDAIOptionsFrame.PortEditChanged(Sender: TObject);
+begin
+  FPortSearchMessage := '';
+  UpdatePortReservationText;
+end;
+
+procedure TDAIOptionsFrame.PortSearchClicked(Sender: TObject);
+var
+  LManager: TDAIPortReservations;
+  LPort, LStart, LEnd: Integer;
+  LSharedRange: Boolean;
+  LCursor: TCursor;
+begin
+  LManager := nil;
+  try
+    LManager := TDAIPortReservations.Create;
+    LCursor := Screen.Cursor;
+    Screen.Cursor := crHourGlass;
+    try
+      LPort := LManager.FindAvailablePort(StrToIntDef(Trim(FPortEdit.Text), 0), LStart, LEnd, LSharedRange);
+    finally
+      Screen.Cursor := LCursor;
+    end;
+    FPortEdit.Text := IntToStr(LPort);
+    FPortSearchMessage := DAIText('Vorschlag: noch nicht reserviert oder gespeichert.',
+      'Suggestion: not yet reserved or saved.', 'Proposition : pas encore réservée ni enregistrée.',
+      '候補: まだ予約または保存されていません。');
+    UpdatePortReservationText;
+  except
+    on E: Exception do
+      TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);
+  end;
+  LManager.Free;
+end;
+
+procedure TDAIOptionsFrame.PortReservationSetupClicked(Sender: TObject);
+var
+  LManager: TDAIPortReservations;
+begin
+  LManager := nil;
+  try
+    LManager := TDAIPortReservations.Create;
+    LManager.Initialize;
+  except
+    on E: Exception do
+      TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);
+  end;
+  LManager.Free;
+  RefreshPortReservationStatus;
+end;
+
+procedure TDAIOptionsFrame.PortReservationReserveClicked(Sender: TObject);
+var
+  LManager: TDAIPortReservations;
+  LPort, LActivePort: Integer;
+begin
+  LManager := nil;
+  try
+    LManager := TDAIPortReservations.Create;
+    LActivePort := 0;
+    if TDAIRuntime.ServerActive then
+      LActivePort := TDAIRuntime.ServerPort;
+    LPort := StrToIntDef(Trim(FPortEdit.Text), 0);
+    if (LPort < 1024) or (LPort > 65535) then
+      raise EArgumentException.Create(DAIText('Der Port muss zwischen 1024 und 65535 liegen.',
+        'The port must be between 1024 and 65535.', 'Le port doit être compris entre 1024 et 65535.',
+        'ポートは1024～65535の範囲で指定してください。'));
+    LPort := LManager.Reserve(PortReservationKey, LPort, LActivePort, False);
+    FPortSearchMessage := '';
+    RefreshPortReservationStatus;
+    TaskMessageDlg('DAI', Format(DAIText(
+      'Port %d wurde dauerhaft reserviert, auch wenn der Dialog abgebrochen wird. Den Port speichern und die KI-Clients neu registrieren.',
+      'Port %d is reserved permanently, even if this dialog is cancelled. Save the port and register AI clients again.',
+      'Le port %d reste réservé même si la boîte de dialogue est annulée. Enregistrez le port et réinscrivez les clients IA.',
+      'ポート%dはダイアログをキャンセルしても予約されたままです。ポートを保存し、AIクライアントを再登録してください。'), [LPort]), mtInformation, [mbOK], 0);
+  except
+    on E: Exception do
+      TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);
+  end;
+  LManager.Free;
+end;
+
+procedure TDAIOptionsFrame.PortReservationReleaseClicked(Sender: TObject);
+var
+  LManager: TDAIPortReservations;
+  LPort: Integer;
+begin
+  LPort := StrToIntDef(Trim(FPortEdit.Text), 0);
+  if (LPort < 1024) or (LPort > 65535) then
+    Exit;
+  if TaskMessageDlg('DAI', Format(DAIText(
+    'Reservierung für Port %d freigeben? Andere Benutzer können ihn danach reservieren; DAI-Einstellungen bleiben unverändert.',
+    'Release the reservation for port %d? Other users can reserve it afterwards; DAI settings stay unchanged.',
+    'Libérer la réservation du port %d ? Les autres utilisateurs pourront le réserver ; les paramètres DAI ne changent pas.',
+    'ポート%dの予約を解放しますか？他のユーザーが予約できるようになります。DAI設定は変わりません。'), [LPort]),
+    mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+    Exit;
+  LManager := nil;
+  try
+    LManager := TDAIPortReservations.Create;
+    if not LManager.Release(PortReservationKey, LPort) then
+      TaskMessageDlg('DAI', DAIText('Für diesen Bereich ist dieser Port nicht reserviert.',
+        'This port is not reserved for this scope.', 'Ce port n’est pas réservé pour cette connexion.',
+        'この範囲ではこのポートは予約されていません。'), mtInformation, [mbOK], 0);
+  except
+    on E: Exception do
+      TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);
+  end;
+  LManager.Free;
+  RefreshPortReservationStatus;
+end;
+
 procedure TDAIOptionsFrame.UsageLogLinkClicked(Sender: TObject; const Link: string; LinkType: TSysLinkType);
 var
   LError: string;
@@ -1068,6 +1422,24 @@ begin
   Result := TDAIRuntime.ValidateServerConfiguration(StrToIntDef(Trim(FPortEdit.Text), 0), Trim(FTokenEdit.Text), LError);
   if not Result then
     TaskMessageDlg('DAI', LError, mtError, [mbOK], 0);
+end;
+
+function TDAIOptionsFrame.ValidateContentsForSave: Boolean;
+begin
+  Result := ValidateContents;
+  if not Result then
+    Exit;
+  try
+    SuggestPortManagement(StrToIntDef(Trim(FPortEdit.Text), 0));
+  except
+    on EAbort do
+      Result := False;
+    on E: Exception do
+    begin
+      TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);
+      Result := False;
+    end;
+  end;
 end;
 
 procedure TDAIOptionsFrame.LoadFromSettings;
@@ -1091,6 +1463,7 @@ end;
 
 procedure TDAIOptionsFrame.LoadConnectionSettings;
 begin
+  FPortSearchMessage := '';
   FLoadingConnectionSettings := True;
   try
     FConnectionDraftAvailable[False] := False;
@@ -1109,6 +1482,7 @@ begin
   finally
     FLoadingConnectionSettings := False;
   end;
+  RefreshPortReservationStatus;
 end;
 
 procedure TDAIOptionsFrame.ConnectionSettingsScopeClicked(Sender: TObject);
@@ -1122,6 +1496,7 @@ begin
   LShared := FUseSharedConnectionSettingsCheckBox.Checked;
   if LShared = FDisplayedSharedConnectionSettings then
     Exit;
+  FPortSearchMessage := '';
   FConnectionPortDraft[FDisplayedSharedConnectionSettings] := FPortEdit.Text;
   FConnectionTokenDraft[FDisplayedSharedConnectionSettings] := FTokenEdit.Text;
   FManualRegistrationDraft[FDisplayedSharedConnectionSettings] := FManualClientRegistrationCheckBox.Checked;
@@ -1147,6 +1522,7 @@ begin
     FTokenEdit.Text := FConnectionTokenDraft[LShared];
     FManualClientRegistrationCheckBox.Checked := FManualRegistrationDraft[LShared];
     FDisplayedSharedConnectionSettings := LShared;
+    RefreshPortReservationStatus;
   except
     // Keep the scope and its displayed credentials together after a failed preview.
     FLoadingConnectionSettings := True;
@@ -1474,6 +1850,8 @@ begin
       TDAIIDEToolbar.CheckRegistrations;
     end;
   except
+    on EAbort do
+      Exit;
     on E: Exception do
       TaskMessageDlg('DAI', E.Message, mtError, [mbOK], 0);
   end;
@@ -1572,6 +1950,8 @@ var
   LPort: Integer;
   LToken: string;
   LError: string;
+  LManager: TDAIPortReservations;
+  LActivePort: Integer;
 begin
   UpdateProjectPermissionState;
   if (FPermissionProjectKey <> '') and not SameText(FPermissionProjectKey, TDAIOTA.ActiveProjectFileName) then
@@ -1586,6 +1966,20 @@ begin
   LToken := Trim(FTokenEdit.Text);
   if not TDAIRuntime.ValidateServerConfiguration(LPort, LToken, LError) then
     raise EArgumentException.Create(LError);
+  SuggestPortManagement(LPort);
+  LManager := TDAIPortReservations.Create;
+  try
+    if LManager.Exists then
+      if LManager.OwnPorts(PortReservationKey) <> '' then
+      begin
+        LActivePort := 0;
+        if TDAIRuntime.ServerActive then
+          LActivePort := TDAIRuntime.ServerPort;
+        LManager.Reserve(PortReservationKey, LPort, LActivePort, False);
+      end;
+  finally
+    LManager.Free;
+  end;
   TDAISettings.Instance.Enabled := FServerEnabledCheckBox.Checked;
   TDAISettings.Instance.LogAccessPoints := FLoggingCheckBox.Checked;
   TDAISettings.Instance.UseSharedConnectionSettings := FUseSharedConnectionSettingsCheckBox.Checked;

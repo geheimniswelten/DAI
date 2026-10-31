@@ -76,6 +76,7 @@ uses
   h5u.DAI.Consts,
   h5u.DAI.IDE.Control,
   h5u.DAI.Log,
+  h5u.DAI.Localization,
   h5u.DAI.MCP.Protocol,
   h5u.DAI.Settings,
   h5u.DAI.Usage,
@@ -898,6 +899,11 @@ begin
       );
       if FHTTPServer.LastStopDiagnostics <> '' then
         FLastError := FLastError + ' Letzter Stop: ' + FHTTPServer.LastStopDiagnostics;
+      FLastError := FLastError + ' ' + DAIText(
+        'Bei mehreren Benutzern kann die gemeinsame Portverwaltung in den DAI-Einstellungen helfen.',
+        'For multiple users, shared port management in the DAI settings can help.',
+        'Pour plusieurs utilisateurs, la gestion partagée des ports dans les paramètres DAI peut aider.',
+        '複数のユーザーがいる場合、DAI設定の共有ポート管理が役立ちます。');
       TDAILog.Error(FLastError);
       Result := False;
     end;

@@ -1,4 +1,33 @@
-﻿# DAI 1.2.36 – Suchindex-Stash integriert, 24. Oktober 2026
+# DAI 1.2.36 – Suchindex-Stash integriert, 24. Oktober 2026
+
+Nachtrag zum Serverhinweis der Portverwaltung, 31. Oktober 2026:
+Auf Windows Server erscheint beim Speichern oder Registrieren für nicht teilnehmende Verbindungen eine Ja-/Nein-/Abbrechen-Frage; auf Desktop-Windows nicht.
+Ja reserviert den eingetragenen Port sofort; Nein richtet nichts ein, Abbrechen verhindert das Speichern beziehungsweise Registrieren. Die Einrichtung verändert keine Clientregistrierungen.
+Die IDE-Optionsprüfung zeigt den Dialog vor dem Schließen; Reservierungsfehler halten die Seite offen und aktualisieren deren Status.
+Bei TCP-Bindefehlern bleibt die bestehende Prozessdiagnose erhalten und ein lokalisierter Hinweis nennt die gemeinsame Verwaltung.
+Bestanden je Win32/Win64: 1553 native Optionsprüfungen; 558 Server-Lifecycle-Prüfungen mit statischem Indy und mit den Delphi-Indy-BPLs.
+Der Portkonflikt wird mit echtem Listener in vier Sprachen getestet; die Server-/Desktopdialoge verwenden isolierte Testdoubles.
+Das Delphi-13-Package wurde für Win32/Win64 in Testverzeichnissen gebaut. Windows Server, getrennte Benutzerkonten und Delphi 11/12 waren nicht für Live-Tests verfügbar.
+
+Nachtrag zur freien Portsuche, 31. Oktober 2026:
+Ein manueller Port bleibt auch außerhalb des DAI-Bereichs erhalten. Die Suche ändert nur den Dialogentwurf; reserviert wird ausschließlich der gewählte Port.
+Die Suche prüft gemeinsame Reservierungen und Windows-TCP-Bindungen, auch bereits gebundene Sockets ohne Listener. Ohne DAI-Bereich beginnt sie beim eingegebenen Port.
+Ein kurzzeitig gesperrtes Ersetzen der Benutzerdatei wird mit begrenztem Retry behandelt; vor jedem erneuten Versuch wird auf fremde Änderungen geprüft.
+Je Win32/Win64 bestanden 54 Portverwaltungs- und 1508 native Optionsprüfungen; dazu parallele Prozesse, echte Socket- und Dateisperren sowie vier Sprachansichten.
+Package und Bridge wurden mit Delphi 13 für Win32/Win64 in separaten Testverzeichnissen gebaut; installierte Dateien wurden nicht ersetzt.
+Delphi 11/12 und tatsächliche getrennte Windows-Benutzer bzw. RDP-Sitzungen standen für diese Prüfung nicht zur Verfügung.
+
+Nachtrag zur gemeinsamen Portverwaltung, 31. Oktober 2026:
+Die optionale, benutzerübergreifende Verwaltung verwendet eine flache ProgramData-Struktur, benutzer-SIDbezogene Dateien und eine sitzungsübergreifende Windows-Mutexsperre.
+Anwendungsbeschreibungen und eigene Benutzerdateien sind gegen das Ändern durch andere normale Benutzer geschützt; Tokens werden nicht gemeinsam gespeichert.
+Reservierungen bleiben bei Programmende und Abbruch des Optionsdialogs bestehen. Vorhandene Ports und Clientregistrierungen werden nicht ungefragt umgestellt.
+Bei Portänderung eines beteiligten Bereichs reserviert der Speichervorgang den konkreten Wert; Konflikte verhindern die Übernahme. Alte Reservierungen bleiben erhalten.
+Tests je Win32/Win64: 36 Prüfungen mit Original-Unit, zwölf parallele Prozesse, aktiver TCP-Listener, .NET-Mutex, schreibgeschützte Datei und ACL-Prüfungen.
+Weitere acht gemischte Win32-/Win64-Prozesse teilen dieselbe Sperre und dieselbe Benutzerdatei. Die 1478 nativen Optionsprüfungen bestehen je Architektur.
+Das reale Package wurde mit Delphi 13 Win32 und Win64 separat gebaut; das installierte Package wurde nicht ersetzt. Delphi 11/12 sind hier nicht installiert.
+Echte getrennte Windows-Benutzerkonten und RDP-Sitzungen wurden hier nicht live getestet; ACLs und der Mutex wurden mit mehreren Prozessen einzeln geprüft.
+Die IDE war für die Quelländerungen beendet. Das gemeinsame Verzeichnis unter ProgramData wurde für die Tests nicht angelegt oder verändert.
+Der Verifier berücksichtigt Versionsinformationen nur für die tatsächlich unterstützten Win32-/Win64-IDE-Builds und schließt die neue Formatdokumentation ins Manifest ein.
 
 Nachtrag zum Schutz geladener IDE-Dateien, 25. Oktober 2026:
 Eine zentrale OTA-Auflösung erfasst geladene Module, Editorpuffer, Projekte/Projektgruppe und zugeordnete Formulardateien unabhängig von sichtbaren Tabs.

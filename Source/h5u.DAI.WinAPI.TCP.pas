@@ -15,15 +15,26 @@ type
     class function DescribeIPv4Owner(const APort: Word): string; static;
   end;
 
+  TDAITCPPortProbe = class sealed
+  private
+    FStarted: Boolean;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    function CanBindLoopback(const APort: Word): Boolean;
+  end;
+
 implementation
 
 uses
   System.SysUtils,
-  Winapi.Windows;
+  Winapi.Windows,
+  Winapi.WinSock2;
 
 const
   CAddressFamilyInet = 2;
   CErrorInsufficientBuffer = 122;
+  CExclusiveAddressUse = -5;
   CIPv4Any = 0;
   CIPv4LoopbackNetworkOrder = $0100007F;
   CIPv4LoopbackHostOrder = $7F000001;
@@ -47,6 +58,54 @@ type
     AReserved: Cardinal): DWORD; stdcall;
 
   TQueryFullProcessImageNameW = function(AProcess: THandle; AFlags: DWORD; AFileName: PWideChar; var ASize: DWORD): BOOL; stdcall;
+
+constructor TDAITCPPortProbe.Create;
+var
+  LData: Winapi.WinSock2.TWSAData;
+  LError: Integer;
+begin
+  inherited Create;
+  LError := Winapi.WinSock2.WSAStartup($0202, LData);
+  if LError <> 0 then
+    raise EOSError.CreateFmt('Winsock konnte nicht initialisiert werden (Fehler %d).', [LError]);
+  FStarted := True;
+end;
+
+destructor TDAITCPPortProbe.Destroy;
+begin
+  if FStarted then
+    Winapi.WinSock2.WSACleanup;
+  inherited;
+end;
+
+function TDAITCPPortProbe.CanBindLoopback(const APort: Word): Boolean;
+var
+  LSocket: Winapi.WinSock2.TSocket;
+  LAddress: Winapi.WinSock2.TSockAddrIn;
+  LExclusive, LError: Integer;
+begin
+  LSocket := Winapi.WinSock2.socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if LSocket = INVALID_SOCKET then
+    raise EOSError.CreateFmt('Der TCP-Prüfsocket konnte nicht erstellt werden (Winsock-Fehler %d).', [WSAGetLastError]);
+  try
+    LExclusive := 1;
+    if setsockopt(LSocket, SOL_SOCKET, CExclusiveAddressUse, PAnsiChar(@LExclusive), SizeOf(LExclusive)) <> 0 then
+      raise EOSError.CreateFmt('Der TCP-Prüfsocket konnte nicht geschützt werden (Winsock-Fehler %d).', [WSAGetLastError]);
+    FillChar(LAddress, SizeOf(LAddress), 0);
+    LAddress.sin_family := AF_INET;
+    LAddress.sin_port := htons(APort);
+    LAddress.sin_addr.S_addr := htonl($7F000001);
+    Result := Winapi.WinSock2.bind(LSocket, Winapi.WinSock2.PSockAddr(@LAddress)^, SizeOf(LAddress)) = 0;
+    if not Result then
+    begin
+      LError := WSAGetLastError;
+      if (LError <> WSAEADDRINUSE) and (LError <> WSAEACCES) then
+        raise EOSError.CreateFmt('Der TCP-Port %d konnte nicht geprüft werden (Winsock-Fehler %d).', [APort, LError]);
+    end;
+  finally
+    closesocket(LSocket);
+  end;
+end;
 
 function PortFromNetworkOrder(const APort: DWORD): Word;
 var

@@ -1,4 +1,4 @@
-﻿# DAI – Delphi AI
+# DAI – Delphi AI
 
 DAI ist ein Design-Time-Package für Delphi 13 / RAD Studio 13 (`BDS 37.0`). Es stellt lokal laufenden KI-Clients einen MCP-Server zur Verfügung und
 vermittelt kontrollierte Zugriffe auf die Delphi OpenToolsAPI.
@@ -166,6 +166,34 @@ Die Suche verändert keine Konfiguration. Optionsentwürfe bleiben erhalten; Ver
 DAI prüft den Treffer vor dem Schreiben erneut und entfernt ausschließlich unveränderte verwaltete Einträge. Nach zwischenzeitlichen Änderungen erneut suchen.
 Manuell veränderte, nicht verwaltete oder beschädigte Treffer bleiben gesperrt; fremde MCP-Server und andere DAI-Bereiche bleiben erhalten.
 Betroffene KI-Clients müssen ihre MCP-Verbindung nach dem Entfernen neu laden.
+
+## Gemeinsame Portverwaltung
+
+Optional kann DAI unter `Tools → Options → Third Party → DAI` Ports mit anderen Windows-Benutzern und Anwendungen abstimmen.
+„Portverwaltung einrichten“ legt `%ProgramData%\h5uPortReservation` und die Beschreibung `.DAI` bei Bedarf an. Eine laufende
+Verwaltungssoftware ist nicht nötig; nur Anwendungen, die das gemeinsame Format unterstützen, berücksichtigen die Reservierungen.
+Auf normalen Desktop-PCs erscheint kein Einrichtungsdialog. Bei einem belegten Port weist die Fehlermeldung auf die gemeinsame Verwaltung hin.
+Auf Windows Server fragt DAI beim Speichern oder Registrieren, wenn für den aktuellen Verbindungsbereich noch kein Port reserviert ist.
+Bei „Ja“ werden Verwaltung und exakte Portreservierung sofort eingerichtet; die Reservierung bleibt auch bei späterem Abbruch bestehen.
+Bei „Nein“ wird in diesem Optionsdialog nicht erneut gefragt; „Abbrechen“ unterbricht Speichern oder Registrierung.
+Eine Remoteverbindung zu einem Desktop allein gilt nicht als Windows Server.
+
+Der eingerichtete DAI-Portbereich wird angezeigt; ein bereits gewählter Port außerhalb dieses Bereichs bleibt zulässig und unverändert.
+„Freien Port suchen“ schlägt einen Port im gemeinsamen Bereich vor. Ohne DAI-Bereich beginnt die Suche beim eingetragenen Port;
+bereits vorhandene gemeinsame Reservierungen werden trotzdem berücksichtigt. Ein kurzer Windows-TCP-Bindetest prüft zusätzlich, ob
+auch andere Programme den Port belegen. Die Suche ändert nur das Eingabefeld und reserviert oder speichert nichts.
+
+„Port reservieren“ reserviert ausschließlich den angezeigten Port dauerhaft, auch wenn der Optionsdialog abgebrochen wird. Bei einem
+Konflikt wird kein anderer Port still ausgewählt. Den Port anschließend speichern oder die Clients registrieren; bei Portänderungen
+müssen deren Verbindungen gegebenenfalls neu geladen werden. Mehrere Reservierungen desselben Bereichs sind möglich; „Port freigeben“
+entfernt nach Bestätigung nur den angezeigten Port. Damit bleiben alte Clientregistrierungen bei einer Umstellung geschützt.
+
+Für einen bereits reservierten Verbindungsbereich wird auch ein manuell geänderter Port vor dem Speichern reserviert. Ein Konflikt
+verhindert das Speichern. Ein anderer freier Port kann auch vorläufig aus dem Optionsdialog gestartet werden, ohne ihn zu reservieren;
+bei vorhandener gemeinsamer Verwaltung werden fremde Reservierungen geprüft. Gemeinsame und IDE-/Profilverbindungen erhalten eigene Kennungen.
+Suchergebnis und Reservierung sind keine dauerhafte Windows-Socketbindung: Der Serverstart prüft die Verfügbarkeit erneut. Portdateien
+enthalten keine Tokens.
+[Dateiformat, Rechte und Zusammenarbeit mit anderen Anwendungen](PORT_RESERVATION.md).
 
 ## Benennung
 

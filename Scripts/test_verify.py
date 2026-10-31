@@ -46,6 +46,30 @@ end;
 """
 
 
+class SupportedWindowsPropertiesTests(unittest.TestCase):
+    def test_ide_generated_other_platforms_do_not_enable_windows_version_info(self) -> None:
+        project = """<Project xmlns='http://schemas.microsoft.com/developer/msbuild/2003'>
+          <PropertyGroup Condition="'$(Base_iOSDevice64)'!=''"><VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo></PropertyGroup>
+          <PropertyGroup Condition="'$(Base_Win64x)'!=''"><VerInfo_Keys>FileVersion=1.0.0.0</VerInfo_Keys></PropertyGroup>
+          <PropertyGroup Condition="'$(Base_Win32)'!=''"><VerInfo_IncludeVerInfo>false</VerInfo_IncludeVerInfo></PropertyGroup>
+        </Project>"""
+        result = verify.supported_windows_property_text(project)
+        self.assertIn("<VerInfo_IncludeVerInfo>false</VerInfo_IncludeVerInfo>", result)
+        self.assertNotIn("<VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>", result)
+        self.assertNotIn("FileVersion=1.0.0.0", result)
+
+    def test_supported_and_common_windows_properties_are_included(self) -> None:
+        project = """<Project xmlns='http://schemas.microsoft.com/developer/msbuild/2003'>
+          <PropertyGroup Condition="'$(Base)'!=''"><VerInfo_Keys>FileVersion=1.2.36.0</VerInfo_Keys></PropertyGroup>
+          <PropertyGroup Condition="'$(Base_Win64)'!=''"><VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo></PropertyGroup>
+          <PropertyGroup Condition="'$(Cfg_1_Win32)'!=''"><VerInfo_Keys>ProductVersion=1.2.36.0</VerInfo_Keys></PropertyGroup>
+        </Project>"""
+        result = verify.supported_windows_property_text(project)
+        self.assertIn("FileVersion=1.2.36.0", result)
+        self.assertIn("ProductVersion=1.2.36.0", result)
+        self.assertIn("<VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>", result)
+
+
 class PascalPreprocessorTests(unittest.TestCase):
     def preprocess(self, content: str, version: float, defines: set[str] | None = None) -> str:
         masked, errors = verify.preprocess_pascal(content, version, defines)

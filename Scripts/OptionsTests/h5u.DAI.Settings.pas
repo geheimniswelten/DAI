@@ -20,6 +20,7 @@ type
     procedure SetAllowIDEStartStop(const AAllowed: Boolean);
   public
     Enabled: Boolean;
+    RegistryRoot: string;
     UseSharedConnectionSettings: Boolean;
     SavedConnectionAvailable: array[Boolean] of Boolean;
     SavedConnectionPort: array[Boolean] of Integer;
@@ -66,6 +67,7 @@ uses
 constructor TDAISettings.Create;
 begin
   inherited Create;
+  RegistryRoot := 'Software\Embarcadero\BDS\37.0\DAI';
   CustomReadDirectories := TStringList.Create;
 end;
 
