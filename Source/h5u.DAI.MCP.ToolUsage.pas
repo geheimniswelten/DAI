@@ -17,7 +17,7 @@ uses
   System.SysUtils;
 
 type
-  TDAIToolActivity = (taQuiet, taActive, taDirectory, taProjectContext);
+  TDAIToolActivity = (taQuiet, taActive, taDirectory, taProjectContext, taProjectOpen);
 
   TDAIToolUsageDefinition = record
     Name: string;
@@ -97,7 +97,7 @@ const
     (Name: 'project_index_build'; Activity: taActive),
     (Name: 'project_index_delete'; Activity: taActive),
     (Name: 'project_index_status'; Activity: taQuiet),
-    (Name: 'project_open'; Activity: taActive),
+    (Name: 'project_open'; Activity: taProjectOpen),
     (Name: 'project_option_remove'; Activity: taActive),
     (Name: 'project_option_set'; Activity: taActive),
     (Name: 'project_options_configurations'; Activity: taQuiet),
@@ -142,6 +142,16 @@ begin
               LValue := AArguments.GetValue('content_query');
             if LValue is TJSONString then
               AShowsActivity := LValue.Value <> '';
+          end;
+        taProjectOpen:
+          begin
+            LValue := nil;
+            if AArguments <> nil then LValue := AArguments.GetValue('request_id');
+            AShowsActivity := True;
+            if AArguments <> nil then
+              if AArguments.Count = 1 then
+                if LValue is TJSONString then
+                  AShowsActivity := Trim(LValue.Value) = '';
           end;
         taProjectContext:
           begin

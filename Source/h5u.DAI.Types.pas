@@ -51,6 +51,7 @@ type
     TimedOut: Boolean;
     ExitCode: Cardinal;
     Output: string;
+    OutputCodePage: Cardinal;
     ErrorText: string;
     DurationMs: Int64;
   end;

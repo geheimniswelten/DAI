@@ -117,14 +117,16 @@ begin
       (LMeta.GetValue('io.modelcontextprotocol/protocolVersion').Value = '2026-07-28');
 end;
 
-function ExtractRequestContext(const AParams: TJSONObject; const AArguments: TJSONObject; const ATransportSessionId: string; const AClientName: string): TDAIRequestContext;
+function ExtractRequestContext(const AParams: TJSONObject; const AArguments: TJSONObject; const ATransportSessionId: string; const AClientName: string;
+  const AResolveProject: Boolean): TDAIRequestContext;
 var
   LClientInfo: TJSONObject;
   LMeta: TJSONObject;
 begin
   Result := Default(TDAIRequestContext);
   Result.TransportSessionId := ATransportSessionId;
-  Result.ProjectKey := TDAIOTA.ActiveProjectFileName;
+  if AResolveProject then
+    Result.ProjectKey := TDAIOTA.ActiveProjectFileName;
   Result.ClientName := AClientName;
 
   LMeta := nil;
@@ -181,7 +183,10 @@ begin
     'Geladene Dateien niemals zusätzlich direkt auf dem Datenträger ändern. Fehlender Textpuffer, fehlende OTA-Operation oder unerreichbares DAI ' +
     'erlauben keinen Datenträger-Ausweichweg. Direkte Dateibearbeitung nur bei nachweislich geschlossener Datei oder beendeten betroffenen IDEs. ' +
     'Bei unbekanntem Ladezustand erst klären und keine externe Schreibänderung ausführen; DAI offline bedeutet nicht IDE beendet. ' +
-    'Die IDE allein für diese Prüfung nicht ungefragt starten. Berechtigungen werden in der IDE nach Projekt und KI-Chat bzw. MCP-Sitzung abgefragt.';
+    'Die IDE allein für diese Prüfung nicht ungefragt starten. Berechtigungen werden in der IDE nach Projekt und KI-Chat bzw. MCP-Sitzung abgefragt. ' +
+    'project_open liefert einen Auftrag mit request_id. Danach ausschließlich request_id im selben Chat bzw. derselben MCP-Sitzung übergeben, ' +
+    'bis finished=true. Ein Client-Timeout bricht den Wechsel nicht ab; nicht erneut starten. Native Speichern/Verwerfen/Abbrechen-Dialoge beachten. ' +
+    'Status und ide_windows_list benötigen keine IDE-Projektabfrage; die Phase closing allein beweist noch keinen Speicherdialog.';
 end;
 
 function BuildInitializationResult(const ARequestedVersion: string): TJSONObject;
@@ -378,7 +383,8 @@ begin
           raise EArgumentException.CreateFmt('Unbekanntes MCP-Werkzeug: %s', [LName]);
         // Count known call attempts once, independently of permission and text logs.
         TDAIUsage.RecordToolCall(LCanonicalName, LShowsActivity);
-        LContext := ExtractRequestContext(LParams, LArguments, ATransportSessionId, AClientName);
+        LContext := ExtractRequestContext(LParams, LArguments, ATransportSessionId, AClientName,
+          TDAIMCPTools.NeedsProjectContext(LCanonicalName, LArguments));
         LToolResult := TDAIMCPTools.CallTool(LCanonicalName, LArguments, LContext);
         try
           Exit(JsonRpcResponse(LId, BuildToolResult(LToolResult, LModern)));

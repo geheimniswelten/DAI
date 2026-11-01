@@ -9,7 +9,7 @@ type
   TDAIProcess = class sealed
   public
     class function Execute(const AExecutable: string; const AArguments: TArray<string>;
-      const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TDAIProcessResult; static;
+      const AWorkingDirectory: string; const ATimeoutMs: Cardinal; const AOutputCodePage: Cardinal = 0): TDAIProcessResult; static;
     class function StartDetached(const AExecutable: string; const AArguments: TArray<string>;
       const AWorkingDirectory: string; out AProcessHandle: THandle; out AProcessId: Cardinal): Boolean; static;
     class function ResolveMSBuildExecutable(const ARequestedFileName: string): string; static;
@@ -23,7 +23,7 @@ uses
   System.SysUtils;
 
 class function TDAIProcess.Execute(const AExecutable: string; const AArguments: TArray<string>;
-  const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TDAIProcessResult;
+  const AWorkingDirectory: string; const ATimeoutMs: Cardinal; const AOutputCodePage: Cardinal): TDAIProcessResult;
 begin
   Result := Default(TDAIProcessResult);
   raise EInvalidOperation.Create('External process execution is forbidden in isolated Build tests.');

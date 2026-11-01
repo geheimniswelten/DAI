@@ -730,6 +730,10 @@ begin
     - `project_open` (DPR/DPK/DPROJ) und `project_create` ergänzen standardmäßig die aktuelle Projektgruppe und erhalten vorhandene Projekte.
     - Mit `close_others: true` zuerst die aktuelle Projektgruppe schließen; Delphis Speicherrückfragen und Abbrechen bleiben wirksam.
     - `project_open` mit GROUPPROJ/BDSGROUP/BPG ersetzt die aktuelle Gruppe grundsätzlich; Delphi kann nur eine Projektgruppe gleichzeitig laden.
+    - `project_open` startet einen Auftrag; die Antwort enthält `request_id`, `status`, `phase`, `finished` und zunächst `opened: null`.
+    - Den Status mit `project_open` und ausschließlich `request_id` im selben Chat bzw. derselben MCP-Sitzung abfragen; bis `finished: true` warten.
+    - Ein Client-Timeout bricht den Wechsel nicht ab. Nicht erneut starten; Delphis Speichern/Verwerfen/Abbrechen bleibt eine eigene Entscheidung.
+    - Status und `ide_windows_list` bleiben ohne IDE-Projektabfrage erreichbar. `closing` allein beweist noch keinen Speicherdialog.
     - Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.
     - `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.
 
@@ -964,6 +968,10 @@ begin
     '- `project_open` (DPR/DPK/DPROJ) und `project_create` ergänzen standardmäßig die aktuelle Projektgruppe und erhalten vorhandene Projekte.' + sLineBreak +
     '- Mit `close_others: true` zuerst die aktuelle Projektgruppe schließen; Delphis Speicherrückfragen und Abbrechen bleiben wirksam.' + sLineBreak +
     '- `project_open` mit GROUPPROJ/BDSGROUP/BPG ersetzt die aktuelle Gruppe grundsätzlich; Delphi kann nur eine Projektgruppe gleichzeitig laden.' + sLineBreak +
+    '- `project_open` startet einen Auftrag; die Antwort enthält `request_id`, `status`, `phase`, `finished` und zunächst `opened: null`.' + sLineBreak +
+    '- Den Status mit `project_open` und ausschließlich `request_id` im selben Chat bzw. derselben MCP-Sitzung abfragen; bis `finished: true` warten.' + sLineBreak +
+    '- Ein Client-Timeout bricht den Wechsel nicht ab. Nicht erneut starten; Delphis Speichern/Verwerfen/Abbrechen bleibt eine eigene Entscheidung.' + sLineBreak +
+    '- Status und `ide_windows_list` bleiben ohne IDE-Projektabfrage erreichbar. `closing` allein beweist noch keinen Speicherdialog.' + sLineBreak +
     '- Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.' + sLineBreak +
     '- `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.' + sLineBreak +
     '' + sLineBreak +

@@ -10,11 +10,14 @@ uses
   System.JSON;
 
 type
+  TDAIProjectOpenProgress = reference to procedure(const APhase: string);
+
   TDAIProjectService = class sealed
   public
     class function CreateProject(const AName: string; const ADirectory: string; const AKind: string; const ASave: Boolean = True;
       const ACloseOthers: Boolean = False): TJSONObject; static;
-    class function OpenProject(const AFileName: string; const ACloseOthers: Boolean = False): TJSONObject; static;
+    class function ResolveOpenProjectFile(const AFileName: string): string; static;
+    class function OpenProject(const AFileName: string; const ACloseOthers: Boolean = False; const AProgress: TDAIProjectOpenProgress = nil): TJSONObject; static;
     class function SaveProject(const AProjectNameOrPath: string): TJSONObject; static;
     class function RemoveProject(const AProjectNameOrPath: string): TJSONObject; static;
     class function CreateUnit(const AProjectNameOrPath: string; const AFileName: string; const ASource: string): TJSONObject; static;
@@ -538,7 +541,16 @@ begin
     Result.AddPair('source_editor_available', TJSONBool.Create(LSourceEditorAvailable));
 end;
 
-class function TDAIProjectService.OpenProject(const AFileName: string; const ACloseOthers: Boolean): TJSONObject;
+class function TDAIProjectService.ResolveOpenProjectFile(const AFileName: string): string;
+begin
+  Result := TDAISettings.Instance.ExpandPath(AFileName);
+  if not IsProjectFile(Result) then
+    raise EArgumentException.Create('Eine Projektdatei oder Projektgruppe ist erforderlich (DPR, DPK, DPROJ, GROUPPROJ oder BDSGROUP).');
+  if not TFile.Exists(Result) then
+    raise EDAIFileNotFound.CreateFmt('Projektdatei nicht gefunden: %s', [Result]);
+end;
+
+class function TDAIProjectService.OpenProject(const AFileName: string; const ACloseOthers: Boolean; const AProgress: TDAIProjectOpenProgress): TJSONObject;
 var
   LActionServices: IOTAActionServices;
   LFileName: string;
@@ -550,11 +562,8 @@ var
   LAlreadyOpen: Boolean;
   LReplaceWorkspace: Boolean;
 begin
-  LFileName := TDAISettings.Instance.ExpandPath(AFileName);
-  if not IsProjectFile(LFileName) then
-    raise EArgumentException.Create('Eine Projektdatei oder Projektgruppe ist erforderlich (DPR, DPK, DPROJ, GROUPPROJ oder BDSGROUP).');
-  if not TFile.Exists(LFileName) then
-    raise EDAIFileNotFound.CreateFmt('Projektdatei nicht gefunden: %s', [LFileName]);
+  if Assigned(AProgress) then AProgress('starting');
+  LFileName := ResolveOpenProjectFile(AFileName);
 
   LIsGroup := IsProjectGroupFile(LFileName);
   LReplaceWorkspace := ACloseOthers or LIsGroup;
@@ -587,6 +596,7 @@ begin
             'Ein ungebundenes Projekt ohne Projektgruppe ist geöffnet. Es bleibt geschützt; zum bewussten Wechsel close_others=true verwenden.');
         if LReplaceWorkspace then
         begin
+          if Assigned(AProgress) then AProgress('closing');
           CloseWorkspaceOnMainThread(LModuleServices);
           LGroup := nil;
         end
@@ -594,7 +604,9 @@ begin
           RequireWritableModuleOnMainThread(LGroup);
         // False explicitly adds to the existing (possibly implicit) project
         // group; generic OpenFile does not select this OTA behavior.
+        if Assigned(AProgress) then AProgress('opening');
         LOpened := LActionServices.OpenProject(LFileName, LReplaceWorkspace);
+        if Assigned(AProgress) then AProgress('verifying');
         if LOpened and not LReplaceWorkspace and Assigned(LGroup) and (LModuleServices.MainProjectGroup <> LGroup) then
           raise EInvalidOperation.Create('Die IDE hat die Projektgruppe beim Anhängen unerwartet gewechselt.');
         if LOpened then

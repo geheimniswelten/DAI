@@ -824,6 +824,16 @@ Beispielargumente für `project_open`: `{"file":"S:\\Projekte\\Demo\\Demo.dproj"
 `{"file":"S:\\Projekte\\Demo\\Demo.dproj","close_others":true}` schließt sie vorher.
 Für `project_create` entsprechend: `{"name":"Demo","directory":"S:\\Projekte\\Demo","close_others":true}`.
 
+`project_open` liefert nach der erforderlichen DAI-Freigabe sofort einen Auftrag mit `request_id`; `opened: null` bedeutet, dass das Ergebnis noch nicht feststeht.
+Den Status mit demselben Werkzeug und ausschließlich `{"request_id":"<Kennung aus der Antwort>"}` abfragen, in demselben KI-Chat bzw. derselben MCP-Sitzung.
+`status` ist `queued`, `running`, `completed`, `cancelled` oder `error`; `phase` zeigt während der Arbeit `starting`, `closing`, `opening` oder `verifying`.
+`finished` kennzeichnet das Ende; anschließend enthält `opened` das Öffnungsergebnis oder `error` den Fehler. Bis zu 64 Aufträge bleiben im aktuellen DAI-Lauf verfügbar.
+Ein Client-Timeout bricht den IDE-Auftrag nicht ab. Einen laufenden Wechsel abfragen, statt ihn erneut zu starten; parallele andere Wechsel werden abgewiesen.
+Delphis Speichern-, Verwerfen- und Abbrechen-Dialoge bleiben erhalten. Während einer Rückfrage bleibt der Auftrag offen. Status und der native Fallback
+von `ide_windows_list` benötigen keine Antwort des IDE-Hauptthreads. Die Phase `closing` allein beweist noch keinen Speicherdialog.
+`ide_dialog_inspect` kann bei weiterhin reagierender IDE einen modalen VCL-Dialog samt Buttons erkennen; native Windows-Dialoge zeigt die Fensterliste.
+Statusabfragen setzen die Aktivitätsanzeige nicht auf „KI arbeitet“.
+
 Ein einzeln angezeigtes Projekt besitzt normalerweise eine implizite Projektgruppe und bleibt beim Anhängen geöffnet. Für ein tatsächlich ungebundenes
 Projekt ohne Gruppe bietet die öffentliche ToolsAPI keine sichere Übernahme; DAI bricht das Anhängen dann ab und lässt dieses Projekt geöffnet.
 Ein ausdrückliches `close_others:true` erlaubt stattdessen das vorherige Schließen. Ein abgebrochener Schließvorgang kann bereits einzelne Module geschlossen
@@ -844,7 +854,9 @@ Verfügbare Werkzeuge:
 `%ProgramFiles%` oder `%ProgramFiles(x86)%` liegen. `dcc32_execute` verwendet ausschließlich `%BDS%\bin\dcc32.exe`.
 
 Beide Compiler werden direkt mit `CreateProcess` gestartet. Es gibt keine Shell-Interpretation der Argumente. Standardausgabe und Standardfehler werden
-begrenzt erfasst und als MCP-Ergebnis zurückgegeben.
+begrenzt erfasst und als MCP-Ergebnis zurückgegeben. Die Ausgabe verwendet standardmäßig die Windows-OEM-Codepage; UTF-8-/UTF-16-BOMs werden erkannt.
+Bei abweichend konfigurierten Werkzeugen kann `output_codepage` explizit gesetzt werden, etwa `65001` für UTF-8 oder `1252` für Windows-Western.
+`0` wählt Windows-OEM. Das Ergebnis nennt unter `output_codepage` die tatsächlich verwendete Codepage; Compiler-Quelltextcodepage und Ausgabecodepage sind unabhängig.
 
 ## MCP-Werkzeuge
 

@@ -33,6 +33,7 @@ uses
   h5u.DAI.OTA.CodeInsight,
   h5u.DAI.OTA.Evaluation,
   h5u.DAI.OTA.ExpressionUI,
+  h5u.DAI.OTA.ProjectOpen,
   h5u.DAI.Options.Navigation,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Settings,
@@ -196,6 +197,7 @@ begin
     TDAILog.Shutdown;
     TDAIEvaluationService.Shutdown;
     TDAIExpressionUIService.Shutdown;
+    TDAIProjectOpenService.Shutdown;
     TDAIOptionsNavigationService.Shutdown;
     TDAICodeInsightService.Shutdown;
     try

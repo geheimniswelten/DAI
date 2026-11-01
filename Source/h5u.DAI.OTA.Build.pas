@@ -12,8 +12,10 @@ type
     class function CompileProjectGroup(const AFullBuild: Boolean; const AClearMessages: Boolean): TJSONObject; static;
     class function RunProject(const AProjectNameOrPath: string; const AWithDebugger: Boolean): TJSONObject; static;
     class function StopProject(const AProjectNameOrPath: string; const AWithDebugger: Boolean): TJSONObject; static;
-    class function ExecuteMSBuild(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TJSONObject; static;
-    class function ExecuteDCC32(const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TJSONObject; static;
+    class function ExecuteMSBuild(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal;
+      const AOutputCodePage: Cardinal = 0): TJSONObject; static;
+    class function ExecuteDCC32(const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal;
+      const AOutputCodePage: Cardinal = 0): TJSONObject; static;
     class procedure ClearProjectProcess(const AProjectFileName: string); static;
     class procedure Shutdown; static;
   end;
@@ -56,6 +58,7 @@ begin
   Result.AddPair('exit_code', TJSONNumber.Create(Int64(AResult.ExitCode)));
   Result.AddPair('duration_ms', TJSONNumber.Create(AResult.DurationMs));
   Result.AddPair('output', AResult.Output);
+  Result.AddPair('output_codepage', TJSONNumber.Create(Int64(AResult.OutputCodePage)));
   Result.AddPair('error', AResult.ErrorText);
   Result.AddPair('succeeded', TJSONBool.Create(AResult.Started and not AResult.TimedOut and (AResult.ExitCode = 0)));
 end;
@@ -369,24 +372,25 @@ begin
   end;
 end;
 
-class function TDAIBuildService.ExecuteDCC32(const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TJSONObject;
+class function TDAIBuildService.ExecuteDCC32(const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal;
+  const AOutputCodePage: Cardinal): TJSONObject;
 var
   LExecutable: string;
   LResult: TDAIProcessResult;
 begin
   LExecutable := TDAIProcess.ResolveDCC32Executable;
-  LResult := TDAIProcess.Execute(LExecutable, AArguments, AWorkingDirectory, ATimeoutMs);
+  LResult := TDAIProcess.Execute(LExecutable, AArguments, AWorkingDirectory, ATimeoutMs, AOutputCodePage);
   Result := ProcessResultToJson(LResult, LExecutable);
 end;
 
-class function TDAIBuildService.ExecuteMSBuild(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal):
-  TJSONObject;
+class function TDAIBuildService.ExecuteMSBuild(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal;
+  const AOutputCodePage: Cardinal): TJSONObject;
 var
   LResolvedExecutable: string;
   LResult: TDAIProcessResult;
 begin
   LResolvedExecutable := TDAIProcess.ResolveMSBuildExecutable(AExecutable);
-  LResult := TDAIProcess.Execute(LResolvedExecutable, AArguments, AWorkingDirectory, ATimeoutMs);
+  LResult := TDAIProcess.Execute(LResolvedExecutable, AArguments, AWorkingDirectory, ATimeoutMs, AOutputCodePage);
   Result := ProcessResultToJson(LResult, LResolvedExecutable);
 end;
 

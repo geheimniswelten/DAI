@@ -16,6 +16,14 @@ $stubDirectory = Join-Path $PSScriptRoot 'ProtocolTests'
 $sourceDirectory = Join-Path $projectRoot 'Source'
 $outputDirectory = Join-Path $projectRoot "Build\Tests-Protocol-$Platform"
 $dcuDirectory = ($outputDirectory + '-Dcu')
+$generatedDirectory = $outputDirectory + '-Fixture'
+New-Item -ItemType Directory -Force -Path $generatedDirectory | Out-Null
+$sourceText = [IO.File]::ReadAllText((Join-Path $sourceDirectory 'h5u.DAI.MCP.Tools.pas'))
+$policy = [regex]::Match($sourceText, '(?s)class function TDAIMCPTools.NeedsProjectContext\(.*?\r\nend;')
+if (-not $policy.Success) { throw 'Missing production project context policy' }
+$stubText = [IO.File]::ReadAllText((Join-Path $stubDirectory 'h5u.DAI.MCP.Tools.pas'))
+$stubText = [regex]::Replace($stubText, '(?s)class function TDAIMCPTools.NeedsProjectContext\(.*?\r\nend;', [Text.RegularExpressions.MatchEvaluator]{ param($match) $policy.Value })
+[IO.File]::WriteAllText((Join-Path $generatedDirectory 'h5u.DAI.MCP.Tools.pas'), $stubText, [Text.UTF8Encoding]::new($true))
 $compilerName = if ($Platform -eq 'Win64') { 'dcc64.exe' } else { 'dcc32.exe' }
 $compiler = Join-Path $BdsRoot "bin\$compilerName"
 $libraryDirectory = Join-Path $BdsRoot "lib\$Platform\release"
@@ -31,7 +39,7 @@ $compilerArguments = @(
     '-B'
     "-E$outputDirectory"
     "-N0$dcuDirectory"
-    "-U$stubDirectory;$sourceDirectory;$libraryDirectory"
+    "-U$generatedDirectory;$stubDirectory;$sourceDirectory;$libraryDirectory"
     (Join-Path $PSScriptRoot 'Test.Protocol.dpr')
 )
 & $compiler @compilerArguments

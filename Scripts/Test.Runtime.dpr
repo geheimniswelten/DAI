@@ -12,6 +12,7 @@ uses
   h5u.DAI.OTA.CodeInsight,
   h5u.DAI.OTA.Evaluation,
   h5u.DAI.OTA.ExpressionUI,
+  h5u.DAI.OTA.ProjectOpen,
   h5u.DAI.Options.Navigation,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Runtime,
@@ -69,13 +70,14 @@ begin
   TDAIMCPServer.OnDestroy := procedure begin TDAIRuntime.Stop; end;
   Events.Clear;
   TDAIRuntime.Stop;
-  Check(Events.Count = 6, 'failed drain preserves dependent services');
+  Check(Events.Count = 7, 'failed drain preserves dependent services');
   Check(Events[0] = 'log-shutdown', 'logging admission closes first');
   Check(Events[1] = 'evaluation-shutdown', 'debugger receivers close before HTTP drain');
   Check(Events[2] = 'expression-ui-shutdown', 'debugger editor callbacks close before modal HTTP drain');
-  Check(Events[3] = 'options-navigation-shutdown', 'navigation callbacks close before modal HTTP drain');
-  Check(Events[4] = 'insight-shutdown', 'insight admission closes before HTTP drain');
-  Check(Events[5] = 'server-stop', 'server drain follows admission closure');
+  Check(Events[3] = 'project-open-shutdown', 'project changes stop before HTTP drain');
+  Check(Events[4] = 'options-navigation-shutdown', 'navigation callbacks close before modal HTTP drain');
+  Check(Events[5] = 'insight-shutdown', 'insight admission closes before HTTP drain');
+  Check(Events[6] = 'server-stop', 'server drain follows admission closure');
   Check(LoggerStopped and InsightStopped, 'both admissions remain closed after failed drain');
   Check(TDAIMCPServer.StopCount = 1, 'nested permanent Stop does not reenter server drain');
   Check(TDAILog.ShutdownCount = 1, 'nested Stop does not reenter logging shutdown');

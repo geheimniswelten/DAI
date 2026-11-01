@@ -144,6 +144,9 @@ begin
   ExpectUsage('project_context', '{"include_compiler_options":42}', True);
   ExpectUsage('project_context', '{"include_compiler_options":{},"include_files":true}', True);
   ExpectUsage('project_context', '{"include_compiler_options":false,"include_files":true}', False);
+  ExpectUsage('project_open', '{"file":"demo.dproj"}', True);
+  ExpectUsage('project_open', '{"request_id":"previous-request"}', False);
+  ExpectUsage('project_open', '{"request_id":""}', True);
   ExpectUsage('options_open', '{"request_id":"previous-request"}', True);
   ExpectUsage('debugger_evaluation_status', '{"request_id":"previous-request"}', True);
   ExpectUsage('file_read', '{"file":"example.pas"}', True);

@@ -8,7 +8,8 @@ uses
 type
   TDAIProcess = class sealed
   public
-    class function Execute(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TDAIProcessResult; static;
+    class function Execute(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal;
+      const AOutputCodePage: Cardinal = 0): TDAIProcessResult; static;
     class function StartDetached(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; out AProcessHandle: THandle;
       out AProcessId: Cardinal): Boolean; static;
     class function ResolveMSBuildExecutable(const ARequestedFileName: string): string; static;
@@ -96,12 +97,14 @@ begin
       Exit(True);
 end;
 
-function ReadCapturedOutput(const AFileName: string): string;
+function ReadCapturedOutput(const AFileName: string; const ACodePage: Cardinal; out AUsedCodePage: Cardinal): string;
 var
   LBytes: TBytes;
-  LLength: Integer;
+  LLength, LOffset: Integer;
+  LEncoding, LDefaultEncoding: TEncoding;
 begin
   Result := '';
+  AUsedCodePage := ACodePage;
   if not TFile.Exists(AFileName) then
     Exit;
 
@@ -110,12 +113,24 @@ begin
   if LLength > CDAIMaxProcessOutputBytes then
     LLength := CDAIMaxProcessOutputBytes;
   if LLength > 0 then
-    Result := TEncoding.Default.GetString(LBytes, 0, LLength);
+  begin
+    LDefaultEncoding := TEncoding.GetEncoding(ACodePage);
+    try
+      LEncoding := nil;
+      LOffset := TEncoding.GetBufferEncoding(LBytes, LEncoding, LDefaultEncoding);
+      AUsedCodePage := LEncoding.CodePage;
+      if LOffset < LLength then
+        Result := LEncoding.GetString(LBytes, LOffset, LLength - LOffset);
+    finally
+      LDefaultEncoding.Free;
+    end;
+  end;
   if Length(LBytes) > LLength then
     Result := Result + sLineBreak + '[DAI: Ausgabe wurde gekürzt.]';
 end;
 
-class function TDAIProcess.Execute(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal): TDAIProcessResult;
+class function TDAIProcess.Execute(const AExecutable: string; const AArguments: TArray<string>; const AWorkingDirectory: string; const ATimeoutMs: Cardinal;
+  const AOutputCodePage: Cardinal): TDAIProcessResult;
 var
   LCommandLine: string;
   LExitCode: Cardinal;
@@ -130,6 +145,11 @@ var
   LWorkingDirectory: string;
 begin
   Result := Default(TDAIProcessResult);
+  Result.OutputCodePage := AOutputCodePage;
+  if Result.OutputCodePage = 0 then
+    Result.OutputCodePage := GetOEMCP;
+  if not IsValidCodePage(Result.OutputCodePage) then
+    raise EArgumentException.CreateFmt('Ungültige Ausgabe-Codepage: %d', [Result.OutputCodePage]);
   if not TFile.Exists(AExecutable) then
   begin
     Result.ErrorText := 'Programm nicht gefunden: ' + AExecutable;
@@ -224,7 +244,7 @@ begin
     Result.DurationMs := LStopwatch.ElapsedMilliseconds;
   finally
     CloseHandle(LOutputHandle);
-    Result.Output := ReadCapturedOutput(LOutputFileName);
+    Result.Output := ReadCapturedOutput(LOutputFileName, Result.OutputCodePage, Result.OutputCodePage);
     DeleteFile(PChar(LOutputFileName));
   end;
 end;

@@ -19,7 +19,8 @@ uses
   h5u.DAI.MCP.Sessions,
   h5u.DAI.MCP.Tools,
   h5u.DAI.Settings,
-  h5u.DAI.Usage;
+  h5u.DAI.Usage,
+  h5u.DAI.OTA.Helpers;
 
 const
   CModernMeta = '"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",' +
@@ -164,6 +165,28 @@ begin
   LTick := TThread.GetTickCount64;
   while TThread.GetTickCount64 <= LTick do
     Sleep(1);
+end;
+
+procedure RunNoUIContextChecks;
+var LBody: string; LCount: Integer; LTool: string;
+begin
+  TDAIOTA.FailOnProjectQuery := True;
+  LCount := TDAIOTA.ProjectQueries;
+  try
+    for LTool in ['ide_windows_list', 'ide_dialog_inspect', 'ide_dialog_click', 'ide_dialog_close', 'ide_window_control', 'project_open'] do
+    begin
+      Response := Post('{"jsonrpc":"2.0","id":884,"method":"tools/call","params":{"name":"' + LTool + '","arguments":{},' +
+        CModernMeta + '}}', '', '2026-07-28', 'tools/call', LTool);
+      LBody := Response.ContentAsString(TEncoding.UTF8);
+      Check(Response.StatusCode = 200, 'diagnostic/status request reaches the HTTP endpoint without the IDE context');
+      Check(Pos('"isError":false', LBody) > 0, 'the tool remains reachable while a project-context lookup would fail: ' + LTool);
+    end;
+    Check(TDAIOTA.ProjectQueries = LCount, 'no project-independent request queried the IDE project');
+    Response := Post('{"jsonrpc":"2.0","id":885,"method":"tools/call","params":{"name":"file_read","arguments":{},' +
+      CModernMeta + '}}', '', '2026-07-28', 'tools/call', 'file_read');
+    Check(Pos('Unexpected synchronous IDE project query', Response.ContentAsString(TEncoding.UTF8)) > 0,
+      'project-scoped operations still require their live IDE context');
+  finally TDAIOTA.FailOnProjectQuery := False; end;
 end;
 
 procedure RunAccessTrackingChecks;
@@ -704,6 +727,7 @@ begin
           raise Exception.Create(Server.LastError);
       end;
       RunChecks;
+      RunNoUIContextChecks;
       RunAccessTrackingChecks;
       RunDeferredCloseChecks;
       RunInstanceChecks;

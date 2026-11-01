@@ -32,6 +32,8 @@ function Extract-One([string]$pattern, [string]$description) {
 $jsonObject = Extract-One '(?<body>function JsonObjectFromText\(.*?\r\nend;\r\n)(?=\r\nprocedure AddTool\()' 'JSON schema parser'
 $addTool = Extract-One '(?<body>procedure AddTool\(.*?\r\nend;\r\n)(?=\r\nfunction ArgumentString\()' 'AddTool'
 $validator = Extract-One '(?<body>procedure ValidateToolArguments\(.*?\r\nend;\r\n)(?=\r\nprocedure RequirePermission\()' 'argument validator'
+$dispatchContext = Extract-One '(?<body>  if NeedsProjectContext\(AName, AArguments\) then.*?)(?=  TDAILog.Access)' 'production context dispatch'
+$needsProject = Extract-One '(?<body>class function TDAIMCPTools.NeedsProjectContext\(.*?\r\nend;\r\n)(?=\r\nclass function TDAIMCPTools.CallTool)' 'project context policy'
 $resolver = Extract-One '(?<body>function ContextForArguments\(.*?\r\nend;\r\n)(?=\r\nfunction CursorFileContext\()' 'permission context resolver'
 $directorySchema = Extract-One '(?<body>function DirectoryFilesSchema\(.*?\r\nend;\r\n)(?=\r\nclass function TDAIMCPTools.ListTools)' 'directory schema'
 $catalog = Extract-One '(?<body>class function TDAIMCPTools.ListTools.*?\r\nend;\r\n)(?=\r\nend\.)' 'full tool catalog'
@@ -62,6 +64,7 @@ uses System.JSON, h5u.DAI.Types;
 type
   TDAIMCPTools = class
     class function ListTools: TJSONArray; static;
+    class function NeedsProjectContext(const AName: string; const AArguments: TJSONObject): Boolean; static;
   end;
 
 function ResolveValidatedArguments(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TDAIRequestContext;
@@ -69,14 +72,15 @@ function DispatchProjectMutation(const AName: string; const AArguments: TJSONObj
 
 implementation
 
-uses System.IOUtils, System.SysUtils, ToolsAPI, h5u.DAI.OTA.Files, h5u.DAI.OTA.Helpers, h5u.DAI.OTA.Projects,
+uses System.IOUtils, System.SysUtils, ToolsAPI, h5u.DAI.OTA.Files, h5u.DAI.OTA.Helpers, h5u.DAI.OTA.Projects, h5u.DAI.OTA.ProjectOpen,
   h5u.DAI.Permissions.Manager, h5u.DAI.Settings;
 '@
 $wrapper = @'
 function ResolveValidatedArguments(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TDAIRequestContext;
 begin
   ValidateToolArguments(AName, AArguments);
-  Result := ContextForArguments(AArguments, AContext);
+  if TDAIMCPTools.NeedsProjectContext(AName, AArguments) then Result := ContextForArguments(AArguments, AContext)
+  else begin Result := AContext; Result.ProjectKey := ''; end;
 end;
 
 function DispatchProjectMutation(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
@@ -84,10 +88,11 @@ var
   LContext: TDAIRequestContext;
   LFileName: string;
   LUsedEditorBuffer: Boolean;
+  LRequestId: string;
 begin
   ValidateToolArguments(AName, AArguments);
-  LContext := ContextForArguments(AArguments, AContext);
 '@
+$wrapper += $crlf + $dispatchContext
 $footer = @'
   raise EArgumentException.Create('This isolated fixture only exposes project_create, project_open and file_write.');
 end;
@@ -96,8 +101,10 @@ end.
 '@
 $generated = ($header -replace '\r?\n', $crlf) + $crlf + $crlf + $jsonObject + $crlf + $addTool + $crlf +
     $argumentString + $crlf + $strictArgumentString + $crlf + $requiredArgumentString + $crlf + $strictArgumentBoolean + $crlf + $argumentBoolean + $crlf + $argumentInteger + $crlf + $validator + $crlf +
-    $requirePermission + $crlf + $readPermission + $crlf + $resolver + $crlf +
-    $directorySchema + $crlf + $catalog + $crlf + ($wrapper -replace '\r?\n', $crlf) + $crlf +
+    $requirePermission + $crlf + $readPermission + $crlf + $resolver + $crlf + $needsProject + $crlf +
+    $directorySchema + $crlf + $catalog + $crlf +
+    'function NeedsProjectContext(const AName: string; const AArguments: TJSONObject): Boolean;' + $crlf +
+    'begin Result := TDAIMCPTools.NeedsProjectContext(AName, AArguments); end;' + $crlf + ($wrapper -replace '\r?\n', $crlf) + $crlf +
     $fileRead + $fileWrite + $fileEdit + $projectCreate + $projectOpen + ($footer -replace '\r?\n', $crlf) + $crlf
 foreach ($region in @($jsonObject, $addTool, $argumentString, $strictArgumentString, $requiredArgumentString, $strictArgumentBoolean, $argumentBoolean, $validator, $requirePermission, $resolver,
         $directorySchema, $catalog, $readPermission, $argumentInteger, $fileRead, $fileWrite, $fileEdit, $projectCreate, $projectOpen)) {

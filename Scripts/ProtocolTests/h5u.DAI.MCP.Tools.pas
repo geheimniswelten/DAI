@@ -10,10 +10,15 @@ type
     class var SynchronizeCallbackThreadId: Cardinal;
     class var SynchronizeCallback: TProc;
     class function ListTools: TJSONArray; static;
+    class function NeedsProjectContext(const AName: string; const AArguments: TJSONObject): Boolean; static;
     class function CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject; static;
   end;
 implementation
 uses System.Classes, Winapi.Windows, h5u.DAI.IDE.Control;
+class function TDAIMCPTools.NeedsProjectContext(const AName: string; const AArguments: TJSONObject): Boolean;
+begin
+  Result := not (SameText(AName, 'ide_windows_list') or SameText(AName, 'project_open'));
+end;
 class function TDAIMCPTools.ListTools: TJSONArray;
 begin Result := TJSONArray.Create; end;
 class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;

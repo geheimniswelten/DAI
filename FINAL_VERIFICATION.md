@@ -1,5 +1,20 @@
 # DAI 1.2.36 – Suchindex-Stash integriert, 24. Oktober 2026
 
+Nachtrag zu Projektwechseln und Compiler-Ausgaben, 1. November 2026:
+project_open liefert nach der Schreibfreigabe einen verfolgbaren Auftrag; Statusabfragen lesen nur dessen gesicherten Zustand.
+Protokoll und Dispatcher überspringen die aktive OTA-Projektabfrage für diese Aufträge sowie die nativen IDE-/Dialogwerkzeuge.
+Ein Client-Timeout beendet keinen nativen IDE-Aufruf. Öffnen/Schließen behalten Delphis Speichern-, Verwerfen- und Abbrechen-Verhalten.
+Die isolierten Tests verwenden echte modale VCL-Testdialoge und synthetische OTA-Projektoperationen; das laufende IDE-Projekt wurde nicht gewechselt.
+Bestanden je Win32/Win64: 38 Auftragsprüfungen, 12 echte BPL-Lebenszyklusprüfungen, 1456 Berechtigungs-/Dispatcherprüfungen,
+195 HTTP-Protokollprüfungen, 223 Fensterprüfungen, 95 Runtime-Prüfungen, 259 Build-Prüfungen und 1619 Toolnutzungsprüfungen.
+Auch die 181 Projektgruppenprüfungen und 2520 Clientregistrierungsprüfungen bestehen je Architektur.
+Die Test-BPL wird vor Beginn, nach Abschluss und aus einem laufenden nativen Aufruf heraus entladen. Ihre temporäre Modulreferenz wird danach freigegeben.
+28 reale Prozessausgabeprüfungen je Architektur bestätigen OEM, explizite Windows-/UTF-8-/Japanisch-Codepages sowie UTF-8-/UTF-16-BOMs.
+Dabei wurden auch installierter DCC32 und .NET-Framework-MSBuild mit absichtlich ungültigen Argumenten samt Umlauten ausgeführt; keine Benutzerprojekte gebaut.
+Das reale Delphi-13-Package baut für Win32 und Win64 in getrennten Testverzeichnissen. Installierte BPL, Bridge und Clientregistrierungen wurden nicht ersetzt.
+README, MCP-Anweisungen und beide Compilerzweige des Skill-Generators beschreiben Auftrag und Statusabfrage. 32 Python-Verifier-Tests bestehen.
+Delphi 11/12 sind nicht installiert; native IDE-Speicher-/Ladevorgänge wurden hier nicht mit Benutzerprojekten getestet.
+
 Nachtrag zum Serverhinweis der Portverwaltung, 31. Oktober 2026:
 Auf Windows Server erscheint beim Speichern oder Registrieren für nicht teilnehmende Verbindungen eine Ja-/Nein-/Abbrechen-Frage; auf Desktop-Windows nicht.
 Ja reserviert den eingetragenen Port sofort; Nein richtet nichts ein, Abbrechen verhindert das Speichern beziehungsweise Registrieren. Die Einrichtung verändert keine Clientregistrierungen.

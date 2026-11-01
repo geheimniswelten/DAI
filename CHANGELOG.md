@@ -2,6 +2,10 @@
 
 ## 1.2.36
 
+- `project_open` arbeitet als verfolgbarer Hintergrundauftrag mit Status und Verarbeitungsphase. Speichern, Verwerfen und Abbrechen bleiben native IDE-Entscheidungen; ein Client-Timeout gilt nicht als Abbruch. Laufende doppelte Anfragen werden zusammengeführt, andere parallele Wechsel abgewiesen.
+- Fenster-/Dialogdiagnose und Projektwechselstatus fragen das aktive IDE-Projekt nicht mehr synchron ab. Dadurch bleibt insbesondere der begrenzte native Fallback von `ide_windows_list` bei blockiertem Hauptthread erreichbar. Reine Wechselstatusabfragen ändern die Aktivitätsanzeige nicht.
+- `dcc32_execute` und `msbuild_execute` dekodieren umgeleitete Ausgaben mit Windows-OEM statt ANSI, erkennen UTF-8-/UTF-16-BOMs und erlauben eine explizite `output_codepage`. Die verwendete Codepage wird zurückgegeben.
+
 - Bei Portkonflikten weist DAI auf die optionale gemeinsame Portverwaltung hin. Windows Server fragt beim Speichern oder Registrieren vor der Einrichtung; normale Desktops bleiben ohne Nachfrage.
 
 - Freie Portsuche mit gemeinsamem Bereich oder ab dem eingetragenen Port sowie exklusivem TCP-Bindetest. Eigene Ports außerhalb des Bereichs bleiben zulässig; Reservieren übernimmt ausschließlich den angezeigten Port.

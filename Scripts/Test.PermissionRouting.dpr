@@ -136,9 +136,11 @@ var
   LArguments, LResult: TJSONObject;
   LDenied: Boolean;
   LTool: string;
+  LResolveCalls: Integer;
 begin
   TDAIPermissionManager.Instance.Reset(AGlobalAllowed, AProjectAllowed);
   TDAIProjectService.Reset;
+  LResolveCalls := TDAIOTA.ResolveCalls;
   LArguments := TJSONObject.Create;
   LResult := nil;
   LDenied := False;
@@ -163,6 +165,7 @@ begin
       on E: EAbort do
         LDenied := True;
     end;
+    if not ACreate then Check(TDAIOTA.ResolveCalls = LResolveCalls, 'Opening does not synchronously resolve the active project');
     Check(LDenied = not AGlobalAllowed, 'Current project grants never authorize creating/opening another project');
     if ACreate then
       CheckRequest(True, 'C:\SyntheticDAITest\NewProject')
@@ -188,6 +191,36 @@ begin
     LResult.Free;
     LArguments.Free;
   end;
+end;
+
+procedure CheckProjectOpenStatus;
+var LArguments, LResult: TJSONObject; LInvalid: Boolean; LRequest: TPermissionRequest;
+begin
+  TDAIPermissionManager.Instance.Reset(False, False);
+  TDAIOTA.Reset;
+  TDAIProjectService.Reset;
+  LArguments := TJSONObject.Create.AddPair('request_id', 'existing-job');
+  try
+    LResult := DispatchProjectMutation('project_open', LArguments, Context);
+    try
+      Check(LResult.GetValue<string>('request_id') = 'existing-job', 'Status uses the original job id');
+      Check(Length(TDAIPermissionManager.Instance.Requests) = 1, 'Status has exactly one read authorization');
+      LRequest := TDAIPermissionManager.Instance.Requests[0];
+      Check(LRequest.Category = pcReferenceRead, 'Existing job status does not need a new project-write grant');
+      Check(LRequest.Context.ProjectKey = '', 'Job status does not depend on the active project');
+      Check(TDAIOTA.ResolveCalls = 0, 'Status does not resolve any IDE project');
+      Check(TDAIProjectService.OpenCalls = 0, 'Polling never opens another project');
+    finally LResult.Free; end;
+    TDAIPermissionManager.Instance.Reset(False, False);
+    LArguments.AddPair('file', 'C:\SyntheticDAITest\OtherProject.dproj');
+    LInvalid := False;
+    try DispatchProjectMutation('project_open', LArguments, Context).Free;
+    except on E: EArgumentException do LInvalid := True; end;
+    Check(LInvalid, 'Mixed status/open arguments are rejected');
+    Check(Length(TDAIPermissionManager.Instance.Requests) = 0, 'Invalid mixed arguments cannot request any permission');
+    Check(TDAIOTA.ResolveCalls = 0, 'Invalid mixed arguments cannot query the blocked IDE');
+    Check(TDAIProjectService.OpenCalls = 0, 'Invalid mixed arguments never start an open');
+  finally LArguments.Free; end;
 end;
 
 procedure CheckFileRead(const ATool, AFile: string; const AEditorOpen, AProjectAllowed, ACustomAlways, ATrusted: Boolean);
@@ -362,6 +395,7 @@ begin
     Context.TransportSessionId := 'isolated-project-session';
     Context.ClientName := 'isolated-permission-test';
     CheckContextValidation;
+    CheckProjectOpenStatus;
     CheckFileEditArgumentTypes;
     CheckSourceReadPermissions;
     for LExtension in CExtensions do

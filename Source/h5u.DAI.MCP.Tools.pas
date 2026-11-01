@@ -14,6 +14,7 @@ type
   TDAIMCPTools = class sealed
   public
     class function ListTools: TJSONArray; static;
+    class function NeedsProjectContext(const AName: string; const AArguments: TJSONObject): Boolean; static;
     class function CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject; static;
   end;
 
@@ -48,6 +49,7 @@ uses
   h5u.DAI.OTA.Packages,
   h5u.DAI.OTA.Palette,
   h5u.DAI.OTA.Projects,
+  h5u.DAI.OTA.ProjectOpen,
   h5u.DAI.OTA.ProjectOptions,
   h5u.DAI.OTA.Search,
   h5u.DAI.OTA.Stack,
@@ -680,6 +682,13 @@ begin
   end;
 end;
 
+class function TDAIMCPTools.NeedsProjectContext(const AName: string; const AArguments: TJSONObject): Boolean;
+begin
+  Result := not (SameText(AName, 'ide_windows_list') or SameText(AName, 'ide_dialog_inspect') or
+    SameText(AName, 'ide_dialog_click') or SameText(AName, 'ide_dialog_close') or
+    SameText(AName, 'ide_window_control') or SameText(AName, 'project_open'));
+end;
+
 class function TDAIMCPTools.CallTool(const AName: string; const AArguments: TJSONObject; const AContext: TDAIRequestContext): TJSONObject;
 var
   LAction: string;
@@ -714,7 +723,13 @@ var
 begin
   // Reject undeclared selectors before they can influence permission ownership.
   ValidateToolArguments(AName, AArguments);
-  LContext := ContextForArguments(AArguments, AContext);
+  if NeedsProjectContext(AName, AArguments) then
+    LContext := ContextForArguments(AArguments, AContext)
+  else
+  begin
+    LContext := AContext;
+    LContext.ProjectKey := '';
+  end;
   TDAILog.Access('MCP tools/call: ' + AName);
 
   if SameText(AName, 'ide_status') then
@@ -1047,9 +1062,17 @@ begin
   if SameText(AName, 'project_open') then
   begin
     LContext.ProjectKey := '';
-    LFileName := ArgumentString(AArguments, 'file');
+    LRequestId := StrictArgumentString(AArguments, 'request_id');
+    if Assigned(AArguments.GetValue('request_id')) then
+    begin
+      if AArguments.Count <> 1 then
+        raise EArgumentException.Create('Eine Statusabfrage akzeptiert ausschließlich request_id.');
+      RequirePermission(pcReferenceRead, 'Status eines Projektwechsels lesen', '', LContext);
+      Exit(TDAIProjectOpenService.Status(LRequestId, LContext));
+    end;
+    LFileName := RequiredArgumentString(AArguments, 'file');
     RequirePermission(pcProjectWrite, 'Projekt öffnen', LFileName, LContext);
-    Exit(TDAIProjectService.OpenProject(LFileName, ArgumentBoolean(AArguments, 'close_others', False)));
+    Exit(TDAIProjectOpenService.Open(LFileName, StrictArgumentBoolean(AArguments, 'close_others', False), LContext));
   end;
 
   if SameText(AName, 'project_save') then
@@ -1578,7 +1601,8 @@ begin
         ArgumentString(AArguments, 'executable'),
         ArgumentStringArray(AArguments, 'arguments'),
         ArgumentString(AArguments, 'working_directory'),
-        Cardinal(EnsureRange(ArgumentInteger(AArguments, 'timeout_ms', 300000), 1000, 1800000))
+        Cardinal(EnsureRange(ArgumentInteger(AArguments, 'timeout_ms', 300000), 1000, 1800000)),
+        ArgumentUInt32(AArguments, 'output_codepage')
       )
     );
   end;
@@ -1591,7 +1615,8 @@ begin
       TDAIBuildService.ExecuteDCC32(
         ArgumentStringArray(AArguments, 'arguments'),
         ArgumentString(AArguments, 'working_directory'),
-        Cardinal(EnsureRange(ArgumentInteger(AArguments, 'timeout_ms', 300000), 1000, 1800000))
+        Cardinal(EnsureRange(ArgumentInteger(AArguments, 'timeout_ms', 300000), 1000, 1800000)),
+        ArgumentUInt32(AArguments, 'output_codepage')
       )
     );
   end;
@@ -2377,10 +2402,10 @@ begin
   AddTool(
     Result,
     'project_open',
-    'Fügt DPR/DPK/DPROJ der aktuellen Projektgruppe hinzu. close_others=true schließt sie vorher; Delphi-Speichern/Abbrechen bleibt wirksam. ' +
-    'GROUPPROJ/BDSGROUP/BPG ersetzt grundsätzlich die aktuelle Gruppe.',
-    '{"type":"object","properties":{"file":{"type":"string"},"close_others":{"type":"boolean","default":false}},' +
-    '"required":["file"],"additionalProperties":false}',
+    'Öffnet ein Projekt als Auftrag mit request_id. close_others=true schließt vorher die Gruppe; GROUPPROJ ersetzt sie. ' +
+    'Delphi-Speichern/Abbrechen bleibt wirksam. Nur request_id fragt den Status ab; Timeout bricht den Wechsel nicht ab.',
+    '{"type":"object","properties":{"file":{"type":"string"},"close_others":{"type":"boolean","default":false},' +
+    '"request_id":{"type":"string","maxLength":128}},"anyOf":[{"required":["file"]},{"required":["request_id"]}],"additionalProperties":false}',
     False
   );
   AddTool(
@@ -2644,7 +2669,8 @@ begin
     'msbuild_execute',
     'Ruft eine bekannte MSBuild.exe direkt und ohne Shell-Interpretation auf.',
     '{"type":"object","properties":{"executable":{"type":"string"},"arguments":{"type":"array","items":{"type":"string"}},' +
-    '"working_directory":{"type":"string"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":1800000}},"additionalProperties":false}',
+    '"working_directory":{"type":"string"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":1800000},' +
+    '"output_codepage":{"type":"integer","minimum":0,"maximum":65535,"default":0,"description":"0: Windows-OEM; BOM wird erkannt."}},"additionalProperties":false}',
     False
   );
   AddTool(
@@ -2652,7 +2678,8 @@ begin
     'dcc32_execute',
     'Ruft %BDS%\\bin\\dcc32.exe direkt und ohne Shell-Interpretation auf.',
     '{"type":"object","properties":{"arguments":{"type":"array","items":{"type":"string"}},"working_directory":{"type":"string"},' +
-    '"timeout_ms":{"type":"integer","minimum":1000,"maximum":1800000}},"additionalProperties":false}',
+    '"timeout_ms":{"type":"integer","minimum":1000,"maximum":1800000},' +
+    '"output_codepage":{"type":"integer","minimum":0,"maximum":65535,"default":0,"description":"0: Windows-OEM; BOM wird erkannt."}},"additionalProperties":false}',
     False
   );
 end;
