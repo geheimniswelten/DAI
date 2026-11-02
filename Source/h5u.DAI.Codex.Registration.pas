@@ -646,7 +646,7 @@ begin
     '''
     ---
     name: %s
-    description: "Nutze DAI bei Aufgaben zu Delphi und zur Delphi-IDE: Projekte, Quelltexte, Editorpuffer, Formulare, Builds und Debugger."
+    description: "Nutze DAI bei Aufgaben zu Delphi und zur Delphi-IDE: Projekte, Quelltexte, Editorpuffer, Formulare, Builds und Debugger. Reine Windows- und Dateisystemdiagnosen ohne projektbezogene Schreibaktionen erfordern DAI nicht."
     ---
 
     %s
@@ -662,7 +662,10 @@ begin
 
     ## Vor Dateiänderungen
 
-    - Vor Dateiänderungen den geladenen IDE-Zustand prüfen, besonders bei `.pas`, `.dfm`, `.fmx`, `.dpr`, `.dpk`, `.dproj`, `.groupproj`, `.bdsgroup` und `.bpg`.
+    - Vor Änderungen an `.dproj`, `.dpr`, `.dpk`, `.pas`, `.inc`, `.sql`, `.dfm`, `.fmx`, `.groupproj`, `.bdsgroup` und `.bpg` immer DAI-Erreichbarkeit und geladenen IDE-Zustand prüfen, unabhängig vom Repository.
+    - Andere Dateitypen wie `.cmd`, `.ps1` oder `.txt` einbeziehen, wenn sie mit einem Delphi-Projekt zusammenhängen oder als in Delphi geladen bekannt sind.
+    - Vor dem Ausführen von Skripten deren mögliche Schreibziele prüfen; können solche Dateien erzeugt, geändert, umbenannt oder gelöscht werden, vorab denselben IDE-Abgleich für die betroffenen Dateien durchführen. Externe Skripte dürfen den Schutz geladener IDE-Puffer nicht umgehen.
+    - Reine Windows-, Dateisystem- oder Skriptdiagnosen ohne solche Schreibaktionen erfordern keine vorsorgliche DAI-Abfrage; eine Delphi-Fehlermeldung allein ist kein Anlass.
     - Bei erreichbarem DAI `ide_status`, `open_files_list` und `projects_list` abgleichen; mehrere betroffene IDE-Instanzen berücksichtigen.
     - Kein sichtbarer Editor-Tab bedeutet nicht ungeladen. Geladene Projektgruppen umfassen GROUPPROJ/BDSGROUP/BPG, geladene Projekte ihre DPROJ sowie DPR/DPK.
     - Zu einem geladenen Formularmodul gehören PAS und DFM/FMX gemeinsam, in beide Richtungen, auch ohne sichtbaren Code- oder Designer-Tab.
@@ -882,7 +885,7 @@ begin
     {$ELSE}
     '---' + sLineBreak +
     'name: %s' + sLineBreak +
-    'description: "Nutze DAI bei Aufgaben zu Delphi und zur Delphi-IDE: Projekte, Quelltexte, Editorpuffer, Formulare, Builds und Debugger."' + sLineBreak +
+    'description: "Nutze DAI bei Aufgaben zu Delphi und zur Delphi-IDE: Projekte, Quelltexte, Editorpuffer, Formulare, Builds und Debugger. Reine Windows- und Dateisystemdiagnosen ohne projektbezogene Schreibaktionen erfordern DAI nicht."' + sLineBreak +
     '---' + sLineBreak +
     '' + sLineBreak +
     '%s' + sLineBreak +
@@ -900,7 +903,11 @@ begin
     '' + sLineBreak +
     '## Vor Dateiänderungen' + sLineBreak +
     '' + sLineBreak +
-    '- Vor Dateiänderungen den geladenen IDE-Zustand prüfen, besonders bei `.pas`, `.dfm`, `.fmx`, `.dpr`, `.dpk`, `.dproj`, `.groupproj`, `.bdsgroup` und `.bpg`.' + sLineBreak +
+    '- Vor Änderungen an `.dproj`, `.dpr`, `.dpk`, `.pas`, `.inc`, `.sql`, `.dfm`, `.fmx`, `.groupproj`, `.bdsgroup` und `.bpg` immer DAI-Erreichbarkeit und geladenen IDE-Zustand prüfen, unabhängig vom Repository.' + sLineBreak +
+    '- Andere Dateitypen wie `.cmd`, `.ps1` oder `.txt` einbeziehen, wenn sie mit einem Delphi-Projekt zusammenhängen oder als in Delphi geladen bekannt sind.' + sLineBreak +
+    '- Vor dem Ausführen von Skripten deren mögliche Schreibziele prüfen; können solche Dateien erzeugt, geändert, umbenannt oder gelöscht werden, vorab denselben IDE-Abgleich für die betroffenen Dateien ' +
+    'durchführen. Externe Skripte dürfen den Schutz geladener IDE-Puffer nicht umgehen.' + sLineBreak +
+    '- Reine Windows-, Dateisystem- oder Skriptdiagnosen ohne solche Schreibaktionen erfordern keine vorsorgliche DAI-Abfrage; eine Delphi-Fehlermeldung allein ist kein Anlass.' + sLineBreak +
     '- Bei erreichbarem DAI `ide_status`, `open_files_list` und `projects_list` abgleichen; mehrere betroffene IDE-Instanzen berücksichtigen.' + sLineBreak +
     '- Kein sichtbarer Editor-Tab bedeutet nicht ungeladen. Geladene Projektgruppen umfassen GROUPPROJ/BDSGROUP/BPG, geladene Projekte ihre DPROJ sowie DPR/DPK.' + sLineBreak +
     '- Zu einem geladenen Formularmodul gehören PAS und DFM/FMX gemeinsam, in beide Richtungen, auch ohne sichtbaren Code- oder Designer-Tab.' + sLineBreak +

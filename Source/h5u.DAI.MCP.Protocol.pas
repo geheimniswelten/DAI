@@ -159,7 +159,11 @@ function BuildServerInstructions: string;
 begin
   Result :=
     'DAI (Delphi AI) steuert die aktuell geöffnete Delphi-IDE. Bei Anfragen zu Delphi oder zur Delphi-IDE die DAI-Werkzeuge berücksichtigen. ' +
-    'Vor Dateiänderungen, besonders an PAS, DFM, FMX, DPR, DPK, DPROJ, GROUPPROJ, BDSGROUP und BPG, den geladenen IDE-Zustand prüfen: ' +
+    'Vor Änderungen an DPROJ, DPR, DPK, PAS, INC, SQL, DFM, FMX, GROUPPROJ, BDSGROUP und BPG immer DAI-Erreichbarkeit und geladenen IDE-Zustand prüfen, unabhängig vom Repository. ' +
+    'Andere Dateitypen wie CMD, PS1 oder TXT einbeziehen, wenn sie mit einem Delphi-Projekt zusammenhängen oder als in Delphi geladen bekannt sind. ' +
+    'Vor Skriptläufen die möglichen Schreibziele prüfen; können solche Dateien erzeugt, geändert, umbenannt oder gelöscht werden, vorab denselben IDE-Abgleich für die betroffenen Dateien durchführen. ' +
+    'Externe Skripte dürfen den Schutz geladener IDE-Puffer nicht umgehen. ' +
+    'Reine Windows-, Dateisystem- oder Skriptdiagnosen ohne solche Schreibaktionen erfordern keine vorsorgliche DAI-Abfrage; eine Delphi-Fehlermeldung allein ist kein Anlass. ' +
     'ide_status, open_files_list und projects_list abgleichen; bei mehreren erreichbaren IDEs alle betroffenen Instanzen berücksichtigen. ' +
     'Kein sichtbarer Editor-Tab bedeutet nicht ungeladen. Geladene Projektgruppen umfassen GROUPPROJ/BDSGROUP/BPG, ' +
     'geladene Projekte ihre DPROJ sowie DPR/DPK, auch ohne Editor-Tab. Zu einem geladenen Formularmodul gehören PAS und DFM/FMX gemeinsam, in beide Richtungen. ' +

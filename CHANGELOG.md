@@ -2,6 +2,8 @@
 
 ## 1.2.36
 
+- MCP-Anweisungen und Delphi-Skill grenzen die IDE-Prüfung auf Änderungen an Delphi-Quelldateien einschließlich INC, SQL-Skripten, Formularen, Projekt-/Gruppendateien sowie weitere Dateien mit Projektbezug oder bekanntem IDE-Puffer ein. Skriptläufe berücksichtigen mögliche Schreibziele; reine Windows- und Dateisystemdiagnosen benötigen keine vorsorgliche DAI-Abfrage.
+
 - `project_open` arbeitet als verfolgbarer Hintergrundauftrag mit Status und Verarbeitungsphase. Speichern, Verwerfen und Abbrechen bleiben native IDE-Entscheidungen; ein Client-Timeout gilt nicht als Abbruch. Laufende doppelte Anfragen werden zusammengeführt, andere parallele Wechsel abgewiesen.
 - Fenster-/Dialogdiagnose und Projektwechselstatus fragen das aktive IDE-Projekt nicht mehr synchron ab. Dadurch bleibt insbesondere der begrenzte native Fallback von `ide_windows_list` bei blockiertem Hauptthread erreichbar. Reine Wechselstatusabfragen ändern die Aktivitätsanzeige nicht.
 - `dcc32_execute` und `msbuild_execute` dekodieren umgeleitete Ausgaben mit Windows-OEM statt ANSI, erkennen UTF-8-/UTF-16-BOMs und erlauben eine explizite `output_codepage`. Die verwendete Codepage wird zurückgegeben.

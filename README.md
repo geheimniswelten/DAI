@@ -1025,9 +1025,13 @@ Vorgeschriebene gemeinsame Clientdateinamen wie `config.toml`, `settings.json`, 
 Ein bereits vorhandener, nicht markierter `[mcp_servers.dai]`-Abschnitt wird nicht überschrieben.
 
 Der erzeugte `SKILL.md` enthält gültige YAML-Metadaten (`name`, `description`), aktuelle Werkzeugnamen, Parameter, Hashkonfliktbehandlung und Zugriffsgrenzen.
-Der Skill nennt DAI ausdrücklich als Werkzeug für Delphi und die Delphi-IDE. Vor Dateiänderungen soll der KI-Client die DAI-Erreichbarkeit
-und offene IDE-Puffer prüfen und diese bevorzugt über DAI bearbeiten. Ungespeicherte Benutzeränderungen dürfen dabei nicht ungefragt gespeichert,
-verworfen oder überschrieben werden. Diese Kernhinweise liefert DAI auch über `instructions` bei `initialize` und `server/discover` an andere Clients.
+Der Skill nennt DAI ausdrücklich als Werkzeug für Delphi und die Delphi-IDE. Vor Änderungen an Delphi-Quelltexten (einschließlich INC),
+SQL-Skripten, Formularen sowie Projekt- und Projektgruppendateien muss der KI-Client immer die DAI-Erreichbarkeit und den geladenen IDE-Zustand prüfen.
+Andere Dateitypen wie CMD, PS1 oder TXT sind bei Delphi-Projektbezug oder bekanntem IDE-Puffer einbezogen. Vor Skriptläufen gelten dieselben
+Prüfungen für deren mögliche Schreibziele; externe Skripte dürfen den Pufferschutz nicht umgehen. Reine Windows-, Dateisystem- oder
+Skriptdiagnosen ohne solche Schreibaktionen benötigen keine vorsorgliche DAI-Abfrage. Ungespeicherte Benutzeränderungen dürfen nicht
+ungefragt gespeichert, verworfen oder überschrieben werden. Diese Kernhinweise liefert DAI auch über `instructions` bei `initialize`
+und `server/discover` an andere Clients.
 Neue Registrierungen erhalten den aktuellen Skill; einen bereits von DAI verwalteten Skill aktualisiert erneutes `Registrieren`.
 
 Ein vorhandener fremder `dai-delphi-ide`-Skill wird nicht überschrieben. Die automatische Skill-Erkennung ist hier für Codex eingerichtet; andere Clients benötigen ihre eigene Skill-Installation.
