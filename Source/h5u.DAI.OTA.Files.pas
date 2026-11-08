@@ -94,6 +94,43 @@ begin
     raise EDAIAccessDenied.Create('DAI-Projektberechtigungen dürfen nur über die DAI-Berechtigungsabfrage oder die DAI-Optionen geändert werden.');
 end;
 
+function PreparePascalIndentation(const AFileName, AText: string; const ASourceEditor: IOTASourceEditor): string;
+var
+  LBuffer: IOTAEditBuffer;
+  LBufferOptions: IOTABufferOptions;
+  LEditOptions: IOTAEditOptions;
+  LEditorServices: IOTAEditorServices;
+  LExtension, LTabStops: string;
+begin
+  Result := AText;
+  if Pos(#9, AText) = 0 then
+    Exit;
+  LExtension := ExtractFileExt(AFileName);
+  if not SameText(LExtension, '.pas') and not SameText(LExtension, '.dpr') and
+    not SameText(LExtension, '.dpk') and not SameText(LExtension, '.inc') then
+    Exit;
+  try
+    // A loaded buffer can override its language settings. Never use the active editor's options.
+    if Supports(ASourceEditor, IOTAEditBuffer, LBuffer) then
+      LBufferOptions := LBuffer.BufferOptions;
+    if not Assigned(LBufferOptions) and Supports(BorlandIDEServices, IOTAEditorServices, LEditorServices) then
+    begin
+      LEditOptions := LEditorServices.GetEditOptionsForFile(AFileName);
+      if Assigned(LEditOptions) then
+        LBufferOptions := LEditOptions.BufferOptions;
+    end;
+    if not Assigned(LBufferOptions) then
+      Exit;
+    if LBufferOptions.UseTabCharacter then
+      Exit;
+    LTabStops := LBufferOptions.TabStops;
+  except
+    // Unavailable settings do not authorize guessing a tab width or reformatting source.
+    Exit;
+  end;
+  Result := TDAITextEncoding.ExpandPascalIndentationTabs(AFileName, AText, LTabStops);
+end;
+
 function PrepareFormEditorText(const AFileName, AText: string): string;
 var
   LBinary: TMemoryStream;
@@ -957,9 +994,11 @@ var
   LFileName: string;
   LFromDesigner: Boolean;
   LHasCurrentContent: Boolean;
+  LIndentationNormalized: Boolean;
   LUsedEditorBuffer: Boolean;
   LOriginalEncoding: string;
   LOriginalLineEnding: string;
+  LPreparedContent: string;
   LProjectSidecar: string;
   LFormat: TDAITextFileFormat;
   LSourceEditor: IOTASourceEditor;
@@ -969,6 +1008,7 @@ begin
   LUsedEditorBuffer := False;
   LFromDesigner := False;
   LHasCurrentContent := False;
+  LIndentationNormalized := False;
   LOriginalEncoding := '';
   LOriginalLineEnding := '';
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
@@ -1014,12 +1054,14 @@ begin
     begin
       RequireNoLoadedProjectModelWrite(LFileName);
       LSourceEditor := TDAIOTA.FindSourceEditor(LFileName);
+      LPreparedContent := PreparePascalIndentation(LFileName, AContent, LSourceEditor);
+      LIndentationNormalized := LPreparedContent <> AContent;
       if Assigned(LSourceEditor) then
       begin
         if LHasCurrentContent then
-          LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, LCurrentFormat.LineEndingKind)
+          LWrittenContent := TDAITextEncoding.PrepareText(LFileName, LPreparedContent, LCurrentFormat.LineEndingKind)
         else
-          LWrittenContent := TDAITextEncoding.PrepareText(LFileName, AContent, lekNone);
+          LWrittenContent := TDAITextEncoding.PrepareText(LFileName, LPreparedContent, lekNone);
         LWrittenContent := PrepareFormEditorText(LFileName, LWrittenContent);
         if TEncoding.UTF8.GetByteCount(LWrittenContent) > CDAIMaxTextFileBytes then
           raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
@@ -1070,7 +1112,7 @@ begin
         end
         else if LHasCurrentContent then
           raise EInvalidOperation.Create('Die Datei wurde während der Schreibanforderung entfernt. Lesen Sie die Datei erneut.');
-        LBytes := TDAITextEncoding.PrepareWrite(LFileName, AContent, LWrittenContent, LFormat);
+        LBytes := TDAITextEncoding.PrepareWrite(LFileName, LPreparedContent, LWrittenContent, LFormat);
         if Length(LBytes) > CDAIMaxTextFileBytes then
           raise EInvalidOperation.CreateFmt('Der neue Inhalt überschreitet das Limit von %d MiB.', [CDAIMaxTextFileBytes div 1024 div 1024]);
         // Do not yield between the last loaded-module check and the physical write.
@@ -1087,6 +1129,7 @@ begin
   Result.AddPair('file', LFileName);
   Result.AddPair('target', IfThen(AUsedEditorBuffer, 'editor_buffer', 'disk'));
   Result.AddPair('saved', TJSONBool.Create((not AUsedEditorBuffer) or ASave));
+  Result.AddPair('indentation_normalized', TJSONBool.Create(LIndentationNormalized));
   Result.AddPair('encoding', TDAITextEncoding.EncodingName(LFormat.EncodingKind));
   Result.AddPair('original_encoding', LOriginalEncoding);
   Result.AddPair('line_ending', TDAITextEncoding.LineEndingName(LFormat.LineEndingKind));

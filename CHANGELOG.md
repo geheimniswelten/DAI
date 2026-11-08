@@ -2,6 +2,10 @@
 
 ## 1.2.36
 
+- file_write und file_edit beachten für Pascal-Einrückungen die Option „Tabulatorzeichen verwenden“ und die Tabstopps der Zieldatei. Nur bei ausgeschalteter Option werden führende Code-Tabs in passende Leerzeichen umgewandelt; Tabs in XMLDoc-/Blockkommentaren und Stringliteralen bleiben erhalten. Die globale Ersetzung durch zwei Leerzeichen entfällt.
+
+- `project_tools_list` und `project_tool_call` erschließen projektspezifische IDE-Erweiterungen für geladene Projekte. V1 bleibt lesend. V2 kann zusätzlich Schreibwerkzeuge deklarieren, deren Aufruf DAI erst nach Projektlese- und Projektschreibfreigabe an den Provider weitergibt.
+
 - MCP-Anweisungen und Delphi-Skill grenzen die IDE-Prüfung auf Änderungen an Delphi-Quelldateien einschließlich INC, SQL-Skripten, Formularen, Projekt-/Gruppendateien sowie weitere Dateien mit Projektbezug oder bekanntem IDE-Puffer ein. Skriptläufe berücksichtigen mögliche Schreibziele; reine Windows- und Dateisystemdiagnosen benötigen keine vorsorgliche DAI-Abfrage.
 
 - `project_open` arbeitet als verfolgbarer Hintergrundauftrag mit Status und Verarbeitungsphase. Speichern, Verwerfen und Abbrechen bleiben native IDE-Entscheidungen; ein Client-Timeout gilt nicht als Abbruch. Laufende doppelte Anfragen werden zusammengeführt, andere parallele Wechsel abgewiesen.

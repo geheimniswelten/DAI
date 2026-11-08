@@ -14,6 +14,8 @@ MAX_LINE_LENGTH = 180
 
 REQUIRED_TOOLS = {
     "ide_ai_status",
+    "project_tools_list",
+    "project_tool_call",
     "project_index_status",
     "project_index_build",
     "project_index_delete",
@@ -918,12 +920,10 @@ def check_encoding_policy(errors: list[str]) -> None:
     elif "'.dfm'" in default_match.group(1).lower():
         fail(errors, "h5u.DAI.Text.Encoding.pas: Die PAS-Standardcodierung darf nicht auf DFM-Dateien angewendet werden")
 
-    if not re.search(r"StringReplace\s*\(\s*Result\s*,\s*#9\s*,\s*'  '\s*,", encoding_content, flags=re.IGNORECASE):
-        fail(errors, "h5u.DAI.Text.Encoding.pas: Pascal-Tabulatoren müssen beim Schreiben durch zwei Leerzeichen ersetzt werden")
     if not re.search(r"lekCR\s*,\s*lekMixed\s*:\s*Result\s*:=\s*lekCRLF", encoding_content, flags=re.IGNORECASE | re.DOTALL):
         fail(errors, "h5u.DAI.Text.Encoding.pas: gemischte Zeilenenden benötigen einen eindeutigen CRLF-Fallback")
-    if "TDAITextEncoding.PrepareText(LFileName, AContent" not in files_content:
-        fail(errors, "h5u.DAI.OTA.Files.pas: Editor-Schreibzugriffe müssen Zeilenenden und Source-Tabs normalisieren")
+    if not re.search(r"TDAITextEncoding\.PrepareText\s*\(\s*LFileName\s*,", files_content):
+        fail(errors, "h5u.DAI.OTA.Files.pas: Editor-Schreibzugriffe müssen Zeilenenden normalisieren")
 
 
 def check_code_insight_integration(errors: list[str]) -> None:
@@ -1276,7 +1276,7 @@ def check_lexical_balance(errors: list[str]) -> None:
 
 def deliverable_files() -> list[Path]:
     """Check the shipped source, excluding builds, personal chats and permission files."""
-    files = [p for folder in (SOURCE, ROOT / "Scripts", ROOT / "docs") for p in folder.rglob("*")
+    files = [p for folder in (SOURCE, ROOT / "Scripts", ROOT / "docs", ROOT / "SDK") for p in folder.rglob("*")
              if p.is_file() and "__pycache__" not in p.parts and p.suffix.lower() != ".pyc"]
     names = ("DAI.dpk", "DAI.dproj", "DAI.McpBridge.dpr", "Build.ps1", "Test-MCP.ps1", ".gitignore",
              "README.md", "CHANGELOG.md", "FINAL_VERIFICATION.md", "PORT_RESERVATION.md", "GETIT_COMPARISON.txt", "OPENTOOLSAPI_CODE_INSIGHT.md")

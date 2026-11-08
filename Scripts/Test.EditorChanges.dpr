@@ -428,6 +428,24 @@ begin
   end;
 end;
 
+procedure TestPreparedTabPreservation;
+const
+  COriginal = 'unit Example;' + #13#10 + 'interface' + #13#10 +
+    '///' + #9 + 'before' + #13#10 + 'implementation' + #13#10 +
+    'const Value = 1; Text = ''left' + #9 + 'right'';' + #13#10 +
+    '///' + #9 + 'after' + #13#10 + 'end.' + #13#10;
+var
+  LPrepared, LChanged: string;
+begin
+  LPrepared := TDAITextEncoding.PrepareText('Example.pas', COriginal, lekCRLF);
+  Check(LPrepared = COriginal, 'preparing identical Pascal text preserves tabs');
+  RunCase(COriginal, LPrepared, 'prepared tab no-op', 0, 0);
+  LChanged := StringReplace(COriginal, 'Value = 1', 'Value = 2', []);
+  LPrepared := TDAITextEncoding.PrepareText('Example.pas', LChanged, lekCRLF);
+  Check(LPrepared = LChanged, 'preparing edited Pascal text preserves unrelated tabs and literal');
+  RunCase(COriginal, LPrepared, 'prepared tab edit and undo', 1, 1);
+end;
+
 procedure TestCursorViewPaths;
 var
   LSource: TFakeSource;
@@ -660,6 +678,7 @@ begin
     TestRandomRoundtrips;
     TestFailureAndWrapper;
     TestCursorViewPaths;
+    TestPreparedTabPreservation;
     TestCursorOriginalByteAnchor;
     Writeln('PASS: ', GChecks, ' production diff/writer byte-offset, cursor anchor, readback and simulated undo checks');
   except

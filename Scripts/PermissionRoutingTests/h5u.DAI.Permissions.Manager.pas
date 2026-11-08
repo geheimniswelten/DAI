@@ -15,7 +15,7 @@ type
   private
     class var FInstance: TDAIPermissionManager;
   public
-    GlobalAllowed, ProjectAllowed: Boolean;
+    GlobalAllowed, ProjectAllowed, ProjectWriteAllowed: Boolean;
     Requests: TArray<TPermissionRequest>;
     class function Instance: TDAIPermissionManager; static;
     procedure Reset(const AGlobalAllowed, AProjectAllowed: Boolean);
@@ -33,6 +33,7 @@ procedure TDAIPermissionManager.Reset(const AGlobalAllowed, AProjectAllowed: Boo
 begin
   GlobalAllowed := AGlobalAllowed;
   ProjectAllowed := AProjectAllowed;
+  ProjectWriteAllowed := AProjectAllowed;
   Requests := [];
 end;
 
@@ -50,6 +51,8 @@ begin
     Exit(True);
   if AContext.ProjectKey = '' then
     Result := GlobalAllowed
+  else if ACategory = pcProjectWrite then
+    Result := ProjectWriteAllowed
   else
     Result := ProjectAllowed;
 end;

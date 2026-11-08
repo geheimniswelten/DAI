@@ -718,6 +718,195 @@ begin
   end;
 end;
 
+procedure CheckTabPreservation;
+const
+  COriginal = 'unit IsolatedBuffer;' + #13#10 + 'interface' + #13#10 +
+    '///' + #9 + 'before' + #13#10 + 'implementation' + #13#10 +
+    'const Value = 1; Text = ''left' + #9 + 'right'';' + #13#10 +
+    '///' + #9 + 'after' + #13#10 + 'end.' + #13#10;
+var
+  LChanged, LFileName, LDirectory, LExtension: string;
+  LResult, LRead: TJSONObject;
+  LEdits: TJSONArray;
+  LUsedEditor: Boolean;
+  LBytes: TBytes;
+begin
+  LChanged := StringReplace(COriginal, 'Value = 1', 'Value = 2', []);
+  for LExtension in ['.pas', '.dpr', '.dpk', '.inc'] do
+  begin
+    LFileName := 'IsolatedBuffer' + LExtension;
+    TDAIOTA.Reset(COriginal);
+    LRead := TDAIFileService.ReadFile(LFileName, 0, False);
+    try
+      Check(LRead.GetValue<string>('content') = COriginal, LExtension + ' full read retains tabs');
+      LResult := TDAIFileService.WriteFile(LFileName, LRead.GetValue<string>('content'),
+        LRead.GetValue<string>('sha256'), False, LUsedEditor);
+      try
+        Check(LUsedEditor and (TDAIOTA.Buffer = COriginal), LExtension + ' identical file_write preserves all tabs');
+      finally
+        LResult.Free;
+      end;
+    finally
+      LRead.Free;
+    end;
+
+    TDAIOTA.Reset(COriginal);
+    LResult := TDAIFileService.WriteFile(LFileName, LChanged, THashSHA2.GetHashString(COriginal), False, LUsedEditor);
+    try
+      Check(LUsedEditor and (TDAIOTA.Buffer = LChanged), LExtension + ' file_write preserves unrelated tabs and literal');
+      Check(not LResult.GetValue<Boolean>('saved'), LExtension + ' file_write leaves editor unsaved');
+    finally
+      LResult.Free;
+    end;
+
+    TDAIOTA.Reset(COriginal);
+    LEdits := TJSONArray.Create;
+    try
+      LEdits.AddElement(TJSONObject.Create.AddPair('old_text', 'Value = 1').AddPair('new_text', 'Value = 2'));
+      LResult := TDAIFileService.EditFile(LFileName, THashSHA2.GetHashString(COriginal), LEdits, False, LUsedEditor);
+      try
+        Check(LUsedEditor and (TDAIOTA.Buffer = LChanged), LExtension + ' file_edit preserves unrelated tabs and literal');
+      finally
+        LResult.Free;
+      end;
+    finally
+      LEdits.Free;
+    end;
+  end;
+
+  LDirectory := TPath.Combine(TPath.GetTempPath, 'DAI-Tab-Test-' + TGUID.NewGuid.ToString);
+  TDirectory.CreateDirectory(LDirectory);
+  try
+    for LExtension in ['.pas', '.dpr', '.dpk', '.inc'] do
+    begin
+      LFileName := TPath.Combine(LDirectory, 'IsolatedBuffer' + LExtension);
+      TFile.WriteAllText(LFileName, COriginal, TEncoding.UTF8);
+      try
+        TDAIOTA.Reset(COriginal);
+        TDAIOTA.OpenEditor := False;
+        LResult := TDAIFileService.WriteFile(LFileName, LChanged, THashSHA2.GetHashString(COriginal), True, LUsedEditor);
+        try
+          Check(not LUsedEditor and (LResult.GetValue<string>('target') = 'disk'), LExtension + ' closed file uses disk');
+          Check(TFile.ReadAllText(LFileName, TEncoding.UTF8) = LChanged, LExtension + ' disk write preserves tabs and CRLF');
+          LBytes := TFile.ReadAllBytes(LFileName);
+          Check((Length(LBytes) >= 3) and (LBytes[0] = $EF) and (LBytes[1] = $BB) and (LBytes[2] = $BF),
+            LExtension + ' disk write preserves UTF-8 BOM');
+        finally
+          LResult.Free;
+        end;
+      finally
+        TFile.Delete(LFileName);
+      end;
+    end;
+  finally
+    TDirectory.Delete(LDirectory);
+    TDAIOTA.Reset(COriginal);
+  end;
+end;
+
+procedure CheckIndentationOptions;
+const
+  COriginal = 'unit Test;' + #13#10 + 'interface' + #13#10 + 'implementation' + #13#10 +
+    #9 + 'begin' + #13#10 + '  ' + #9 + 'Value := ''a' + #9 + 'b'';' + #13#10 +
+    '///' + #9 + 'documentation' + #13#10 + '{ block' + #13#10 + #9 + 'inside }' + #13#10 +
+    #9 + 'end.' + #13#10;
+var
+  LExpected, LFileName, LDirectory, LExtension, LStops: string;
+  LResult: TJSONObject;
+  LEdits: TJSONArray;
+  LUsedEditor: Boolean;
+begin
+  for LStops in ['2', '4'] do
+    for LExtension in ['.pas', '.dpr', '.dpk', '.inc'] do
+    begin
+      LFileName := 'IsolatedBuffer' + LExtension;
+      LExpected := StringReplace(COriginal, #9 + 'begin', StringOfChar(' ', StrToInt(LStops)) + 'begin', []);
+      LExpected := StringReplace(LExpected, '  ' + #9 + 'Value', '    Value', []);
+      LExpected := StringReplace(LExpected, #9 + 'end.', StringOfChar(' ', StrToInt(LStops)) + 'end.', []);
+      TDAIOTA.Reset('old');
+      TDAIOTA.BufferOptionsAvailable := True;
+      TDAIOTA.BufferUseTabs := False;
+      TDAIOTA.BufferTabStops := LStops;
+      TDAIOTA.FileOptionsAvailable := True;
+      TDAIOTA.FileUseTabs := True;
+      LResult := TDAIFileService.WriteFile(LFileName, COriginal, '', False, LUsedEditor);
+      try
+        Check(LUsedEditor and (TDAIOTA.Buffer = LExpected), LExtension + ' live buffer uses its tab stops and preserves comments/literals');
+        Check((TDAIOTA.SaveCount = 0) and not LResult.GetValue<Boolean>('saved'), 'normalization never saves the user buffer');
+        Check(LResult.GetValue<Boolean>('indentation_normalized'), 'response reports indentation normalization');
+      finally
+        LResult.Free;
+      end;
+      TDAIOTA.Reset('old');
+      TDAIOTA.BufferOptionsAvailable := True;
+      TDAIOTA.BufferUseTabs := True;
+      TDAIOTA.FileOptionsAvailable := True;
+      TDAIOTA.FileUseTabs := False;
+      LResult := TDAIFileService.WriteFile(LFileName, COriginal, '', False, LUsedEditor);
+      try
+        Check(TDAIOTA.Buffer = COriginal, LExtension + ' live use-tabs option preserves indentation');
+        Check(not LResult.GetValue<Boolean>('indentation_normalized'), 'use-tabs response reports no normalization');
+      finally
+        LResult.Free;
+      end;
+    end;
+
+  TDAIOTA.Reset(COriginal);
+  TDAIOTA.BufferOptionsAvailable := True;
+  TDAIOTA.BufferUseTabs := False;
+  TDAIOTA.BufferTabStops := '4';
+  LEdits := TJSONArray.Create;
+  try
+    LEdits.AddElement(TJSONObject.Create.AddPair('old_text', 'Value :=').AddPair('new_text', 'Changed :='));
+    LResult := TDAIFileService.EditFile('IsolatedBuffer.pas', THashSHA2.GetHashString(COriginal), LEdits, False, LUsedEditor);
+    try
+      Check(Pos('    begin', TDAIOTA.Buffer) > 0, 'file_edit applies buffer indentation settings');
+      Check(Pos('    Changed := ''a' + #9 + 'b'';', TDAIOTA.Buffer) > 0, 'file_edit preserves literal tab');
+      Check((TDAIOTA.SaveCount = 0) and not LResult.GetValue<Boolean>('saved'), 'file_edit leaves user buffer unsaved');
+    finally
+      LResult.Free;
+    end;
+  finally
+    LEdits.Free;
+  end;
+  TDAIOTA.Reset('old');
+  TDAIOTA.OptionsRaise := True;
+  LResult := TDAIFileService.WriteFile('IsolatedBuffer.pas', COriginal, '', False, LUsedEditor);
+  try
+    Check(TDAIOTA.Buffer = COriginal, 'unavailable options fail safely without conversion');
+  finally
+    LResult.Free;
+  end;
+
+  LDirectory := TPath.Combine(TPath.GetTempPath, 'DAI-Indent-Test-' + TGUID.NewGuid.ToString);
+  TDirectory.CreateDirectory(LDirectory);
+  try
+    LFileName := TPath.Combine(LDirectory, 'ClosedTarget.pas');
+    TFile.WriteAllText(LFileName, 'old', TEncoding.UTF8);
+    try
+      TDAIOTA.Reset('active editor content');
+      TDAIOTA.OpenEditor := False;
+      TDAIOTA.BufferOptionsAvailable := True;
+      TDAIOTA.BufferUseTabs := True;
+      TDAIOTA.FileOptionsAvailable := True;
+      TDAIOTA.FileUseTabs := False;
+      TDAIOTA.FileTabStops := '4';
+      LResult := TDAIFileService.WriteFile(LFileName, COriginal, THashSHA2.GetHashString('old'), True, LUsedEditor);
+      try
+        Check(not LUsedEditor and SameText(TDAIOTA.OptionsFileName, LFileName), 'closed file options are requested for the target path');
+        Check(Pos('    begin', TFile.ReadAllText(LFileName, TEncoding.UTF8)) > 0, 'closed file uses target settings');
+        Check((TDAIOTA.Buffer = 'active editor content') and (TDAIOTA.SaveCount = 0), 'closed file does not touch or save another editor');
+      finally
+        LResult.Free;
+      end;
+    finally
+      TFile.Delete(LFileName);
+    end;
+  finally
+    TDirectory.Delete(LDirectory);
+  end;
+end;
+
 procedure RunChecks;
 const
   CUnicode = 'unit IsolatedBuffer; interface { Grüße 漢字 ' + #$D83D#$DE00 + ' } implementation end.';
@@ -818,6 +1007,8 @@ begin
     CheckInterfaceReads;
     CheckUnitWriteGuards;
     CheckLocalEdits;
+    CheckTabPreservation;
+    CheckIndentationOptions;
     CheckFormUnicode('dfm');
     CheckFormUnicode('fmx');
     Writeln('PASS: ', CheckCount, ' isolated native editor write/read-view checks');

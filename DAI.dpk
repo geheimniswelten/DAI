@@ -46,6 +46,7 @@ requires
   FireDACSqliteDriver;
 
 contains
+  h5u.DAI.ProjectTools in 'Source\h5u.DAI.ProjectTools.pas',
   h5u.DAI.OTA.Threads in 'Source\h5u.DAI.OTA.Threads.pas',
   h5u.DAI.OTA.Stack in 'Source\h5u.DAI.OTA.Stack.pas',
   h5u.DAI.OTA.Messages in 'Source\h5u.DAI.OTA.Messages.pas',

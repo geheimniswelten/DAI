@@ -27,7 +27,7 @@ type
 const
   // Keep this catalog explicit: an unrecognized client-supplied name must never become a persistent usage key.
   // Test.ToolUsage verifies exact coverage of the production ListTools catalog.
-  CToolUsageDefinitions: array[0..88] of TDAIToolUsageDefinition = (
+  CToolUsageDefinitions: array[0..90] of TDAIToolUsageDefinition = (
     (Name: 'breakpoint_remove'; Activity: taActive),
     (Name: 'breakpoint_set'; Activity: taActive),
     (Name: 'breakpoints_list'; Activity: taActive),
@@ -106,6 +106,8 @@ const
     (Name: 'project_run'; Activity: taActive),
     (Name: 'project_save'; Activity: taActive),
     (Name: 'project_stop'; Activity: taActive),
+    (Name: 'project_tool_call'; Activity: taActive),
+    (Name: 'project_tools_list'; Activity: taActive),
     (Name: 'projects_list'; Activity: taQuiet),
     (Name: 'reference_file_read'; Activity: taActive),
     (Name: 'reference_files_list'; Activity: taDirectory),

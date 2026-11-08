@@ -24,6 +24,14 @@ type
     class var OpenOnFinalLookup: Boolean;
     class var FinalBuffer: string;
     class var SourceEditor: IOTASourceEditor;
+    class var BufferOptionsAvailable: Boolean;
+    class var FileOptionsAvailable: Boolean;
+    class var BufferUseTabs: Boolean;
+    class var FileUseTabs: Boolean;
+    class var OptionsRaise: Boolean;
+    class var BufferTabStops: string;
+    class var FileTabStops: string;
+    class var OptionsFileName: string;
     class procedure Reset(const AText: string); static;
     class procedure RunOnMainThread(const AAction: TThreadProcedure); static;
     class procedure RequireNoReparseWritePath(const AFileName: string); static;
@@ -56,9 +64,10 @@ uses
   h5u.DAI.Text.Encoding;
 
 type
-  TTestEditor = class(TInterfacedObject, IOTAEditor, IOTASourceEditor)
+  TTestEditor = class(TInterfacedObject, IOTAEditor, IOTASourceEditor, IOTAEditBuffer)
     function GetFileName: string;
     function CreateReader: IOTAEditReader;
+    function GetBufferOptions: IOTABufferOptions;
   end;
 
   TTestReader = class(TInterfacedObject, IOTAEditReader)
@@ -69,7 +78,21 @@ type
     function GetText(Position: Longint; Buffer: PAnsiChar; Count: Longint): Longint;
   end;
 
-  TTestActions = class(TInterfacedObject, IOTAActionServices)
+  TTestBufferOptions = class(TInterfacedObject, IOTABufferOptions)
+  private
+    FIsBuffer: Boolean;
+  public
+    constructor Create(AIsBuffer: Boolean);
+    function GetTabStops: string;
+    function GetUseTabCharacter: Boolean;
+  end;
+
+  TTestEditOptions = class(TInterfacedObject, IOTAEditOptions)
+    function GetBufferOptions: IOTABufferOptions;
+  end;
+
+  TTestActions = class(TInterfacedObject, IOTAActionServices, IOTAEditorServices)
+    function GetEditOptionsForFile(const FileName: string): IOTAEditOptions;
     function OpenFile(const AFileName: string): Boolean;
     function SaveFile(const AFileName: string): Boolean;
   end;
@@ -82,6 +105,56 @@ end;
 function TTestEditor.CreateReader: IOTAEditReader;
 begin
   Result := TTestReader.Create;
+end;
+
+function TTestEditor.GetBufferOptions: IOTABufferOptions;
+begin
+  Result := nil;
+  if TDAIOTA.OptionsRaise then
+    raise Exception.Create('Test option failure');
+  if TDAIOTA.BufferOptionsAvailable then
+    Result := TTestBufferOptions.Create(True);
+end;
+
+constructor TTestBufferOptions.Create(AIsBuffer: Boolean);
+begin
+  inherited Create;
+  FIsBuffer := AIsBuffer;
+end;
+
+function TTestBufferOptions.GetTabStops: string;
+begin
+  if TDAIOTA.OptionsRaise then
+    raise Exception.Create('Test option failure');
+  if FIsBuffer then
+    Result := TDAIOTA.BufferTabStops
+  else
+    Result := TDAIOTA.FileTabStops;
+end;
+
+function TTestBufferOptions.GetUseTabCharacter: Boolean;
+begin
+  if TDAIOTA.OptionsRaise then
+    raise Exception.Create('Test option failure');
+  if FIsBuffer then
+    Result := TDAIOTA.BufferUseTabs
+  else
+    Result := TDAIOTA.FileUseTabs;
+end;
+
+function TTestEditOptions.GetBufferOptions: IOTABufferOptions;
+begin
+  Result := TTestBufferOptions.Create(False);
+end;
+
+function TTestActions.GetEditOptionsForFile(const FileName: string): IOTAEditOptions;
+begin
+  TDAIOTA.OptionsFileName := FileName;
+  if TDAIOTA.OptionsRaise then
+    raise Exception.Create('Test option failure');
+  Result := nil;
+  if TDAIOTA.FileOptionsAvailable then
+    Result := TTestEditOptions.Create;
 end;
 
 function TTestReader.GetText(Position: Longint; Buffer: PAnsiChar; Count: Longint): Longint;
@@ -129,6 +202,14 @@ begin
   LoadOnFinalLookup := False;
   OpenOnFinalLookup := False;
   FinalBuffer := '';
+  BufferOptionsAvailable := False;
+  FileOptionsAvailable := False;
+  BufferUseTabs := True;
+  FileUseTabs := True;
+  OptionsRaise := False;
+  BufferTabStops := '2';
+  FileTabStops := '2';
+  OptionsFileName := '';
 end;
 
 class procedure TDAIOTA.RunOnMainThread(const AAction: TThreadProcedure);

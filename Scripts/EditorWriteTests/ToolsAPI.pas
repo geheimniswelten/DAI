@@ -22,6 +22,31 @@ type
     function CreateReader: IOTAEditReader;
   end;
 
+  IOTABufferOptions = interface
+    ['{38E7F12C-7682-40E9-B13B-9C2E36BDBAFC}']
+    function GetTabStops: string;
+    function GetUseTabCharacter: Boolean;
+    property TabStops: string read GetTabStops;
+    property UseTabCharacter: Boolean read GetUseTabCharacter;
+  end;
+
+  IOTAEditBuffer = interface(IOTASourceEditor)
+    ['{EB6465CE-D901-43C4-AB69-240A7400B9AA}']
+    function GetBufferOptions: IOTABufferOptions;
+    property BufferOptions: IOTABufferOptions read GetBufferOptions;
+  end;
+
+  IOTAEditOptions = interface
+    ['{02999EF7-669C-406B-8E14-4FE8B27542B8}']
+    function GetBufferOptions: IOTABufferOptions;
+    property BufferOptions: IOTABufferOptions read GetBufferOptions;
+  end;
+
+  IOTAEditorServices = interface
+    ['{CAC82350-3885-4CAE-84AE-F1C3B38A6E91}']
+    function GetEditOptionsForFile(const FileName: string): IOTAEditOptions;
+  end;
+
   IOTAModule = interface
     ['{34FB6276-488B-4529-9DC5-8985BF6F6F89}']
     function GetFileName: string;

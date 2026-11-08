@@ -53,6 +53,7 @@ type
   public
     class function ApplyLineEnding(const AText: string; const ALineEndingKind: TDAILineEndingKind): string; static;
     class function DetectLineEnding(const AText: string): TDAILineEndingKind; static;
+    class function ExpandPascalIndentationTabs(const AFileName, AText, ATabStops: string): string; static;
     class function EncodingName(const AEncodingKind: TDAITextEncodingKind): string; static;
     class function EditorWriteMatches(const ARequestedText, AActualText: string): Boolean; static;
     class function LineEndingName(const ALineEndingKind: TDAILineEndingKind): string; static;
@@ -214,6 +215,200 @@ begin
       end;
   else
     raise EEncodingError.Create('Nicht unterstützte Textcodierung.');
+  end;
+end;
+
+class function TDAITextEncoding.ExpandPascalIndentationTabs(const AFileName, AText, ATabStops: string): string;
+const
+  MaxTextCharacters = 16 * 1024 * 1024;
+  MaxTabWidth = 256;
+type
+  TLexState = (lsCode, lsBrace, lsParen, lsLine, lsString, lsMultiline, lsOpaque);
+var
+  LState: TLexState;
+  LIndex, LNext, LOut, LWidth, LColumn, LSpaces, LQuotes, LDelimiter, LPass: Integer;
+  LPrefix: Boolean;
+  LChar: Char;
+  LCommentStack: array[0..4095] of Char;
+  LDepth: Integer;
+
+  function At(AIndex: Integer): Char;
+  begin
+    if (AIndex < 1) or (AIndex > Length(AText)) then
+      Exit(#0);
+    Result := AText[AIndex];
+  end;
+
+  procedure Put(AChar: Char);
+  begin
+    if LOut >= MaxTextCharacters then
+      raise ERangeError.Create('Expanded text exceeds limit');
+    Inc(LOut);
+    if LPass = 2 then
+      Result[LOut] := AChar;
+  end;
+
+begin
+  Result := AText;
+  if not IsPascalSourceFile(AFileName) or (Length(AText) > MaxTextCharacters) or (Pos(#9, AText) = 0) then
+    Exit;
+  // Only a single, unambiguous periodic stop is interpreted. Unknown formats
+  // and explicit stop lists remain untouched rather than guessing their meaning.
+  if (ATabStops = '') or (Length(ATabStops) > 3) then
+    Exit;
+  for LIndex := 1 to Length(ATabStops) do
+    if not CharInSet(ATabStops[LIndex], ['0'..'9']) then
+      Exit;
+  if not TryStrToInt(ATabStops, LWidth) or (LWidth < 1) or (LWidth > MaxTabWidth) then
+    Exit;
+  try
+    for LPass := 1 to 2 do
+    begin
+      LState := lsCode;
+      LIndex := 1;
+      LOut := 0;
+      LColumn := 0;
+      LPrefix := True;
+      LDelimiter := 0;
+      LDepth := 0;
+      while LIndex <= Length(AText) do
+      begin
+        LChar := AText[LIndex];
+        if CharInSet(LChar, [#13, #10]) then
+        begin
+          Put(LChar);
+          if LState = lsLine then
+            LState := lsCode;
+          LPrefix := True;
+          LColumn := 0;
+          Inc(LIndex);
+          Continue;
+        end;
+        if LPrefix and CharInSet(LChar, [' ', #9]) then
+        begin
+          if (LChar = #9) and (LState = lsCode) then
+          begin
+            LSpaces := LWidth - (LColumn mod LWidth);
+            Inc(LColumn, LSpaces);
+            while LSpaces > 0 do
+            begin
+              Put(' ');
+              Dec(LSpaces);
+            end;
+          end
+          else
+          begin
+            Put(LChar);
+            Inc(LColumn);
+          end;
+          Inc(LIndex);
+          Continue;
+        end;
+        if (LState = lsMultiline) and LPrefix and (LChar = #39) then
+        begin
+          LNext := LIndex;
+          while (LNext <= Length(AText)) and (At(LNext) = #39) do
+            Inc(LNext);
+          LQuotes := LNext - LIndex;
+          while LIndex < LNext do
+          begin
+            Put(AText[LIndex]);
+            Inc(LIndex);
+          end;
+          if LQuotes = LDelimiter then
+            LState := lsCode;
+          LPrefix := False;
+          Continue;
+        end;
+        LPrefix := False;
+        if (LState = lsCode) and (LChar = #39) then
+        begin
+          LNext := LIndex;
+          while (LNext <= Length(AText)) and (At(LNext) = #39) do
+            Inc(LNext);
+          LQuotes := LNext - LIndex;
+          if (LQuotes >= 3) and Odd(LQuotes) and (LNext <= Length(AText)) and
+            CharInSet(At(LNext), [#13, #10]) then
+          begin
+            LState := lsMultiline;
+            LDelimiter := LQuotes;
+            while LIndex < LNext do
+            begin
+              Put(AText[LIndex]);
+              Inc(LIndex);
+            end;
+            Continue;
+          end;
+          LState := lsString;
+        end
+        else if (LState = lsString) and (LChar = #39) then
+        begin
+          Put(LChar);
+          Inc(LIndex);
+          if (LIndex <= Length(AText)) and (At(LIndex) = #39) then
+          begin
+            Put(AText[LIndex]);
+            Inc(LIndex);
+          end
+          else
+            LState := lsCode;
+          Continue;
+        end
+        else if LState in [lsBrace, lsParen] then
+        begin
+          // Delphi permits mixed comment delimiters. Track nested comments;
+          // if unusually deep, preserve the rest rather than misclassify it.
+          if (LChar = '{') or ((LChar = '(') and (At(LIndex + 1) = '*')) then
+          begin
+            if LDepth = Length(LCommentStack) then
+              LState := lsOpaque
+            else
+            begin
+              LCommentStack[LDepth] := LChar;
+              Inc(LDepth);
+              if LChar = '(' then
+              begin
+                Put(LChar);
+                Inc(LIndex);
+              end;
+            end;
+          end
+          else if ((LCommentStack[LDepth - 1] = '{') and (LChar = '}')) or
+            ((LCommentStack[LDepth - 1] = '(') and (LChar = '*') and (At(LIndex + 1) = ')')) then
+          begin
+            if LChar = '*' then
+            begin
+              Put(LChar);
+              Inc(LIndex);
+            end;
+            Dec(LDepth);
+            if LDepth = 0 then
+              LState := lsCode;
+          end;
+        end
+        else if (LState = lsCode) and ((LChar = '{') or
+          ((LChar = '(') and (At(LIndex + 1) = '*'))) then
+        begin
+          LCommentStack[0] := LChar;
+          LDepth := 1;
+          LState := lsBrace;
+          if LChar = '(' then
+          begin
+            Put(LChar);
+            Inc(LIndex);
+          end;
+        end
+        else if (LState = lsCode) and (LChar = '/') and (At(LIndex + 1) = '/') then
+          LState := lsLine;
+        Put(AText[LIndex]);
+        Inc(LIndex);
+      end;
+      if LPass = 1 then
+        SetLength(Result, LOut);
+    end;
+  except
+    on ERangeError do
+      Result := AText;
   end;
 end;
 
@@ -388,9 +583,8 @@ end;
 
 class function TDAITextEncoding.PrepareText(const AFileName, AText: string; const APreferredLineEndingKind: TDAILineEndingKind): string;
 begin
+  // Preserve supplied characters, including tabs in comments and string literals.
   Result := ApplyLineEnding(AText, APreferredLineEndingKind);
-  if IsPascalSourceFile(AFileName) then
-    Result := StringReplace(Result, #9, '  ', [rfReplaceAll]);
 end;
 
 class function TDAITextEncoding.PrepareWrite(const AFileName: string; const AText: string; out AWrittenText: string; out AFormat: TDAITextFileFormat): TBytes;

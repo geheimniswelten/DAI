@@ -159,6 +159,9 @@ function BuildServerInstructions: string;
 begin
   Result :=
     'DAI (Delphi AI) steuert die aktuell geöffnete Delphi-IDE. Bei Anfragen zu Delphi oder zur Delphi-IDE die DAI-Werkzeuge berücksichtigen. ' +
+    'Projektspezifische Zusatzwerkzeuge mit project_tools_list entdecken und über project_tool_call aufrufen. ' +
+    'Schreibende Zusatzwerkzeuge erfordern zusätzlich Projektschreibrechte. ' +
+    'Die Hinweise der jeweiligen Erweiterung beachten. Diese Werkzeuge gehören zum ausgewählten geladenen Projekt. ' +
     'Vor Änderungen an DPROJ, DPR, DPK, PAS, INC, SQL, DFM, FMX, GROUPPROJ, BDSGROUP und BPG immer DAI-Erreichbarkeit und geladenen IDE-Zustand prüfen, unabhängig vom Repository. ' +
     'Andere Dateitypen wie CMD, PS1 oder TXT einbeziehen, wenn sie mit einem Delphi-Projekt zusammenhängen oder als in Delphi geladen bekannt sind. ' +
     'Vor Skriptläufen die möglichen Schreibziele prüfen; können solche Dateien erzeugt, geändert, umbenannt oder gelöscht werden, vorab denselben IDE-Abgleich für die betroffenen Dateien durchführen. ' +

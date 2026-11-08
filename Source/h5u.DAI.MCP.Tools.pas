@@ -55,6 +55,7 @@ uses
   h5u.DAI.OTA.Stack,
   h5u.DAI.OTA.Threads,
   h5u.DAI.Permissions.Manager,
+  h5u.DAI.ProjectTools,
   h5u.DAI.Settings,
   h5u.DAI.Symbols.Service,
   h5u.DAI.Source.Search,
@@ -707,6 +708,8 @@ var
   LSearchWorkspace: Boolean;
   LProjectObject: IOTAProject;
   LProject: string;
+  LExtensionId, LExtensionTool: string;
+  LExtensionArguments: TJSONValue;
   LPackageTarget: TDAIPackageTarget;
   LOptionConfiguration, LOptionPlatform, LOptionName, LOptionValue, LMergeMode: string;
   LOptionNames: TArray<string>;
@@ -731,6 +734,35 @@ begin
     LContext.ProjectKey := '';
   end;
   TDAILog.Access('MCP tools/call: ' + AName);
+
+  if SameText(AName, 'project_tools_list') or SameText(AName, 'project_tool_call') then
+  begin
+    LProjectObject := TDAIOTA.ProjectByNameOrPath(StrictArgumentString(AArguments, 'project'));
+    if not Assigned(LProjectObject) then
+      raise EArgumentException.Create('Das ausgewählte Projekt ist nicht in dieser IDE geladen.');
+    LProject := TDAIOTA.ProjectFileName(LProjectObject);
+    LProjectObject := nil;
+    LContext.ProjectKey := LProject;
+    LExtensionArguments := nil;
+    if SameText(AName, 'project_tool_call') then
+    begin
+      LExtensionId := RequiredArgumentString(AArguments, 'extension');
+      LExtensionTool := RequiredArgumentString(AArguments, 'tool');
+      LExtensionArguments := AArguments.GetValue('arguments');
+      if not (LExtensionArguments is TJSONObject) then
+        raise EArgumentException.Create('arguments muss ausdrücklich als JSON-Objekt angegeben werden.');
+      if Length(LExtensionArguments.ToJSON) > 65536 then
+        raise EArgumentException.Create('Die Argumente der Projekt-Erweiterung sind zu groß.');
+    end;
+    RequirePermission(pcProjectRead, 'Werkzeuge einer Projekterweiterung lesen und verwenden', LProject, LContext);
+    if SameText(AName, 'project_tools_list') then
+      Exit(TDAIProjectTools.ListTools(LProject));
+    Exit(TDAIProjectTools.CallTool(LProject, LExtensionId, LExtensionTool, TJSONObject(LExtensionArguments),
+      procedure
+      begin
+        RequirePermission(pcProjectWrite, 'Projektwerkzeug ausführen: ' + LExtensionId + '/' + LExtensionTool, LProject, LContext);
+      end));
+  end;
 
   if SameText(AName, 'ide_status') then
   begin
@@ -1649,6 +1681,15 @@ class function TDAIMCPTools.ListTools: TJSONArray;
 begin
   Result := TJSONArray.Create;
 
+  AddTool(Result, 'project_tools_list',
+    'Listet Zusatzwerkzeuge geladener IDE-Erweiterungen mit ihren Lese- und Schreibkennzeichen. Bei projektspezifischen Daten zuerst hier nachsehen.',
+    '{"type":"object","properties":{"project":{"type":"string"}},"additionalProperties":false}', True);
+  AddTool(Result, 'project_tool_call',
+    'Ruft ein mit project_tools_list gefundenes Zusatzwerkzeug auf. Schreibende Werkzeuge erfordern zusätzlich Projektschreibrechte. ' +
+    'Hinweise der Projekterweiterung beachten.',
+    '{"type":"object","properties":{"project":{"type":"string"},"extension":{"type":"string","minLength":1,"maxLength":64},' +
+    '"tool":{"type":"string","minLength":1,"maxLength":128},"arguments":{"type":"object"}},' +
+    '"required":["extension","tool","arguments"],"additionalProperties":false}', False);
   AddTool(Result, 'ide_ai_status',
     'Liest registrierte OTA-KI-Provider und deren aktivierte Chat-/Instruction-Funktionen; sendet keine Modellanfrage.',
     '{"type":"object","additionalProperties":false}', True);
@@ -2306,7 +2347,8 @@ begin
     Result,
     'file_write',
     'Ersetzt Editorpuffer; geschlossene Workspace-Dateien benötigen save=true. Für DFM/FMX möglichst die nativen Designerwerkzeuge verwenden; ' +
-    'Formulartext ausschließlich im IDE-Textpuffer ändern.',
+    'Formulartext ausschließlich im IDE-Textpuffer ändern. Pascal-Einrückung folgt den Optionen der Zieldatei; ' +
+    'indentation_normalized meldet Tab-Umwandlungen. Tabs in Kommentaren und Stringliteralen bleiben erhalten.',
     '{"type":"object","properties":{"file":{"type":"string"},"content":{"type":"string"},"expected_sha256":{"type":"string"},' +
     '"save":{"type":"boolean"}},"required":["file","content"],"additionalProperties":false}',
     False
@@ -2317,6 +2359,7 @@ begin
     'Ersetzt eindeutige Textstellen im aktuellen vollständigen Inhalt. Alle edits beziehen sich auf denselben ursprünglichen Inhalt; ' +
     'old_text muss genau einmal vorkommen. Für Einfügungen Kontext mit angeben, für Löschen new_text leer lassen. ' +
     'Offene Editorpuffer werden gezielt und Undo-fähig geändert; save ist standardmäßig false. ' +
+    'Pascal-Einrückung folgt den Optionen der Zieldatei; indentation_normalized meldet Tab-Umwandlungen. ' +
     'Für DFM/FMX möglichst die nativen Designerwerkzeuge verwenden.',
     '{"type":"object","properties":{"file":{"type":"string","minLength":1},"expected_sha256":{"type":"string","minLength":1},' +
     '"edits":{"type":"array","minItems":1,"maxItems":1000,"items":{"type":"object","properties":{' +

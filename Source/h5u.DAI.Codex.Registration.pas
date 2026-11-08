@@ -740,6 +740,12 @@ begin
     - Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.
     - `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.
 
+    ## Projekt-Erweiterungen
+
+    - Bei projektspezifischen Daten zuerst `project_tools_list` für das geladene Projekt aufrufen.
+    - Die zurückgegebenen Zusatzwerkzeuge mit `project_tool_call` und deren extension/tool/arguments aufrufen.
+    - Hinweise und Werkzeugkennzeichen der Erweiterung beachten. Schreibende Zusatzwerkzeuge erfordern zusätzlich Projektschreibrechte.
+
     ## Optionen suchen und öffnen
 
     - `options_search` liest SDK-Optionsnamen und Typen; deutsche/englische Aliase finden etwa mit `Ausgabepfad` die DCC-Ausgabeoptionen.
@@ -982,6 +988,10 @@ begin
     '- Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.' + sLineBreak +
     '- `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.' + sLineBreak +
     '' + sLineBreak +
+    '## Projekt-Erweiterungen' + sLineBreak + sLineBreak +
+    '- Bei projektspezifischen Daten zuerst `project_tools_list` für das geladene Projekt aufrufen.' + sLineBreak +
+    '- Die zurückgegebenen Zusatzwerkzeuge mit `project_tool_call` und deren extension/tool/arguments aufrufen.' + sLineBreak +
+    '- Hinweise und Werkzeugkennzeichen der Erweiterung beachten. Schreibende Zusatzwerkzeuge erfordern zusätzlich Projektschreibrechte.' + sLineBreak + sLineBreak +
     '## Optionen suchen und öffnen' + sLineBreak +
     '' + sLineBreak +
     '- `options_search` liest SDK-Optionsnamen und Typen; deutsche/englische Aliase finden etwa mit `Ausgabepfad` die DCC-Ausgabeoptionen.' + sLineBreak +

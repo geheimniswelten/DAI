@@ -64,6 +64,30 @@ Die Debugger-ToolsAPI liefert die Windows-Prozess-ID, Threads, Debuggerzustand u
 `debugger_windows_list` über diese PID und die WinAPI gelesen; direkte fremde VCL-Formobjekte werden nicht angeboten. `Screen.ActiveCustomForm` gehört
 zum VCL-Prozess der IDE. Beim angehaltenen Debuggee können dessen Controltexte wegen blockierter Nachrichtenverarbeitung fehlen.
 
+## Projekt-Erweiterungen
+
+`project_tools_list` entdeckt zusätzliche Werkzeuge für das ausgewählte geladene Projekt. `project_tool_call` ruft sie über
+`extension`, `tool` und `arguments` auf. Ohne `project` gilt das aktive Projekt; unbekannte oder inzwischen geschlossene Projekte
+werden abgewiesen. Beide Zugriffe benötigen Projektleserechte, bevor DAI einen Provider anspricht. Der Aufruf eines
+schreibenden Werkzeugs benötigt zusätzlich Projektschreibrechte („Projekt und Projektdateien ändern“).
+
+Projektabhängige Logik bleibt außerhalb des DAI-Packages. Ein optionales IDE-Package stellt eine direkt von `Application` besessene
+Komponente mit der Schnittstelle aus `SDK/DAI.ProjectTools.Provider.inc` bereit. Die Deklaration wird in einer eigenen Unit eingebunden;
+Host und Erweiterung dürfen keine gleichnamige SDK-Unit in getrennten BPLs enthalten. Eine feste Package-Abhängigkeit zu DAI ist nicht nötig.
+
+DAI entdeckt die Komponenten bei jedem Aufruf im IDE-Hauptthread. Providerreferenzen werden dort vor der Rückkehr freigegeben;
+daher funktionieren beide Ladefolgen und das Entfernen des Provider-Packages ohne gespeicherte Callback-Adressen.
+Metadaten und Aufrufe dürfen keine UI-Nachrichten pumpen. Metadaten dürfen weder einen Backendzugriff starten noch Zustände verändern.
+Version 1 bleibt ausschließlich lesend. Schreibfähige Provider implementieren `IDAIMCPProjectExtensionV2`. Ihre Werkzeuge
+deklarieren `annotations.readOnlyHint` ausdrücklich als Boolean. `destructiveHint` ist optional und gilt standardmäßig als
+`false` für Lese- und `true` für Schreibwerkzeuge. Nach einer Schreibfreigabe prüft DAI das geladene Projekt und die
+Werkzeugdeklaration erneut, bevor es den Provider aufruft. Provider sind vertrauenswürdiger installierter Code.
+Die statischen MCP-Werkzeuge benötigen bei Providerwechseln keine dynamische Tool-Listenbenachrichtigung.
+
+Beispielablauf: `project_tools_list({})`, anschließend
+`project_tool_call({"extension":"project-extension","tool":"search","arguments":{"query":"Suchtext"}})` mit den tatsächlich
+zurückgegebenen Kennungen und dem angegebenen Eingabeschema. Die Beschreibungen und projektspezifischen Hinweise der Erweiterung beachten.
+
 ## Unabhängiger Delphi-Starthelfer
 
 Die lokale Clientregistrierung ergänzt `dai_start` neben `dai`. Der Helfer startet beim Verbinden des MCP-Clients, seine Werkzeuge funktionieren
@@ -202,7 +226,7 @@ enthalten keine Tokens.
 - Alle Pascal-Units und Unit-Dateien beginnen mit dem kleingeschriebenen Namespace-Präfix `h5u.`
 - Unterfunktionen sind in Dateinamen und Unit-Namen mit Punkten getrennt, zum Beispiel `h5u.DAI.Permissions.Manager.pas`
 - Pascal-Quellzeilen sind auf höchstens 180 Zeichen begrenzt
-- Tabulatoren sind in Pascal-Sourcen nicht zulässig und werden durch zwei Leerzeichen ersetzt
+- Im Quelltext dieses DAI-Repositories zwei Leerzeichen zur Einrückung verwenden; beim Bearbeiten von Projekten die Delphi-Einrückungsoptionen beachten
 - Zugriffe auf die RTL-Sperrklasse werden immer als `System.TMonitor` qualifiziert, damit keine Kollision mit `Vcl.Forms.TMonitor` entsteht
 
 ## MCP-Server
@@ -488,10 +512,14 @@ Für `.pas` gilt: Neue Dateien werden standardmäßig als UTF-8 mit BOM angelegt
 Codierung. Reicht die aktuelle ANSI-Codepage für den neuen Inhalt nicht aus, wird eine vorhandene ANSI-PAS-Datei auf UTF-8 mit BOM angehoben. Eine
 PAS-Datei ohne BOM wird entsprechend dem Verhalten der Delphi-IDE als ANSI interpretiert, nicht als UTF-8 ohne BOM.
 
-Bei Schreibzugriffen auf Pascal-Sourcen (`.pas`, `.dpr`, `.dpk`, `.inc`) ersetzt DAI echte Tabulatorzeichen durch jeweils zwei Leerzeichen. Diese Regel
-wird nicht auf DFM-Dateien angewendet.
+Bei `file_write` und `file_edit` berücksichtigt DAI für Pascal-Sourcen die Option „Tabulatorzeichen verwenden“ und die Tabstopps der Zieldatei.
+Ist die Option ausgeschaltet, werden führende Tabs in Code-Einrückungen in die entsprechende Anzahl Leerzeichen umgewandelt. Für geladene Dateien
+zählen die Optionen ihres Editorpuffers, sonst die dateitypspezifischen IDE-Optionen. Bei eingeschalteter oder nicht ermittelbarer Option bleiben Tabs erhalten.
+Tabs nach `///`, innerhalb von Kommentaren und Stringliteralen einschließlich mehrzeiliger Strings bleiben erhalten. Eine globale Tab-Ersetzung findet nicht statt.
+`indentation_normalized` in der Antwort zeigt eine solche Einrückungsanpassung an. Numerische Tabbreiten von 1 bis 256 werden unterstützt;
+bei benutzerdefinierten Tabstopplisten oder nicht eindeutig interpretierbaren Einstellungen bleiben Tabs erhalten.
 
-Diese PAS-Regel gilt ausdrücklich nicht für DFM-Dateien. DAI überschreibt DFM-Dateien niemals direkt auf dem Datenträger, sondern bearbeitet sie nur im
+Die PAS-Codierungsregeln gelten ausdrücklich nicht für DFM-Dateien. DAI überschreibt DFM-Dateien niemals direkt auf dem Datenträger, sondern bearbeitet sie nur im
 IDE-Textpuffer. Delphi entscheidet anschließend beim Speichern anhand der enthaltenen Property-Werte selbst, ob die DFM als ANSI oder UTF-8 gespeichert
 wird. Ist kein DFM-Textpuffer verfügbar, wird der Schreibvorgang abgelehnt; bei Bedarf ist vorher `form_show_as_text` aufzurufen.
 Rohe Unicode-Zeichen in DFM-/FMX-Stringliteralen werden über die native Formularserialisierung als `#nnn` normalisiert, damit der Designer
