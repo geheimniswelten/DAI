@@ -994,9 +994,9 @@ def check_options_frame_layout(errors: list[str]) -> None:
         fail(errors, "h5u.DAI.Options.Frame.pas: Hinweis zum erforderlichen Neustart der Codex-App fehlt")
     notice_position = joined_literals.find(restart_notice)
     unregister_position = joined_literals.find("FUnregisterButton.OnClick := UnregisterClicked")
-    height_position = joined_literals.find("Height := LTop", unregister_position)
-    if unregister_position < 0 or height_position < 0 or not (unregister_position < notice_position < height_position):
-        fail(errors, "h5u.DAI.Options.Frame.pas: Neustart-Hinweis muss ganz unten vor dem Ende des Optionsinhalts stehen")
+    permission_position = joined_literals.find("Name := 'DAIPermissionsHeading'", unregister_position)
+    if unregister_position < 0 or not (unregister_position < notice_position < permission_position):
+        fail(errors, "h5u.DAI.Options.Frame.pas: Neustart-Hinweis muss bei den Registrierungsschaltflächen stehen")
 
     settings = read_project_text(SOURCE / "h5u.DAI.Settings.pas")
     public_part = re.split(r"(?im)^\s*implementation\s*$", settings, maxsplit=1)[0]

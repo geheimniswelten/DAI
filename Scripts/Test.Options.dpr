@@ -1717,8 +1717,10 @@ var
   LViewport: TWinControl;
   LFrame: TDAIOptionsFrame;
   LApplicationHandle: HWND;
-  LWarning: TLabel;
-  LManualRegistration: TCheckBox;
+  LRegistrationHeading, LPermissionsHeading, LServerHeading, LDirectoriesHeading: TControl;
+  LRegistrationNotice, LRegisterButton, LDirectoriesMemo: TControl;
+  LManualRegistration, LDirectoriesCheckBox: TCheckBox;
+  LManualDraft: Boolean;
   LComponent: TComponent;
   LPortEdit, LTokenEdit: TEdit;
   LContentHeight, LSaveCount, LPermissionWrites: Integer;
@@ -1748,6 +1750,32 @@ var
     Check((LFrame.Top = 0) and (LFrame.Height = LViewport.ClientHeight), 'Frame height follows the available host viewport');
   end;
 
+  procedure CheckMouseWheel;
+  var
+    LWheelLines: Cardinal;
+    LActiveControl: TWinControl;
+  begin
+    ResizeViewport(400);
+    LFrame.Perform(WM_VSCROLL, SB_TOP, 0);
+    LActiveControl := LHost.ActiveControl;
+    LWheelLines := 0;
+    Check(SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, @LWheelLines, 0),
+      'Windows wheel scroll preference can be read');
+    if LWheelLines <> 0 then
+    begin
+      // The high word carries a signed delta; low word contains no modifier keys.
+      LFrame.Perform(WM_MOUSEWHEEL, WPARAM($FFC40000), 0); // -60
+      Check(LFrame.VertScrollBar.Position = 0, 'A partial wheel notch does not scroll');
+      LFrame.Perform(WM_MOUSEWHEEL, WPARAM($FFC40000), 0); // -60
+      Check(LFrame.VertScrollBar.Position > 0, 'Two partial wheel deltas scroll down');
+      LFrame.Perform(WM_MOUSEWHEEL, WPARAM($00780000), 0); // +120
+      Check(LFrame.VertScrollBar.Position = 0, 'A reverse wheel notch returns to the top');
+    end;
+    Check(LHost.ActiveControl = LActiveControl, 'Wheel scrolling preserves the active control');
+    Check((LPortEdit.Text = '7654') and (LTokenEdit.Text = 'synthetic-unsaved-scroll-draft') and
+      (LManualRegistration.Checked = LManualDraft), 'Wheel scrolling preserves unsaved drafts');
+  end;
+
   procedure CheckSmallViewport(const ALogicalHeight: Integer);
   begin
     ResizeViewport(ALogicalHeight);
@@ -1760,14 +1788,15 @@ var
     Check((LScrollInfo.nMax >= LContentHeight - 1) and (LScrollInfo.nPage > 0), 'The native scrollbar includes the final options controls');
     LFrame.Perform(WM_VSCROLL, SB_BOTTOM, 0);
     Check(LFrame.VertScrollBar.Position > 0, 'The native bottom-scroll action moves the options content');
-    Check((LWarning.Top >= 0) and (LWarning.Top + LWarning.Height <= LFrame.ClientHeight), 'The full final warning is reachable at the bottom');
-    Check((LManualRegistration.Top >= 0) and (LManualRegistration.Top + LManualRegistration.Height <= LFrame.ClientHeight),
-      'The last editable option remains fully reachable');
+    Check((LDirectoriesCheckBox.Top >= 0) and (LDirectoriesCheckBox.Top + LDirectoriesCheckBox.Height <= LFrame.ClientHeight),
+      'The final directory option remains fully reachable');
     LFrame.Perform(WM_VSCROLL, SB_TOP, 0);
     Check(LFrame.VertScrollBar.Position = 0, 'The native top-scroll action restores the content origin');
-    LFrame.ScrollInView(LManualRegistration);
-    Check((LManualRegistration.Top >= 0) and (LManualRegistration.Top + LManualRegistration.Height <= LFrame.ClientHeight),
-      'VCL ScrollInView can bring the final editable option into view');
+    Check((LRegisterButton.Top >= 0) and (LRegisterButton.Top + LRegisterButton.Height <= LFrame.ClientHeight),
+      'The registration button is visible at the top of the options page');
+    LFrame.ScrollInView(LDirectoriesCheckBox);
+    Check((LDirectoriesCheckBox.Top >= 0) and (LDirectoriesCheckBox.Top + LDirectoriesCheckBox.Height <= LFrame.ClientHeight),
+      'VCL ScrollInView can bring the final directory option into view');
     CheckSingleScrollOwner;
   end;
 
@@ -1802,18 +1831,25 @@ begin
     LFrame := TDAIOptionsFrame.Create(LHost);
     LFrame.Parent := LViewport;
     LFrame.LoadFromSettings;
-    LWarning := nil;
-    for LComponent in LFrame do
-      if (LComponent is TLabel) and StartsText('Betroffene KI-Clients', TLabel(LComponent).Caption) then
-        LWarning := TLabel(LComponent);
-    Check(Assigned(LWarning), 'The final multiline options warning exists');
+    LRegistrationHeading := TControl(LFrame.FindComponent('DAIRegistrationHeading'));
+    LPermissionsHeading := TControl(LFrame.FindComponent('DAIPermissionsHeading'));
+    LServerHeading := TControl(LFrame.FindComponent('DAIServerHeading'));
+    LDirectoriesHeading := TControl(LFrame.FindComponent('DAIDirectoriesHeading'));
+    LRegistrationNotice := TControl(LFrame.FindComponent('DAIRegistrationRestartNotice'));
+    LRegisterButton := TControl(LFrame.FindComponent('DAIRegisterButton'));
+    LDirectoriesMemo := TControl(LFrame.FindComponent('DAIDirectoriesMemo'));
+    LDirectoriesCheckBox := TCheckBox(LFrame.FindComponent('DAICustomReadDirectoriesAlwaysAllowedCheckBox'));
     LManualRegistration := TCheckBox(LFrame.FindComponent('DAIManualClientRegistrationCheckBox'));
-    Check(Assigned(LManualRegistration), 'The final editable option exists');
+    Check(Assigned(LRegistrationHeading) and Assigned(LPermissionsHeading) and Assigned(LServerHeading) and
+      Assigned(LDirectoriesHeading) and Assigned(LRegistrationNotice) and Assigned(LRegisterButton) and
+      Assigned(LDirectoriesMemo) and Assigned(LDirectoriesCheckBox) and Assigned(LManualRegistration),
+      'Named options sections and controls exist');
     LPortEdit := EditControl(LFrame, True);
     LTokenEdit := EditControl(LFrame, False);
     LPortEdit.Text := '7654';
     LTokenEdit.Text := 'synthetic-unsaved-scroll-draft';
     LManualRegistration.Checked := not LManualRegistration.Checked;
+    LManualDraft := LManualRegistration.Checked;
     LSaveCount := TDAISettings.Instance.SaveCount;
     LPermissionWrites := TDAIPermissionManager.Instance.WriteCount;
     LViewport.HandleNeeded;
@@ -1822,9 +1858,19 @@ begin
     Check(LHost.PixelsPerInch = APPI, 'The isolated host uses the requested VCL DPI');
     Check(LFrame.AutoScroll and (LFrame.Align = alClient), 'The options frame owns scrolling inside its available viewport');
     LFrame.VertScrollBar.Position := 0;
-    LContentHeight := LWarning.Top + LWarning.Height;
+    Check((LRegistrationHeading.Top < LRegisterButton.Top) and (LRegisterButton.Top < LRegistrationNotice.Top) and
+      (LRegistrationNotice.Top + LRegistrationNotice.Height <= LPermissionsHeading.Top) and
+      (LPermissionsHeading.Top < LServerHeading.Top) and (LServerHeading.Top < LDirectoriesHeading.Top) and
+      (LDirectoriesHeading.Top < LDirectoriesMemo.Top) and (LDirectoriesMemo.Top < LDirectoriesCheckBox.Top),
+      'Registration, permissions, server and directories appear in the intended order');
+    LContentHeight := 0;
+    for LComponent in LFrame do
+      if (LComponent is TControl) and (TControl(LComponent).Parent = LFrame) and TControl(LComponent).Visible and
+        (TControl(LComponent).Top + TControl(LComponent).Height > LContentHeight) then
+        LContentHeight := TControl(LComponent).Top + TControl(LComponent).Height;
     CheckSmallViewport(600);
     CheckSmallViewport(400);
+    CheckMouseWheel;
     LHost.ClientHeight := LContentHeight + MulDiv(48, APPI, 96);
     LHost.Realign;
     LViewport.Realign;
@@ -1832,10 +1878,12 @@ begin
     Check(not HasNativeBar(LFrame, WS_VSCROLL), Format('The frame removes its native scrollbar when all content fits (range=%d, client=%d, content=%d)',
       [LFrame.VertScrollBar.Range, LFrame.ClientHeight, LContentHeight]));
     Check(LFrame.VertScrollBar.Position = 0, 'Enlarging the viewport resets the previous scroll position');
-    Check((LWarning.Top >= 0) and (LWarning.Top + LWarning.Height <= LFrame.ClientHeight), 'All final options content fits in the enlarged viewport');
+    Check((LDirectoriesCheckBox.Top >= 0) and (LDirectoriesCheckBox.Top + LDirectoriesCheckBox.Height <= LFrame.ClientHeight),
+      'The final directory option fits in the enlarged viewport');
     CheckSingleScrollOwner;
     CheckSmallViewport(400);
-    Check((LPortEdit.Text = '7654') and (LTokenEdit.Text = 'synthetic-unsaved-scroll-draft'), 'Scrolling and resizing preserve unsaved connection drafts');
+    Check((LPortEdit.Text = '7654') and (LTokenEdit.Text = 'synthetic-unsaved-scroll-draft') and
+      (LManualRegistration.Checked = LManualDraft), 'Scrolling and resizing preserve unsaved drafts');
     Check((TDAISettings.Instance.SaveCount = LSaveCount) and (TDAIPermissionManager.Instance.WriteCount = LPermissionWrites),
       'Scrolling, native navigation and DPI changes never save options or permissions');
     Check(not LHost.Visible, 'Scroll regression checks never display an IDE or fixture window');

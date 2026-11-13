@@ -5,11 +5,13 @@ interface
 uses
   System.Classes,
   System.JSON,
+  System.Types,
   Vcl.Buttons,
   Vcl.Controls,
   Vcl.ExtCtrls,
   Vcl.Forms,
   Vcl.StdCtrls,
+  Winapi.Messages,
   h5u.DAI.Types;
 
 type
@@ -65,6 +67,8 @@ type
     FManualRegistrationButton: TButton;
     FManualClientRegistrationCheckBox: TCheckBox;
     FShowToolsButton: TButton;
+    FWheelHookRegistered: Boolean;
+    FWheelRemainder: Integer;
     function NewStatusMemo(const AName: string; const ATop, AWidth, AHeight: Integer): TMemo;
     procedure StatusMemoKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure BuildControls;
@@ -104,6 +108,11 @@ type
     function PermissionLevelFromCombo(const AComboBox: TComboBox): TDAIPermissionLevel;
     procedure SetPermissionComboLevel(const AComboBox: TComboBox; const ALevel: TDAIPermissionLevel);
     function PermissionContext(const AScope: TDAIPermissionScope): TDAIRequestContext;
+    procedure ScrollWheel(AWheelDelta: Integer);
+    procedure WMMouseWheel(var Message: TWMMouseWheel); message WM_MOUSEWHEEL;
+  protected
+    procedure CreateWnd; override;
+    procedure DestroyWnd; override;
   public
     constructor Create(AOwner: TComponent); override;
     procedure LoadFromSettings;
@@ -122,14 +131,12 @@ uses
   System.IOUtils,
   System.StrUtils,
   System.SysUtils,
-  System.Types,
   System.UITypes,
   Winapi.Windows,
   Vcl.Dialogs,
   Vcl.Clipbrd,
   Vcl.ComCtrls,
   Vcl.Graphics,
-  Winapi.Messages,
   h5u.DAI.Clients.Registration,
   h5u.DAI.Codex.Registration,
   h5u.DAI.Consts,
@@ -482,6 +489,127 @@ begin
   end;
 end;
 
+threadvar
+  GOptionsWheelHook: HHOOK;
+  GOptionsWheelWindows: Integer;
+
+procedure RouteOptionsWheel(var AMessage: TMsg);
+var
+  LRoot: HWND;
+  LTarget, LControl: TWinControl;
+  LPoint: TSmallPoint;
+begin
+  if (AMessage.message <> WM_MOUSEWHEEL) or (LoWord(AMessage.wParam) <> 0) or (GetCapture <> 0) then
+    Exit;
+  LPoint := TSmallPoint(Longint(AMessage.lParam));
+  LTarget := FindVCLWindow(Point(LPoint.X, LPoint.Y));
+  if not Assigned(LTarget) then
+    Exit;
+  LRoot := GetAncestor(AMessage.hwnd, GA_ROOT);
+  // The IDE can leave keyboard focus in the tree. Route only within that same dialog.
+  if (LRoot = 0) or (LRoot <> GetAncestor(LTarget.Handle, GA_ROOT)) or not IsWindowEnabled(LRoot) then
+    Exit;
+  LControl := LTarget;
+  while Assigned(LControl) and not (LControl is TDAIOptionsFrame) do
+    LControl := LControl.Parent;
+  if not Assigned(LControl) then
+    Exit;
+  if not LControl.Showing then
+    Exit;
+
+  // Keep the wheel in an open selection list and preserve native scrolling over a memo.
+  if LTarget is TCustomComboBox then
+    if TCustomComboBox(LTarget).DroppedDown then
+      Exit;
+  if not (LTarget is TCustomMemo) then
+    LTarget := LControl;
+  LControl := FindControl(GetFocus);
+  if LControl is TCustomComboBox then
+    if TCustomComboBox(LControl).DroppedDown then
+      Exit;
+  AMessage.hwnd := LTarget.Handle;
+end;
+
+function OptionsWheelHook(ACode: Integer; AWParam: WPARAM; ALParam: LPARAM): LRESULT; stdcall;
+begin
+  if (ACode = HC_ACTION) and (AWParam = PM_REMOVE) and (ALParam <> 0) then
+    try
+      RouteOptionsWheel(PMsg(ALParam)^);
+    except
+      // Keep dispatching the original message if a control cannot be inspected.
+    end;
+  Result := CallNextHookEx(0, ACode, AWParam, ALParam);
+end;
+
+procedure TDAIOptionsFrame.CreateWnd;
+begin
+  inherited;
+  if csDesigning in ComponentState then
+    Exit;
+  if GOptionsWheelHook = 0 then
+    GOptionsWheelHook := SetWindowsHookEx(WH_GETMESSAGE, @OptionsWheelHook, 0, GetCurrentThreadId);
+  FWheelHookRegistered := GOptionsWheelHook <> 0;
+  if FWheelHookRegistered then
+    Inc(GOptionsWheelWindows);
+end;
+
+procedure TDAIOptionsFrame.DestroyWnd;
+begin
+  if FWheelHookRegistered then
+  begin
+    FWheelHookRegistered := False;
+    Dec(GOptionsWheelWindows);
+    if GOptionsWheelWindows = 0 then
+    begin
+      UnhookWindowsHookEx(GOptionsWheelHook);
+      GOptionsWheelHook := 0;
+    end;
+  end;
+  FWheelRemainder := 0;
+  inherited;
+end;
+
+procedure TDAIOptionsFrame.ScrollWheel(AWheelDelta: Integer);
+var
+  LLines: DWORD;
+  LDetents, LStep: Integer;
+  LPosition: Int64;
+begin
+  Inc(FWheelRemainder, AWheelDelta);
+  LDetents := FWheelRemainder div WHEEL_DELTA;
+  FWheelRemainder := FWheelRemainder mod WHEEL_DELTA;
+  if LDetents = 0 then
+    Exit;
+  if not SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, @LLines, 0) then
+    LLines := 3;
+  if LLines = WHEEL_PAGESCROLL then
+    LStep := ClientHeight
+  else
+  begin
+    LPosition := Int64(LLines) * MulDiv(16, CurrentPPI, 96);
+    if LPosition > ClientHeight then
+      LPosition := ClientHeight;
+    LStep := Integer(LPosition);
+  end;
+  LPosition := Int64(VertScrollBar.Position) - Int64(LDetents) * LStep;
+  if LPosition < 0 then
+    LPosition := 0
+  else if LPosition > VertScrollBar.Range then
+    LPosition := VertScrollBar.Range;
+  VertScrollBar.Position := Integer(LPosition);
+end;
+
+procedure TDAIOptionsFrame.WMMouseWheel(var Message: TWMMouseWheel);
+begin
+  if Message.Keys = 0 then
+  begin
+    ScrollWheel(Message.WheelDelta);
+    Message.Result := 1;
+  end
+  else
+    inherited;
+end;
+
 constructor TDAIOptionsFrame.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
@@ -597,8 +725,177 @@ var
   LTop: Integer;
 begin
   LTop := 18;
-  with NewLabel(Self, DAIText('MCP-Server', 'MCP server', 'Serveur MCP', 'MCPサーバー'), 16, LTop) do
+  with NewLabel(Self, DAIText('KI-Client- und Skill-Registrierung', 'AI client and skill registration', 'Inscription des clients IA et du skill', 'AIクライアントとスキルの登録'), 16, LTop) do
+  begin
+    Name := 'DAIRegistrationHeading';
     Font.Style := [fsBold];
+  end;
+  Inc(LTop, 30);
+
+  FClientComboBox := TComboBox.Create(Self);
+  FClientComboBox.Parent := Self;
+  FClientComboBox.Name := 'DAIClientComboBox';
+  FClientComboBox.Left := 24;
+  FClientComboBox.Top := LTop;
+  FClientComboBox.Width := 330;
+  FClientComboBox.Style := csDropDownList;
+  FClientComboBox.Items.Add(DAIText('Alle erkannten Clients', 'All detected clients', 'Tous les clients détectés', '検出されたすべてのクライアント'));
+  FClientComboBox.Items.Add('Codex');
+  FClientComboBox.Items.Add('Claude Code (CLI / VS Code)');
+  FClientComboBox.Items.Add('Claude Desktop');
+  FClientComboBox.Items.Add('Eigent');
+  FClientComboBox.Items.Add('Gemini CLI / Code Assist');
+  FClientComboBox.Items.Add('Gemini Desktop');
+  FClientComboBox.Items.Add('Hermes');
+  FClientComboBox.Items.Add('LM Studio');
+  FClientComboBox.Items.Add('OpenClaw');
+  FClientComboBox.ItemIndex := 0;
+  FClientComboBox.OnChange := ClientChanged;
+  Inc(LTop, 34);
+
+  FRegisterButton := TButton.Create(Self);
+  FRegisterButton.Parent := Self;
+  FRegisterButton.Name := 'DAIRegisterButton';
+  FRegisterButton.Left := 24;
+  FRegisterButton.Top := LTop;
+  FRegisterButton.Width := 160;
+  FRegisterButton.Caption := DAIText('Registrieren', 'Register', 'Inscrire', '登録');
+  FRegisterButton.OnClick := RegisterClicked;
+
+  FUnregisterButton := TButton.Create(Self);
+  FUnregisterButton.Parent := Self;
+  FUnregisterButton.Left := 196;
+  FUnregisterButton.Top := LTop;
+  FUnregisterButton.Width := 160;
+  FUnregisterButton.Caption := DAIText('Deregistrieren', 'Unregister', 'Désinscrire', '登録解除');
+  FUnregisterButton.OnClick := UnregisterClicked;
+
+  FShowToolsButton := TButton.Create(Self);
+  FShowToolsButton.Parent := Self;
+  FShowToolsButton.Name := 'DAIFunctionsButton';
+  FShowToolsButton.SetBounds(368, LTop, 280, 28);
+  FShowToolsButton.Caption := DAIText('Skill und MCP-Werkzeuge', 'Skill and MCP tools', 'Skill et outils MCP', 'スキルとMCPツール');
+  FShowToolsButton.OnClick := ShowToolsClicked;
+  Inc(LTop, 36);
+
+  FFindRegistrationsButton := TButton.Create(Self);
+  FFindRegistrationsButton.Name := 'DAIFindRegistrationsButton';
+  FFindRegistrationsButton.Parent := Self;
+  FFindRegistrationsButton.SetBounds(24, LTop, 332, 28);
+  FFindRegistrationsButton.Caption := DAIText('Registrierungen suchen und entfernen', 'Find and remove registrations', 'Rechercher et supprimer les inscriptions', '登録の検索と削除');
+  FFindRegistrationsButton.Hint := DAIText(
+    'Sucht auch DAI-Registrierungen anderer Delphi-Versionen und Profile beim ausgewählten KI-Client.',
+    'Also finds DAI registrations for other Delphi versions and profiles in the selected AI client.',
+    'Recherche aussi les inscriptions DAI d’autres versions et profils Delphi dans le client IA sélectionné.',
+    '選択したAIクライアントで、他のDelphiバージョンとプロファイルのDAI登録も検索します。');
+  FFindRegistrationsButton.ShowHint := True;
+  FFindRegistrationsButton.OnClick := FindRegistrationsClicked;
+
+  FManualRegistrationButton := TButton.Create(Self);
+  FManualRegistrationButton.Name := 'DAIManualRegistrationButton';
+  FManualRegistrationButton.Parent := Self;
+  FManualRegistrationButton.SetBounds(368, LTop, 280, 28);
+  FManualRegistrationButton.Caption := DAIText('Manuell registrieren…', 'Register manually…', 'Inscription manuelle…', '手動で登録…');
+  FManualRegistrationButton.Hint := DAIText(
+    'Zeigt Verbindungsdaten und Konfigurationsbeispiele für die manuelle Registrierung beim ausgewählten KI-Client.',
+    'Shows connection details and configuration examples for manual registration in the selected AI client.',
+    'Affiche les données de connexion et des exemples de configuration pour l’inscription manuelle dans le client IA sélectionné.',
+    '選択したAIクライアントで手動登録するための接続情報と設定例を表示します。');
+  FManualRegistrationButton.ShowHint := True;
+  FManualRegistrationButton.OnClick := ManualRegistrationClicked;
+  Inc(LTop, 36);
+
+  FClientStatusMemo := NewStatusMemo('DAIClientStatusMemo', LTop, 736, 154);
+  Inc(LTop, 164);
+
+  FCodexStatusMemo := NewStatusMemo('DAICodexStatusMemo', LTop, 736, 36);
+  Inc(LTop, 40);
+  FSkillStatusMemo := NewStatusMemo('DAISkillStatusMemo', LTop, 736, 36);
+  Inc(LTop, 44);
+
+  FManualClientRegistrationCheckBox := TCheckBox.Create(Self);
+  FManualClientRegistrationCheckBox.Name := 'DAIManualClientRegistrationCheckBox';
+  FManualClientRegistrationCheckBox.Parent := Self;
+  FManualClientRegistrationCheckBox.SetBounds(24, LTop, 736, 24);
+  FManualClientRegistrationCheckBox.Caption := DAIText('Manuell registriert', 'Manually registered', 'Inscrit manuellement', '手動登録済み');
+  FManualClientRegistrationCheckBox.Hint := DAIText(
+    'Für die ausgewählte Verbindung: Der DAI-Button ignoriert „Nicht registriert“. Hinweise auf veraltete oder fehlerhafte automatisch ' +
+      'erkannte Registrierungen bleiben sichtbar. Wird beim Speichern oder Registrieren übernommen.',
+    'For the selected connection, the DAI button ignores “Not registered”. Warnings about outdated or faulty automatically detected ' +
+      'registrations remain visible. Applied when saving or registering.',
+    'Pour la connexion sélectionnée, le bouton DAI ignore « Non inscrit ». Les avertissements concernant les inscriptions détectées ' +
+      'automatiquement qui sont obsolètes ou incorrectes restent visibles. Prend effet lors de l’enregistrement ou de l’inscription.',
+    '選択した接続では、DAIボタンは「未登録」を無視します。自動検出された登録が古い場合や不正な場合の警告は引き続き表示されます。保存時または登録時に反映されます。');
+  FManualClientRegistrationCheckBox.ShowHint := True;
+  Inc(LTop, 42);
+
+  LInfoLabel := NewLabel(
+    Self,
+    DAIText(
+      'Betroffene KI-Clients müssen ihre MCP-Verbindung neu laden oder neu gestartet werden. Hinweis: Nach dem Ändern von Port oder ' +
+        'Bearer-Token sowie nach dem Registrieren oder Deregistrieren muss die Codex-App neu gestartet werden.',
+      'Affected AI clients must reload their MCP connection or restart. Note: restart the Codex app after changing the port or bearer ' +
+        'token, or after registering or unregistering.',
+      'Les clients IA concernés doivent recharger leur connexion MCP ou redémarrer. Remarque : redémarrez l’application Codex après ' +
+        'toute modification du port ou du jeton Bearer, ou après une inscription ou une désinscription.',
+      '対象のAIクライアントでMCP接続を再読み込みするか、クライアントを再起動してください。ポートやBearerトークンの変更、登録、登録解除の後は、Codexアプリを再起動してください。'),
+    24,
+    LTop
+  );
+  LInfoLabel.Name := 'DAIRegistrationRestartNotice';
+  LInfoLabel.AutoSize := False;
+  LInfoLabel.WordWrap := True;
+  LInfoLabel.Width := 760;
+  LInfoLabel.Height := 60;
+  LInfoLabel.Font.Style := [fsBold];
+  LInfoLabel.Font.Color := clGrayText;
+  Inc(LTop, 76);
+
+  with NewLabel(Self, DAIText('Berechtigungen', 'Permissions', 'Autorisations', '権限'), 16, LTop) do
+  begin
+    Name := 'DAIPermissionsHeading';
+    Font.Style := [fsBold];
+  end;
+  Inc(LTop, 30);
+
+  NewLabel(Self, DAIText('Global', 'Global', 'Globales', 'グローバル'), 320, LTop + 4);
+  NewLabel(Self, DAIText('Aktuelles Projekt', 'Current project', 'Projet actuel', '現在のプロジェクト'), 548, LTop + 4);
+  Inc(LTop, 34);
+
+  FProjectLabel := NewLabel(Self, '', 24, LTop);
+  FProjectLabel.Width := 744;
+  FProjectLabel.AutoSize := False;
+  FProjectLabel.WordWrap := True;
+  FProjectLabel.Height := 64;
+  Inc(LTop, 72);
+
+  for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
+    AddPermissionRow(Self, LCategory, LTop);
+
+  LInfoLabel := NewLabel(
+    Self,
+    DAIText(
+      'Globale Änderungen setzen die entsprechende Auswahl des aktuellen Projekts auf „Default“. Delphi-Sourcen, GetIt und ' +
+        'IDE-Lesezugriffe sind immer erlaubt.',
+      'Global changes reset the corresponding current-project choice to “Default”. Reading Delphi sources, GetIt and IDE settings is ' +
+        'always allowed.',
+      'Les modifications globales rétablissent le choix correspondant du projet actuel sur « Par défaut ». La lecture des sources ' +
+        'Delphi, de GetIt et des paramètres IDE est toujours autorisée.',
+      'グローバル設定を変更すると、現在のプロジェクトの対応する選択は「既定」に戻ります。Delphiソース、GetIt、IDE設定の読み取りは常に許可されます。'),
+    24,
+    LTop
+  );
+  LInfoLabel.AutoSize := False;
+  LInfoLabel.WordWrap := True;
+  LInfoLabel.Width := 760;
+  LInfoLabel.Height := 60;
+  Inc(LTop, 68);
+
+  with NewLabel(Self, DAIText('MCP-Server', 'MCP server', 'Serveur MCP', 'MCPサーバー'), 16, LTop) do
+  begin
+    Name := 'DAIServerHeading';
+    Font.Style := [fsBold];
+  end;
   Inc(LTop, 30);
 
   FServerEnabledCheckBox := TCheckBox.Create(Self);
@@ -820,7 +1117,10 @@ begin
 
   with NewLabel(Self, DAIText('Zusätzliche schreibgeschützte Verzeichnisse', 'Additional read-only directories', 'Répertoires supplémentaires en lecture seule',
     '追加の読み取り専用ディレクトリ'), 16, LTop) do
+  begin
+    Name := 'DAIDirectoriesHeading';
     Font.Style := [fsBold];
+  end;
   Inc(LTop, 28);
 
   FDirectoryHintLabel := NewWrappedLabel(Self, '', 24, LTop, 736, 40);
@@ -828,6 +1128,7 @@ begin
 
   FDirectoriesMemo := TMemo.Create(Self);
   FDirectoriesMemo.Parent := Self;
+  FDirectoriesMemo.Name := 'DAIDirectoriesMemo';
   FDirectoriesMemo.Left := 24;
   FDirectoriesMemo.Top := LTop;
   FDirectoriesMemo.Width := 636;
@@ -851,164 +1152,6 @@ begin
     '追加ディレクトリのグローバル設定です。オフの場合、現在のプロジェクトの読み取り権限を使用し、プロジェクトがない場合はグローバルの読み取り権限を使用します。書き込みは禁止されたままです。');
   FDirectoriesAlwaysAllowedCheckBox.ShowHint := True;
   Inc(LTop, 38);
-
-  with NewLabel(Self, DAIText('Berechtigungen', 'Permissions', 'Autorisations', '権限'), 16, LTop) do
-    Font.Style := [fsBold];
-  Inc(LTop, 30);
-
-  NewLabel(Self, DAIText('Global', 'Global', 'Globales', 'グローバル'), 320, LTop + 4);
-  NewLabel(Self, DAIText('Aktuelles Projekt', 'Current project', 'Projet actuel', '現在のプロジェクト'), 548, LTop + 4);
-  Inc(LTop, 34);
-
-  FProjectLabel := NewLabel(Self, '', 24, LTop);
-  FProjectLabel.Width := 744;
-  FProjectLabel.AutoSize := False;
-  FProjectLabel.WordWrap := True;
-  FProjectLabel.Height := 64;
-  Inc(LTop, 72);
-
-  for LCategory := Low(TDAIPermissionCategory) to High(TDAIPermissionCategory) do
-    AddPermissionRow(Self, LCategory, LTop);
-
-  LInfoLabel := NewLabel(
-    Self,
-    DAIText(
-      'Globale Änderungen setzen die entsprechende Auswahl des aktuellen Projekts auf „Default“. Delphi-Sourcen, GetIt und ' +
-        'IDE-Lesezugriffe sind immer erlaubt.',
-      'Global changes reset the corresponding current-project choice to “Default”. Reading Delphi sources, GetIt and IDE settings is ' +
-        'always allowed.',
-      'Les modifications globales rétablissent le choix correspondant du projet actuel sur « Par défaut ». La lecture des sources ' +
-        'Delphi, de GetIt et des paramètres IDE est toujours autorisée.',
-      'グローバル設定を変更すると、現在のプロジェクトの対応する選択は「既定」に戻ります。Delphiソース、GetIt、IDE設定の読み取りは常に許可されます。'),
-    24,
-    LTop
-  );
-  LInfoLabel.AutoSize := False;
-  LInfoLabel.WordWrap := True;
-  LInfoLabel.Width := 760;
-  LInfoLabel.Height := 60;
-  Inc(LTop, 68);
-
-  with NewLabel(Self, DAIText('KI-Client- und Skill-Registrierung', 'AI client and skill registration', 'Inscription des clients IA et du skill', 'AIクライアントとスキルの登録'), 16, LTop) do
-    Font.Style := [fsBold];
-  Inc(LTop, 30);
-
-  FClientComboBox := TComboBox.Create(Self);
-  FClientComboBox.Parent := Self;
-  FClientComboBox.Name := 'DAIClientComboBox';
-  FClientComboBox.Left := 24;
-  FClientComboBox.Top := LTop;
-  FClientComboBox.Width := 330;
-  FClientComboBox.Style := csDropDownList;
-  FClientComboBox.Items.Add(DAIText('Alle erkannten Clients', 'All detected clients', 'Tous les clients détectés', '検出されたすべてのクライアント'));
-  FClientComboBox.Items.Add('Codex');
-  FClientComboBox.Items.Add('Claude Code (CLI / VS Code)');
-  FClientComboBox.Items.Add('Claude Desktop');
-  FClientComboBox.Items.Add('Eigent');
-  FClientComboBox.Items.Add('Gemini CLI / Code Assist');
-  FClientComboBox.Items.Add('Gemini Desktop');
-  FClientComboBox.Items.Add('Hermes');
-  FClientComboBox.Items.Add('LM Studio');
-  FClientComboBox.Items.Add('OpenClaw');
-  FClientComboBox.ItemIndex := 0;
-  FClientComboBox.OnChange := ClientChanged;
-  Inc(LTop, 34);
-
-  FClientStatusMemo := NewStatusMemo('DAIClientStatusMemo', LTop, 736, 154);
-  Inc(LTop, 164);
-
-  FCodexStatusMemo := NewStatusMemo('DAICodexStatusMemo', LTop, 736, 36);
-  Inc(LTop, 40);
-  FSkillStatusMemo := NewStatusMemo('DAISkillStatusMemo', LTop, 736, 36);
-  Inc(LTop, 44);
-
-  FRegisterButton := TButton.Create(Self);
-  FRegisterButton.Parent := Self;
-  FRegisterButton.Left := 24;
-  FRegisterButton.Top := LTop;
-  FRegisterButton.Width := 160;
-  FRegisterButton.Caption := DAIText('Registrieren', 'Register', 'Inscrire', '登録');
-  FRegisterButton.OnClick := RegisterClicked;
-
-  FUnregisterButton := TButton.Create(Self);
-  FUnregisterButton.Parent := Self;
-  FUnregisterButton.Left := 196;
-  FUnregisterButton.Top := LTop;
-  FUnregisterButton.Width := 160;
-  FUnregisterButton.Caption := DAIText('Deregistrieren', 'Unregister', 'Désinscrire', '登録解除');
-  FUnregisterButton.OnClick := UnregisterClicked;
-
-  FShowToolsButton := TButton.Create(Self);
-  FShowToolsButton.Parent := Self;
-  FShowToolsButton.Name := 'DAIFunctionsButton';
-  FShowToolsButton.SetBounds(368, LTop, 280, 28);
-  FShowToolsButton.Caption := DAIText('Skill und MCP-Werkzeuge', 'Skill and MCP tools', 'Skill et outils MCP', 'スキルとMCPツール');
-  FShowToolsButton.OnClick := ShowToolsClicked;
-  Inc(LTop, 36);
-
-  FFindRegistrationsButton := TButton.Create(Self);
-  FFindRegistrationsButton.Name := 'DAIFindRegistrationsButton';
-  FFindRegistrationsButton.Parent := Self;
-  FFindRegistrationsButton.SetBounds(24, LTop, 332, 28);
-  FFindRegistrationsButton.Caption := DAIText('Registrierungen suchen und entfernen', 'Find and remove registrations', 'Rechercher et supprimer les inscriptions', '登録の検索と削除');
-  FFindRegistrationsButton.Hint := DAIText(
-    'Sucht auch DAI-Registrierungen anderer Delphi-Versionen und Profile beim ausgewählten KI-Client.',
-    'Also finds DAI registrations for other Delphi versions and profiles in the selected AI client.',
-    'Recherche aussi les inscriptions DAI d’autres versions et profils Delphi dans le client IA sélectionné.',
-    '選択したAIクライアントで、他のDelphiバージョンとプロファイルのDAI登録も検索します。');
-  FFindRegistrationsButton.ShowHint := True;
-  FFindRegistrationsButton.OnClick := FindRegistrationsClicked;
-
-  FManualRegistrationButton := TButton.Create(Self);
-  FManualRegistrationButton.Name := 'DAIManualRegistrationButton';
-  FManualRegistrationButton.Parent := Self;
-  FManualRegistrationButton.SetBounds(368, LTop, 280, 28);
-  FManualRegistrationButton.Caption := DAIText('Manuell registrieren…', 'Register manually…', 'Inscription manuelle…', '手動で登録…');
-  FManualRegistrationButton.Hint := DAIText(
-    'Zeigt Verbindungsdaten und Konfigurationsbeispiele für die manuelle Registrierung beim ausgewählten KI-Client.',
-    'Shows connection details and configuration examples for manual registration in the selected AI client.',
-    'Affiche les données de connexion et des exemples de configuration pour l’inscription manuelle dans le client IA sélectionné.',
-    '選択したAIクライアントで手動登録するための接続情報と設定例を表示します。');
-  FManualRegistrationButton.ShowHint := True;
-  FManualRegistrationButton.OnClick := ManualRegistrationClicked;
-  Inc(LTop, 36);
-
-  FManualClientRegistrationCheckBox := TCheckBox.Create(Self);
-  FManualClientRegistrationCheckBox.Name := 'DAIManualClientRegistrationCheckBox';
-  FManualClientRegistrationCheckBox.Parent := Self;
-  FManualClientRegistrationCheckBox.SetBounds(24, LTop, 736, 24);
-  FManualClientRegistrationCheckBox.Caption := DAIText('Manuell registriert', 'Manually registered', 'Inscrit manuellement', '手動登録済み');
-  FManualClientRegistrationCheckBox.Hint := DAIText(
-    'Für die ausgewählte Verbindung: Der DAI-Button ignoriert „Nicht registriert“. Hinweise auf veraltete oder fehlerhafte automatisch ' +
-      'erkannte Registrierungen bleiben sichtbar. Wird beim Speichern oder Registrieren übernommen.',
-    'For the selected connection, the DAI button ignores “Not registered”. Warnings about outdated or faulty automatically detected ' +
-      'registrations remain visible. Applied when saving or registering.',
-    'Pour la connexion sélectionnée, le bouton DAI ignore « Non inscrit ». Les avertissements concernant les inscriptions détectées ' +
-      'automatiquement qui sont obsolètes ou incorrectes restent visibles. Prend effet lors de l’enregistrement ou de l’inscription.',
-    '選択した接続では、DAIボタンは「未登録」を無視します。自動検出された登録が古い場合や不正な場合の警告は引き続き表示されます。保存時または登録時に反映されます。');
-  FManualClientRegistrationCheckBox.ShowHint := True;
-  Inc(LTop, 42);
-
-  LInfoLabel := NewLabel(
-    Self,
-    DAIText(
-      'Betroffene KI-Clients müssen ihre MCP-Verbindung neu laden oder neu gestartet werden. Hinweis: Nach dem Ändern von Port oder ' +
-        'Bearer-Token sowie nach dem Registrieren oder Deregistrieren muss die Codex-App neu gestartet werden.',
-      'Affected AI clients must reload their MCP connection or restart. Note: restart the Codex app after changing the port or bearer ' +
-        'token, or after registering or unregistering.',
-      'Les clients IA concernés doivent recharger leur connexion MCP ou redémarrer. Remarque : redémarrez l’application Codex après ' +
-        'toute modification du port ou du jeton Bearer, ou après une inscription ou une désinscription.',
-      '対象のAIクライアントでMCP接続を再読み込みするか、クライアントを再起動してください。ポートやBearerトークンの変更、登録、登録解除の後は、Codexアプリを再起動してください。'),
-    24,
-    LTop
-  );
-  LInfoLabel.AutoSize := False;
-  LInfoLabel.WordWrap := True;
-  LInfoLabel.Width := 760;
-  LInfoLabel.Height := 60;
-  LInfoLabel.Font.Style := [fsBold];
-  LInfoLabel.Font.Color := clGrayText;
-  Inc(LTop, 76);
 
   Align := alClient;
   Height := LTop;
