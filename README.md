@@ -797,6 +797,22 @@ Die SDK-Parent-Kette enthält nicht zwingend alle Plattformvererbungen. `sources
 Bei mehreren konkurrierenden Plattformquellen wird `source_resolution: "unknown"` und `origin_configuration: null` zurückgegeben.
 Gleiche Werte belegen keine eindeutige Quelle. `merge_mode_applied` nennt, ob das SDK den verlangten Merge-Modus tatsächlich übernommen hat.
 
+### Projektressourcen
+
+Die Werkzeuge arbeiten mit den Einträgen aus **Projekt → Ressourcen und Bilder**. Optional wählt `project` ein geladenes Projekt. Standard ist das aktive Projekt.
+
+- `project_resources_list` liefert Quelldatei, Typ und Bezeichner. `source: "ide_project"` umfasst Änderungen im geladenen Projekt. Wenn nur Projekttext verfügbar ist,
+  bezeichnet `editor_buffer` dessen Inhalt und `saved_dproj` den gespeicherten Stand.
+- `project_resource_add` erwartet `file`, `resource_type` und `resource_id`. Relative Dateipfade werden vom Projektverzeichnis aus aufgelöst.
+- `project_resource_update` wählt per `resource_type` und `resource_id` aus und setzt die angegebenen Felder `new_file`, `new_resource_type` und `new_resource_id`.
+- `project_resource_remove` entfernt die gewählte Referenz aus dem Projekt. Typ und Bezeichner identifizieren die Ressource.
+- Änderungen brauchen Projektlese- und Projektschreibrechte. `project_save` speichert das Projekt getrennt.
+  Schreibzugriffe setzen das geprüfte native Ressourcenmodell der IDE voraus.
+
+Für Zusatzsymbole einer EXE je eine `.ico` als `ICON` hinzufügen. Eine ID wie `SHORTCUT_TEST` folgt in der Explorer-Reihenfolge auf `MAINICON`.
+Delphi baut die Dialogressourcen in die `.dres` ein. Nach dem Build lässt sich die EXE unter **Anderes Symbol** als Quelle für jede Verknüpfung auswählen.
+[Delphi-Ressourcen](https://docwiki.embarcadero.com/RADStudio/Florence/en/Resources_and_Images) · [Icon-Reihenfolge in Explorer](https://devblogs.microsoft.com/oldnewthing/20250210-00/?p=110854)
+
 IDE-weite Einstellungen sind über `IOTAServices.GetEnvironmentOptions` und `IOTAOptions.GetOptionNames/GetOptionValue/SetOptionValue`
 zugänglich. Diese Schnittstelle bietet kein allgemeines Löschen, Zurücksetzen oder Ermitteln einer Vererbungsquelle.
 `options_search` und `options_open` ergänzen die Suche nach Optionsnamen und die Navigation im IDE-Dialog. Lesen oder Schreiben IDE-weiter Variantenwerte
@@ -912,6 +928,7 @@ Bei abweichend konfigurierten Werkzeugen kann `output_codepage` explizit gesetzt
 - `project_context`
 - `project_activate`
 - `project_options_configurations`
+- `project_resources_list`
 - `project_options_read`
 - `options_search`
 - `project_option_set`
@@ -923,6 +940,7 @@ Bei abweichend konfigurierten Werkzeugen kann `output_codepage` explizit gesetzt
 - `form_component_properties`
 - `form_palette_list`
 - `debugger_status`
+- `debugger_processes_list`
 - `debugger_cursor_expression`
 - `debugger_evaluation_status`
 - `breakpoints_list`
@@ -936,6 +954,9 @@ Bei abweichend konfigurierten Werkzeugen kann `output_codepage` explizit gesetzt
 - `project_create`
 - `project_open`
 - `project_save`
+- `project_resource_add`
+- `project_resource_update`
+- `project_resource_remove`
 - `project_remove`
 - `package_install`
 - `package_uninstall`
@@ -943,8 +964,8 @@ Bei abweichend konfigurierten Werkzeugen kann `output_codepage` explizit gesetzt
 - `debugger_expression_ui`: Native Watch-/Auswerten-/Inspektoraktion; mit ausschließlich `request_id` den Zustand lesend abfragen.
 - `unit_create`
 - `form_unit_create`
-- `file_open`
-- `file_activate`
+- `file_open` und `file_activate`: Datei im Editor zeigen oder bei Bedarf öffnen. Optional setzen `line` und `column` den Cursor im aktuellen Puffer.
+  Beide zählen ab 1. `column` ist die visuelle Editorspalte und setzt `line` voraus. Ohne `column` springt Delphi an den Zeilenanfang.
 - `file_close`
 - `project_file_remove`
 - `form_show_as_text`
@@ -973,6 +994,8 @@ Bei abweichend konfigurierten Werkzeugen kann `output_codepage` explizit gesetzt
 - `msbuild_execute`
 - `dcc32_execute`
 - `debugger_control`
+- `debugger_process_load`
+- `debugger_process_attach`
 - `debugger_evaluate`
 - `debugger_modify`
 
@@ -1130,9 +1153,52 @@ Beide Werkzeuge verändern weder die aktuelle Prozess-/Threadauswahl noch die Au
 weil die verwendeten öffentlichen ToolsAPI-Getter diese Angaben nicht liefern.
 `breakpoint_set` erwartet `file`, eine einsbasierte `line`, optional `enabled` (Standard `true`), `condition` und `pass_count` (Standard `0`).
 `breakpoint_remove(file, line)` entfernt passende Quellhaltepunkte. Änderungen sind auf Workspace-Dateien beschränkt.
-`debugger_control(action)` unterstützt `pause`, `continue`, `step_into`, `step_over` und `step_out` mit Prüfung des aktuellen Prozesszustands.
+`debugger_control(action)` unterstützt `pause`, `continue`, `step_into`, `step_over`, `step_out` und `detach` mit Prüfung des aktuellen Prozesszustands.
 Starten/Beenden erfolgt über `project_run` und `project_stop`. Ein bereits laufender Debugger wird durch `project_run` nicht unbeabsichtigt neu gestartet.
 Haltepunkte, Debugger-Steuerung, Status und Debugger-Auflistungen verwenden die Ausführungs-/Debuggerberechtigung.
+
+### Externe Prozesse und Remote-Debugging
+
+`debugger_processes_list(remote_host, maximum_processes)` listet die vom aktuellen IDE-Debugger gemeldeten
+Prozesse auf. Ohne `remote_host` wird lokal abgefragt. Die Antwort zeigt Gesamtzahl, Grenze und `truncated`.
+Bei einer leeren Antwort bleibt `enumeration_confirmed` unbekannt, da die SDK-Aufrufe bei fehlender
+Debugger-Unterstützung auch ohne Fehlermeldung zurückkehren können.
+
+`debugger_process_load(executable, arguments, remote_host)` übergibt einen ausführbaren Dateipfad und Startparameter.
+Remote-Pfade beziehen sich auf den Zielrechner. `debugger_process_attach(process_id, remote_host,
+pause_after_attach, detach_on_reset)` verwendet eine Prozess-ID aus der Liste desselben Rechners.
+Beide Attach-Optionen sind standardmäßig `true`. Ein aktiver Debuggerprozess muss vor einem neuen Start oder Attach beendet
+oder getrennt werden. `action_invoked` bestätigt den SDK-Aufruf; `process_observed` zeigt einen bereits zugeordneten Prozess.
+Status, Thread-/Stack- und Ausdruckswerkzeuge verwenden die Debuggerverbindung zum Zielprozess.
+`debugger_windows_list` liest Fenster auf dem lokalen Windows-Rechner.
+Den weiteren Zustand mit `debugger_status` prüfen. Mit `debugger_control(action: "detach")` lässt sich die
+Debuggerverbindung lösen. `project_stop(debugger: true)` beendet den aktuellen Debuggerprozess.
+
+Diese Aufrufe verwenden den aktuell ausgewählten IDE-Debugger. Für die Debuggerauswahl, PAServer-Profilwahl,
+das Arbeitsverzeichnis und die vollständigen gespeicherten Werte von „Prozess laden“ und „Mit Prozess verbinden“
+ist weiterhin der native IDE-Dialog erforderlich. `debugger_status` weist die verfügbaren Prozessfunktionen aus.
+Die öffentliche ToolsAPI bietet hier `CreateProcess`, `AttachProcess` und `EnumerateRunningProcesses`.
+[Prozess laden, lokal](https://docwiki.embarcadero.com/RADStudio/Florence/en/Load_Process_Local),
+[Prozess laden, remote](https://docwiki.embarcadero.com/RADStudio/Florence/en/Load_Process_Remote),
+[Mit Prozess verbinden](https://docwiki.embarcadero.com/RADStudio/Florence/en/Attach_to_Process).
+
+### Geplante Geräte-, SDK- und Bereitstellungswerkzeuge
+
+Die nächste Erweiterung sollte die von der IDE angebotenen Zielplattformen, Projektzuordnung, SDK-Versionen,
+PAServer-Profile und Zielgeräte zunächst lesend sichtbar machen. Auswahl und Konfigurationsänderungen brauchen
+jeweils eigene Aktionen. Die von der IDE gelieferten Gerätenamen sind als IDE-bekannte Ziele zu kennzeichnen;
+eine tatsächliche Verbindung muss gesondert geprüft werden. Designer-Geräteprofile beschreiben die Formularvorschau.
+
+Bereitstellungseinträge sollten mit Build-Konfiguration, Plattform, lokalem und entferntem Pfad sowie Aktivierung
+aufgelistet und gezielt bearbeitet werden können. Kompilieren, Bereitstellen und Starten brauchen getrennte
+Ergebniszustände. Dafür sind `IOTAProjectPlatforms`, `IOTAPlatformSDKServices`, `IOTARemoteProfileServices`,
+`IOTAExternalDeviceServices` und `IProjectDeployment` die vorhandenen Einstiegspunkte.
+
+Für Android ist die lokale SDK-/Geräteverbindung zu berücksichtigen. iOS und macOS bringen die Mac-/PAServer-Verbindung
+sowie je nach Ziel Signierung und Provisionierung hinzu. VCL/FMX, Zielplattform und SDK-Frameworkpfade sind
+getrennte Angaben. Für DAI sind diese Funktionen geplant.
+[iOS-Entwicklung](https://docwiki.embarcadero.com/RADStudio/Florence/en/IOS_Mobile_Application_Development),
+[Provisionierung](https://docwiki.embarcadero.com/RADStudio/Florence/en/Provisioning_Page).
 
 ### Ausdrücke auswerten und Werte ändern
 

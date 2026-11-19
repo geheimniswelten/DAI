@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Win32', 'Win64', 'Both')]
     [string]$Platform = 'Both',
-    [string]$BdsRoot = $env:BDS
+    [string]$BdsRoot = $env:BDS,
+    [switch]$ResourcesOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,7 +20,8 @@ $fixtureDirectory = Join-Path $PSScriptRoot 'ProjectOptionsDispatchTests'
 $generatedDirectory = Join-Path $projectRoot 'Build\Tests-ProjectOptionsDispatch-ProductionBranch'
 $utf8Bom = [Text.UTF8Encoding]::new($true)
 $crlf = "`r`n"
-$toolNames = @('project_activate', 'project_options_configurations', 'project_options_read', 'project_option_set', 'project_option_remove')
+$toolNames = @('project_activate', 'project_options_configurations', 'project_options_read', 'project_option_set', 'project_option_remove',
+    'project_resources_list', 'project_resource_add', 'project_resource_update', 'project_resource_remove')
 
 function Extract-One([string]$pattern, [string]$description) {
     $matchesFound = [regex]::Matches($sourceText, $pattern,
@@ -42,6 +44,7 @@ $branches = @()
 $schemas = @()
 $branches += Extract-One "(?<body>^  if SameText\(AName, 'project_activate'\) then\r\n.*?^  end;\r\n)" 'project_activate branch'
 $branches += Extract-One "(?<body>^  if SameText\(AName, 'project_options_configurations'\).*?^  end;\r\n)" 'shared project-options branch'
+$branches += Extract-One "(?<body>^  if SameText\(AName, 'project_resources_list'\).*?^  end;\r\n)" 'shared project-resources branch'
 foreach ($toolName in $toolNames) {
     $schemas += Extract-One "(?<body>^  AddTool\(\s*Result,\s*'$toolName',.*?\);\r\n)" "$toolName schema"
 }
@@ -90,6 +93,7 @@ uses
   System.Generics.Collections,
   System.Math,
   System.SysUtils,
+  DAI.ProjectOptionsDispatch.Resources,
   h5u.DAI.OTA.ProjectOptions,
   h5u.DAI.Permissions.Manager;
 
@@ -104,7 +108,7 @@ begin
 
 '@
 $dispatchEnd = @'
-  raise EArgumentException.Create('This isolated fixture exposes only the five project-options tools.');
+  raise EArgumentException.Create('This isolated fixture exposes only project options and resources.');
 end;
 
 function ListProjectOptionsSchemas: TJSONArray;
@@ -173,6 +177,7 @@ foreach ($currentPlatform in $platforms) {
     }
     $testInfo = [Diagnostics.ProcessStartInfo]::new()
     $testInfo.FileName = Join-Path $outputDirectory 'Test.ProjectOptionsDispatch.exe'
+    if ($ResourcesOnly) { $testInfo.Arguments = '--resources-only' }
     $testInfo.UseShellExecute = $false
     $testInfo.CreateNoWindow = $true
     $testInfo.RedirectStandardOutput = $true

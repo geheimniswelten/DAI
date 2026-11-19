@@ -41,6 +41,13 @@ begin
   Check(Pos('PAS und DFM/FMX gemeinsam, in beide Richtungen', LSkill) > 0, 'skill protects paired form modules symmetrically');
   Check(Pos('nicht allein wegen ihrer Projektzugehörigkeit geladen', LSkill) > 0, 'skill does not mark every project member loaded');
   Check(Pos('DPR/DPK bei Bedarf mit `file_open`', LSkill) > 0, 'skill opens loaded project sources in the IDE');
+  Check((Pos('absolutem Dateipfad und `line` (ab 1)', LSkill) > 0) and (Pos('öffnet die Unit bei Bedarf', LSkill) > 0),
+    'skill navigates to the source location and opens a closed unit');
+  Check(Pos('kurzen normalen Codex-Dateilink', LSkill) > 0, 'skill retains the native Codex source link');
+  Check((Pos('`project_resources_list`', LSkill) > 0) and (Pos('`project_resource_add`', LSkill) > 0) and
+    (Pos('`project_resource_update`', LSkill) > 0) and (Pos('`project_resource_remove`', LSkill) > 0),
+    'skill describes all four project resource tools');
+  Check((Pos('`SHORTCUT_TEST`', LSkill) > 0) and (Pos('`MAINICON`', LSkill) > 0), 'skill describes additional shortcut icons');
   Check(Pos('ausschließlich über `project_option_set`/`project_option_remove` ändern, nicht per DPROJ-XML', LSkill) > 0,
     'skill requires ToolsAPI project option changes');
   Check(Pos('Geladene Dateien niemals zusätzlich direkt auf dem Datenträger ändern', LSkill) > 0, 'skill prohibits a second external write');

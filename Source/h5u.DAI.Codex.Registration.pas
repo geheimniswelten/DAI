@@ -728,6 +728,13 @@ begin
     - Geöffnete Dateien werden im Undo-fähigen Editorpuffer geändert; `save: false` lässt Änderungen ungespeichert.
     - Für geschlossene Dateien erfordert Schreiben `save: true`; `save: false` darf nie stillschweigend auf den Datenträger schreiben.
     - `file_open`, `file_activate` und `file_close` erwarten `file`; beim Schließen kann Delphi einen Speicherdialog anzeigen.
+    - `file_open` und `file_activate` akzeptieren optional `line` und `column` (visuelle Editorspalte), beide ab 1. Ohne Spalte gilt 1.
+    - Wenn du im Chat eine Delphi-Quellstelle zeigst, bevorzuge bei aktivem DAI den Delphi-Editor. Springe vor der Antwort zur wichtigsten Stelle.
+    - Nutze dazu `file_open` mit absolutem Dateipfad und `line` (ab 1), wenn das Tool den Parameter anbietet. Delphi öffnet die Unit bei Bedarf.
+    - Ungespeicherte Änderungen können Zeilennummern verschieben. Ermittle die Zeile dann aus dem aktuellen IDE-Puffer.
+    - Hole Delphi nach dem Sprung mit `ide_window_control` (`action: foreground`) nach vorn, wenn die Fensterfreigabe bereits erteilt ist.
+    - Gib anschließend einen kurzen normalen Codex-Dateilink mit absolutem Pfad und Zeile aus, z. B. mit der Beschriftung „Codex“.
+    - Gib den Link auch aus, wenn DAI oder der IDE-Sprung nicht verfügbar ist.
     - Projekte verwalten: `project_create`, `project_open`, `project_save`, `project_remove`, `unit_create`, `form_unit_create`, `project_file_remove`.
     - `project_create` verwendet standardmäßig `save: true`; `save: false` erzeugt ein ungespeichertes IDE-Projekt, bei VCL einschließlich Hauptformular.
     - `project_open` (DPR/DPK/DPROJ) und `project_create` ergänzen standardmäßig die aktuelle Projektgruppe und erhalten vorhandene Projekte.
@@ -739,6 +746,15 @@ begin
     - Status und `ide_windows_list` bleiben ohne IDE-Projektabfrage erreichbar. `closing` allein beweist noch keinen Speicherdialog.
     - Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.
     - `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.
+
+    ## Projektressourcen
+
+    - `project_resources_list` listet die Einträge aus „Projekt > Ressourcen und Bilder“. `source` benennt den IDE- oder gespeicherten Projektstand.
+    - `project_resource_add` braucht `file`, `resource_type` und `resource_id`. Relative Dateipfade beziehen sich auf das Projektverzeichnis.
+    - `project_resource_update` wählt per Typ und ID aus. Gib `new_file`, `new_resource_type` oder `new_resource_id` an.
+    - `project_resource_remove` entfernt die Referenz zum Asset aus dem Projekt. Änderungen mit `project_save` separat speichern.
+    - Zusatzsymbole als `.ico` vom Typ `ICON` hinzufügen. Eine ID wie `SHORTCUT_TEST` folgt in der Explorer-Sortierung auf `MAINICON`.
+    - Nach dem Build in den Eigenschaften der Windows-Verknüpfung „Anderes Symbol“ wählen und die gebaute EXE als Quelle verwenden.
 
     ## Projekt-Erweiterungen
 
@@ -837,6 +853,12 @@ begin
     - Bei `diagnostics_freshness: unknown` ist die Diagnoseversion unbekannt; eine leere Liste bestätigt keine abgeschlossene Prüfung des neuesten Texts.
     - `debugger_status`, `breakpoints_list`, `breakpoint_set`, `breakpoint_remove` und `debugger_control` nur nach ihrem aktuellen Schema verwenden.
     - `debugger_status` listet die Debuggerprozesse; `debugger_threads_list` liest den aktuellen Prozess, optional `process_id` oder `all_processes: true`.
+    - `debugger_processes_list` listet lokale oder mit `remote_host` entfernte Prozesse des aktuellen IDE-Debuggers auf.
+    - `debugger_process_load` lädt `executable` mit optionalen `arguments` und `remote_host`.
+    - `debugger_process_attach` verbindet eine `process_id` aus der Liste desselben Rechners; beide Attach-Optionen sind standardmäßig true.
+    - `action_invoked` bestätigt den SDK-Aufruf, `process_observed` einen beobachteten Prozess. Den Zustand danach mit `debugger_status` prüfen.
+    - Diese Aufrufe verwenden den aktuellen IDE-Debugger. Arbeitsverzeichnis, Debugger- und PAServer-Profilwahl brauchen den nativen Dialog.
+    - `debugger_control` unterstützt mit `detach` das Lösen der Debuggerverbindung. `project_stop` beendet den aktuellen Debuggerprozess.
     - Die Threadliste verwendet `maximum_threads` (Standard 200) und meldet die tatsächlichen Prozess-/Thread-IDs sowie `truncated`.
     - `debugger_stacktrace` liest den angehaltenen aktuellen Thread; `process_id` und `thread_id` wählen optional einen gelisteten Prozess und seinen Thread.
     - `maximum_frames` begrenzt den Stack (Standard 50), `maximum_characters` den Text. Die zurückgegebenen Frame-Indizes sind ToolsAPI-konform ab 1.
@@ -853,7 +875,7 @@ begin
     - Native Aktionen brauchen Dateileserechte und globale Ausführungsrechte; ausschließlich request_id fragt den Status ab. action_invoked bestätigt nur den Aufruf.
     - Watchliste auflisten/bearbeiten/löschen ist öffentlich nicht unterstützt; bekannte Ausdrücke einzeln auswerten, keinen eigenen IDE-Watchzustand erfinden.
     - `project_run` unterstützt `debugger` und `build_first`; `project_stop` beendet die Ausführung. Prüfe den Rückgabestatus vor weiteren Schritten.
-    - `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; `debugger_windows_list` liest Fenster des Debuggerprozesses.
+    - `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; `debugger_windows_list` liest lokale Windows-Fenster des Debuggerprozesses.
     - Beide Fensterwerkzeuge sind ReadOnly. DAI-Berechtigungsdialoge und Texte aus Eingabefeldern werden ausgelassen; keine Fensteraktionen ableiten.
     - Bei angehaltenem Debuggee können Controltexte fehlen; beachte `text_status`, Zeitlimit und `truncated`, ohne die Anwendung dafür fortzusetzen.
     - `ide_dialog_inspect` liest den aktiven sichtbaren modalen VCL-Dialog und liefert `snapshot_token` sowie die tatsächlichen Buttonnamen.
@@ -976,6 +998,13 @@ begin
     '- Geöffnete Dateien werden im Undo-fähigen Editorpuffer geändert; `save: false` lässt Änderungen ungespeichert.' + sLineBreak +
     '- Für geschlossene Dateien erfordert Schreiben `save: true`; `save: false` darf nie stillschweigend auf den Datenträger schreiben.' + sLineBreak +
     '- `file_open`, `file_activate` und `file_close` erwarten `file`; beim Schließen kann Delphi einen Speicherdialog anzeigen.' + sLineBreak +
+    '- `file_open` und `file_activate` akzeptieren optional `line` und `column` (visuelle Editorspalte), beide ab 1. Ohne Spalte gilt 1.' + sLineBreak +
+    '- Wenn du im Chat eine Delphi-Quellstelle zeigst, bevorzuge bei aktivem DAI den Delphi-Editor. Springe vor der Antwort zur wichtigsten Stelle.' + sLineBreak +
+    '- Nutze dazu `file_open` mit absolutem Dateipfad und `line` (ab 1), wenn das Tool den Parameter anbietet. Delphi öffnet die Unit bei Bedarf.' + sLineBreak +
+    '- Ungespeicherte Änderungen können Zeilennummern verschieben. Ermittle die Zeile dann aus dem aktuellen IDE-Puffer.' + sLineBreak +
+    '- Hole Delphi nach dem Sprung mit `ide_window_control` (`action: foreground`) nach vorn, wenn die Fensterfreigabe bereits erteilt ist.' + sLineBreak +
+    '- Gib anschließend einen kurzen normalen Codex-Dateilink mit absolutem Pfad und Zeile aus, z. B. mit der Beschriftung „Codex“.' + sLineBreak +
+    '- Gib den Link auch aus, wenn DAI oder der IDE-Sprung nicht verfügbar ist.' + sLineBreak +
     '- Projekte verwalten: `project_create`, `project_open`, `project_save`, `project_remove`, `unit_create`, `form_unit_create`, `project_file_remove`.' + sLineBreak +
     '- `project_create` verwendet standardmäßig `save: true`; `save: false` erzeugt ein ungespeichertes IDE-Projekt, bei VCL einschließlich Hauptformular.' + sLineBreak +
     '- `project_open` (DPR/DPK/DPROJ) und `project_create` ergänzen standardmäßig die aktuelle Projektgruppe und erhalten vorhandene Projekte.' + sLineBreak +
@@ -987,6 +1016,15 @@ begin
     '- Status und `ide_windows_list` bleiben ohne IDE-Projektabfrage erreichbar. `closing` allein beweist noch keinen Speicherdialog.' + sLineBreak +
     '- Entfernen aus einem Projekt löscht keine Dateien vom Datenträger. Projektwechsel und Entfernen können zusätzliche IDE-Dialoge auslösen.' + sLineBreak +
     '- `file_write` legt neue `.pas`-Dateien als UTF-8 mit BOM an; native IDE-Creators verwenden IDE-Einstellungen. Bestehende Codierung wird erhalten.' + sLineBreak +
+    '' + sLineBreak +
+    '## Projektressourcen' + sLineBreak +
+    '' + sLineBreak +
+    '- `project_resources_list` listet die Einträge aus „Projekt > Ressourcen und Bilder“. `source` benennt den IDE- oder gespeicherten Projektstand.' + sLineBreak +
+    '- `project_resource_add` braucht `file`, `resource_type` und `resource_id`. Relative Dateipfade beziehen sich auf das Projektverzeichnis.' + sLineBreak +
+    '- `project_resource_update` wählt per Typ und ID aus. Gib `new_file`, `new_resource_type` oder `new_resource_id` an.' + sLineBreak +
+    '- `project_resource_remove` entfernt die Referenz zum Asset aus dem Projekt. Änderungen mit `project_save` separat speichern.' + sLineBreak +
+    '- Zusatzsymbole als `.ico` vom Typ `ICON` hinzufügen. Eine ID wie `SHORTCUT_TEST` folgt in der Explorer-Sortierung auf `MAINICON`.' + sLineBreak +
+    '- Nach dem Build in den Eigenschaften der Windows-Verknüpfung „Anderes Symbol“ wählen und die gebaute EXE als Quelle verwenden.' + sLineBreak +
     '' + sLineBreak +
     '## Projekt-Erweiterungen' + sLineBreak + sLineBreak +
     '- Bei projektspezifischen Daten zuerst `project_tools_list` für das geladene Projekt aufrufen.' + sLineBreak +
@@ -1091,6 +1129,12 @@ begin
     '- Bei `diagnostics_freshness: unknown` ist die Diagnoseversion unbekannt; eine leere Liste bestätigt keine abgeschlossene Prüfung des neuesten Texts.' + sLineBreak +
     '- `debugger_status`, `breakpoints_list`, `breakpoint_set`, `breakpoint_remove` und `debugger_control` nur nach ihrem aktuellen Schema verwenden.' + sLineBreak +
     '- `debugger_status` listet die Debuggerprozesse; `debugger_threads_list` liest den aktuellen Prozess, optional `process_id` oder `all_processes: true`.' + sLineBreak +
+    '- `debugger_processes_list` listet lokale oder mit `remote_host` entfernte Prozesse des aktuellen IDE-Debuggers auf.' + sLineBreak +
+    '- `debugger_process_load` lädt `executable` mit optionalen `arguments` und `remote_host`.' + sLineBreak +
+    '- `debugger_process_attach` verbindet eine `process_id` aus der Liste desselben Rechners; beide Attach-Optionen sind standardmäßig true.' + sLineBreak +
+    '- `action_invoked` bestätigt den SDK-Aufruf, `process_observed` einen beobachteten Prozess. Den Zustand danach mit `debugger_status` prüfen.' + sLineBreak +
+    '- Diese Aufrufe verwenden den aktuellen IDE-Debugger. Arbeitsverzeichnis, Debugger- und PAServer-Profilwahl brauchen den nativen Dialog.' + sLineBreak +
+    '- `debugger_control` unterstützt mit `detach` das Lösen der Debuggerverbindung. `project_stop` beendet den aktuellen Debuggerprozess.' + sLineBreak +
     '- Die Threadliste verwendet `maximum_threads` (Standard 200) und meldet die tatsächlichen Prozess-/Thread-IDs sowie `truncated`.' + sLineBreak +
     '- `debugger_stacktrace` liest den angehaltenen aktuellen Thread; `process_id` und `thread_id` wählen optional einen gelisteten Prozess und seinen Thread.' + sLineBreak +
     '- `maximum_frames` begrenzt den Stack (Standard 50), `maximum_characters` den Text. Die zurückgegebenen Frame-Indizes sind ToolsAPI-konform ab 1.' + sLineBreak +
@@ -1108,7 +1152,8 @@ begin
     'action_invoked bestätigt nur den Aufruf.' + sLineBreak +
     '- Watchliste auflisten/bearbeiten/löschen ist öffentlich nicht unterstützt; bekannte Ausdrücke einzeln auswerten, keinen eigenen IDE-Watchzustand erfinden.' + sLineBreak +
     '- `project_run` unterstützt `debugger` und `build_first`; `project_stop` beendet die Ausführung. Prüfe den Rückgabestatus vor weiteren Schritten.' + sLineBreak +
-    '- `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; `debugger_windows_list` liest Fenster des Debuggerprozesses.' + sLineBreak +
+    '- `ide_windows_list` liest VCL-Metadaten und native IDE-Fenster, auch MessageBox/TaskDialog; ' +
+    '`debugger_windows_list` liest lokale Windows-Fenster des Debuggerprozesses.' + sLineBreak +
     '- Beide Fensterwerkzeuge sind ReadOnly. DAI-Berechtigungsdialoge und Texte aus Eingabefeldern werden ausgelassen; keine Fensteraktionen ableiten.' + sLineBreak +
     '- Bei angehaltenem Debuggee können Controltexte fehlen; beachte `text_status`, Zeitlimit und `truncated`, ohne die Anwendung dafür fortzusetzen.' + sLineBreak +
     '- `ide_dialog_inspect` liest den aktiven sichtbaren modalen VCL-Dialog und liefert `snapshot_token` sowie die tatsächlichen Buttonnamen.' + sLineBreak +

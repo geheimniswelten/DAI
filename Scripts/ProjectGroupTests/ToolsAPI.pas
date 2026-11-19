@@ -3,15 +3,40 @@
 interface
 
 type
+  TOTAEditPos = packed record
+    Col: SmallInt;
+    Line: LongInt;
+  end;
+
   IOTAEditor = interface
     ['{51798E1E-FB21-413D-B94E-16C474CE2FE1}']
     function GetFileName: string;
     function GetModified: Boolean;
+    procedure Show;
     property FileName: string read GetFileName;
     property Modified: Boolean read GetModified;
   end;
   IOTASourceEditor = interface(IOTAEditor)
     ['{51798E1E-FB21-413D-B94E-16C474CE2FE2}']
+    function GetLinesInBuffer: LongInt;
+  end;
+  IOTAEditBuffer = interface(IOTASourceEditor)
+    ['{51798E1E-FB21-413D-B94E-16C474CE2FE9}']
+  end;
+  IOTAEditView = interface
+    ['{51798E1E-FB21-413D-B94E-16C474CE2FEA}']
+    function GetBuffer: IOTAEditBuffer;
+    function GetCursorPos: TOTAEditPos;
+    procedure SetCursorPos(const AValue: TOTAEditPos);
+    procedure MoveViewToCursor;
+    function SameView(const AView: IOTAEditView): Boolean;
+    property Buffer: IOTAEditBuffer read GetBuffer;
+    property CursorPos: TOTAEditPos read GetCursorPos write SetCursorPos;
+  end;
+  IOTAEditorServices = interface
+    ['{51798E1E-FB21-413D-B94E-16C474CE2FEB}']
+    function GetTopView: IOTAEditView;
+    property TopView: IOTAEditView read GetTopView;
   end;
   IOTAModule = interface
     ['{51798E1E-FB21-413D-B94E-16C474CE2FE3}']

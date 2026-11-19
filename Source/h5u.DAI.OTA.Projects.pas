@@ -22,8 +22,8 @@ type
     class function RemoveProject(const AProjectNameOrPath: string): TJSONObject; static;
     class function CreateUnit(const AProjectNameOrPath: string; const AFileName: string; const ASource: string): TJSONObject; static;
     class function CreateFormUnit(const AProjectNameOrPath: string; const AFileName: string; const AFormName: string; const AAncestorName: string): TJSONObject; static;
-    class function OpenFile(const AFileName: string): TJSONObject; static;
-    class function ActivateFile(const AFileName: string): TJSONObject; static;
+    class function OpenFile(const AFileName: string; const ALine: Integer = 0; const AColumn: Integer = 0): TJSONObject; static;
+    class function ActivateFile(const AFileName: string; const ALine: Integer = 0; const AColumn: Integer = 0): TJSONObject; static;
     class function CloseFile(const AFileName: string): TJSONObject; static;
     class function RemoveFileFromProject(const AProjectNameOrPath: string; const AFileName: string): TJSONObject; static;
     class function ShowFormAsText(const AFileName: string): TJSONObject; static;
@@ -199,11 +199,97 @@ begin
     raise EArgumentException.Create('Neue Delphi-Units müssen die Dateiendung .pas verwenden.');
 end;
 
-class function TDAIProjectService.ActivateFile(const AFileName: string): TJSONObject;
+function OpenSourcePosition(const AFileName: string; const ALine, AColumn: Integer; const AActivate: Boolean): TJSONObject;
+var
+  LFileName, LExtension: string;
+  LProjectSource: Boolean;
+  LRequested, LActual: TOTAEditPos;
+begin
+  if ALine < 1 then
+    raise EArgumentOutOfRangeException.Create('Die Zeilennummer muss mindestens 1 sein.');
+  if (AColumn < 0) or (AColumn > High(SmallInt)) then
+    raise EArgumentOutOfRangeException.CreateFmt('Die Spalte muss zwischen 1 und %d liegen.', [High(SmallInt)]);
+  LRequested.Line := ALine;
+  if AColumn = 0 then
+    LRequested.Col := 1
+  else
+    LRequested.Col := AColumn;
+
+  LFileName := TDAISettings.Instance.ExpandPath(AFileName);
+  LExtension := TPath.GetExtension(LFileName);
+  LProjectSource := SameText(LExtension, '.dpr') or SameText(LExtension, '.dpk');
+  if IsProjectFile(LFileName) and not LProjectSource then
+    raise EArgumentException.Create('Projektdateien müssen mit project_open geöffnet werden.');
+
+  TDAIOTA.RunOnMainThread(
+    procedure
+    var
+      LSourceEditor: IOTASourceEditor;
+      LEditorServices: IOTAEditorServices;
+      LView, LTopView: IOTAEditView;
+      LBuffer: IOTAEditBuffer;
+      LPrevious: TOTAEditPos;
+      LOpenResult: TJSONObject;
+    begin
+      if not Supports(BorlandIDEServices, IOTAEditorServices, LEditorServices) then
+        raise EInvalidOperation.Create('IOTAEditorServices ist nicht verfügbar.');
+      LSourceEditor := TDAIOTA.FindSourceEditor(LFileName);
+      if not Assigned(LSourceEditor) then
+      begin
+        if SameText(LExtension, '.dfm') or SameText(LExtension, '.fmx') then
+          raise EInvalidOperation.Create('Der Formulartext ist nicht im Editor geöffnet. Verwenden Sie zuerst form_show_as_text.');
+        LOpenResult := TDAIProjectService.OpenFile(LFileName);
+        LOpenResult.Free;
+        LSourceEditor := TDAIOTA.FindSourceEditor(LFileName);
+      end;
+      if not Assigned(LSourceEditor) then
+        raise EInvalidOperation.CreateFmt('Kein Quelleditor für die Datei verfügbar: %s', [LFileName]);
+      if ALine > LSourceEditor.GetLinesInBuffer then
+        raise EArgumentOutOfRangeException.CreateFmt('Zeile %d liegt außerhalb des aktuellen Editorpuffers.', [ALine]);
+
+      LSourceEditor.Show;
+      LView := LEditorServices.TopView;
+      if Assigned(LView) then
+        LBuffer := LView.Buffer;
+      if not Assigned(LBuffer) or not TDAIOTA.SameFile(LBuffer.FileName, LFileName) then
+        raise EInvalidOperation.CreateFmt('Der Quelleditor konnte nicht aktiviert werden: %s', [LFileName]);
+
+      LPrevious := LView.CursorPos;
+      LView.CursorPos := LRequested;
+      LView.MoveViewToCursor;
+      LActual := LView.CursorPos;
+      if (LActual.Line <> LRequested.Line) or (LActual.Col <> LRequested.Col) then
+      begin
+        LView.CursorPos := LPrevious;
+        LView.MoveViewToCursor;
+        raise EInvalidOperation.CreateFmt('Zeile %d, Spalte %d konnte im Quelleditor nicht gesetzt werden.', [ALine, LRequested.Col]);
+      end;
+      LTopView := LEditorServices.TopView;
+      if not Assigned(LTopView) or not LView.SameView(LTopView) then
+        raise EInvalidOperation.CreateFmt('Der Quelleditor hat den Fokus gewechselt: %s', [LFileName]);
+    end);
+
+  Result := TJSONObject.Create;
+  Result.AddPair('file', LFileName);
+  if AActivate then
+    Result.AddPair('activated', TJSONBool.Create(True))
+  else
+  begin
+    Result.AddPair('opened', TJSONBool.Create(True));
+    if LProjectSource then
+      Result.AddPair('source_editor_available', TJSONBool.Create(True));
+  end;
+  Result.AddPair('line', TJSONNumber.Create(LActual.Line));
+  Result.AddPair('column', TJSONNumber.Create(LActual.Col));
+end;
+
+class function TDAIProjectService.ActivateFile(const AFileName: string; const ALine, AColumn: Integer): TJSONObject;
 var
   LFileName: string;
   LModule: IOTAModule;
 begin
+  if (ALine <> 0) or (AColumn <> 0) then
+    Exit(OpenSourcePosition(AFileName, ALine, AColumn, True));
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   LModule := TDAIOTA.FindModuleByFileName(LFileName);
   if not Assigned(LModule) then
@@ -491,7 +577,7 @@ begin
   Result := False;
 end;
 
-class function TDAIProjectService.OpenFile(const AFileName: string): TJSONObject;
+class function TDAIProjectService.OpenFile(const AFileName: string; const ALine, AColumn: Integer): TJSONObject;
 var
   LActionServices: IOTAActionServices;
   LFileName: string;
@@ -501,6 +587,8 @@ var
   LProjectSource: Boolean;
   LSourceEditorAvailable: Boolean;
 begin
+  if (ALine <> 0) or (AColumn <> 0) then
+    Exit(OpenSourcePosition(AFileName, ALine, AColumn, False));
   LFileName := TDAISettings.Instance.ExpandPath(AFileName);
   LProjectSource := SameText(TPath.GetExtension(LFileName), '.dpr') or SameText(TPath.GetExtension(LFileName), '.dpk');
   if IsProjectFile(LFileName) and not LProjectSource then

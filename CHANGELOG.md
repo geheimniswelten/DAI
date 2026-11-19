@@ -2,6 +2,16 @@
 
 ## 1.2.36
 
+- `debugger_processes_list`, `debugger_process_load` und `debugger_process_attach` erschließen die Prozessfunktionen des aktuellen IDE-Debuggers lokal und remote. `debugger_control` unterstützt zusätzlich `detach`; der Status beschreibt Fähigkeiten und Grenzen der öffentlichen ToolsAPI.
+
+- ICO-Ressourcen werden unter ihrem tatsächlichen Dateinamen hinzugefügt. Dadurch entfällt die temporäre PNG-Referenz beim Hinzufügen von Symbolen.
+
+- Der Mausrad-Hook der DAI-Optionen wird beim Freigeben des letzten Frames und vor dem Entladen des Packages abgemeldet.
+
+- `project_resources_list`, `project_resource_add`, `project_resource_update` und `project_resource_remove` verwalten die Einträge aus „Ressourcen und Bilder“. `project_save` speichert die Änderungen.
+
+- `file_open` und `file_activate` springen optional zu einer Quellzeile und öffnen die Unit bei Bedarf. Der DAI-Skill kombiniert den Sprung mit einem kurzen Codex-Dateilink.
+
 - Die DAI-Optionen zeigen zuerst die Registrierung mit ihren Schaltflächen, danach Berechtigungen, Server und Verzeichnisse.
   Das Mausrad scrollt beim Zeigen auf die Seite auch mit Tastaturfokus im Optionsbaum.
 

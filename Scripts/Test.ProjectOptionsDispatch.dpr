@@ -8,6 +8,7 @@ uses
   System.JSON,
   System.SysUtils,
   DAI.ProjectOptionsDispatch.ProductionBranch,
+  DAI.ProjectOptionsDispatch.Resources,
   h5u.DAI.OTA.ProjectOptions,
   h5u.DAI.Permissions.Manager,
   h5u.DAI.Types;
@@ -15,6 +16,8 @@ uses
 const
   CToolNames: array[0..4] of string = ('project_activate', 'project_options_configurations', 'project_options_read',
     'project_option_set', 'project_option_remove');
+  CResourceToolNames: array[0..3] of string = ('project_resources_list', 'project_resource_add',
+    'project_resource_update', 'project_resource_remove');
   CMethods: array[0..4] of string = ('activate', 'configurations', 'read', 'set', 'remove');
   COperations: array[0..4] of string = ('Geöffnetes Gruppenprojekt aktivieren', 'Konfigurationen des aktiven Projekts lesen',
     'Optionen und Vererbung des aktiven Projekts lesen', 'Lokale Projektoption setzen',
@@ -35,6 +38,7 @@ end;
 procedure Reset(const AReadAllowed: Boolean = True; const AEditAllowed: Boolean = True);
 begin
   TDAIProjectOptionsService.Reset;
+  TDAIProjectResourcesService.Reset;
   TDAIPermissionManager.Instance.Reset(AReadAllowed, AEditAllowed);
 end;
 
@@ -423,8 +427,8 @@ var
 begin
   LCatalog := ListProjectOptionsSchemas;
   try
-    Check(LCatalog.Count = Length(CToolNames), 'all five actual production schemas extracted');
-    for LIndex := 0 to LCatalog.Count - 1 do
+    Check(LCatalog.Count = Length(CToolNames) + Length(CResourceToolNames), 'all project option and resource schemas extracted');
+    for LIndex := Low(CToolNames) to High(CToolNames) do
     begin
       LTool := TJSONObject(LCatalog.Items[LIndex]);
       Check(LTool.GetValue<string>('name') = CToolNames[LIndex], 'schema tool name');
@@ -487,6 +491,166 @@ begin
   end;
 end;
 
+procedure CheckResourcePermissions(const AExpectedCount: Integer);
+var
+  LIndex: Integer;
+  LRequest: TPermissionRequest;
+begin
+  Check(Length(TDAIPermissionManager.Instance.Requests) = AExpectedCount, 'expected resource permission count');
+  for LIndex := 0 to AExpectedCount - 1 do
+  begin
+    LRequest := TDAIPermissionManager.Instance.Requests[LIndex];
+    if LIndex = 0 then
+      Check(LRequest.Category = pcProjectRead, 'resource reads authorized first')
+    else
+      Check(LRequest.Category = pcProjectWrite, 'resource changes authorized after read');
+    Check((LRequest.Resource = CResourceProject) and (LRequest.Context.ProjectKey = CResourceProject),
+      'resource permission uses canonical owning project');
+    Check((LRequest.Context.ThreadId = GContext.ThreadId) and (LRequest.Context.TransportSessionId = GContext.TransportSessionId) and
+      (LRequest.Context.ClientName = GContext.ClientName), 'resource permission preserves the caller context');
+  end;
+end;
+
+function ResourceArguments(const AToolIndex: Integer): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  if AToolIndex = 0 then
+    Exit;
+  Result.AddPair('project', CResourceAlias);
+  Result.AddPair('resource_type', ' ICON ');
+  Result.AddPair('resource_id', ' APP_TEST ');
+  if AToolIndex = 1 then
+    Result.AddPair('file', 'D:\other project\source.ico')
+  else if AToolIndex = 2 then
+  begin
+    Result.AddPair('new_file', 'D:\other project\changed.bin');
+    Result.AddPair('new_resource_type', ' RCDATA ');
+    Result.AddPair('new_resource_id', ' APP_CHANGED ');
+  end;
+end;
+
+procedure TestResourcePermissions;
+var
+  LIndex, LPermissionCount: Integer;
+  LRead, LWrite, LAllowed, LDenied: Boolean;
+  LArguments, LResult: TJSONObject;
+  LChange: TDAIProjectResourceChange;
+begin
+  for LIndex := Low(CResourceToolNames) to High(CResourceToolNames) do
+  begin
+    LArguments := ResourceArguments(LIndex);
+    try
+      for LRead := False to True do
+        for LWrite := False to True do
+        begin
+          Reset(LRead, LWrite);
+          LAllowed := LRead and ((LIndex = 0) or LWrite);
+          LPermissionCount := 1 + Ord(LRead and (LIndex <> 0));
+          LResult := nil;
+          LDenied := False;
+          try
+            try
+              LResult := DispatchProjectOptions(CResourceToolNames[LIndex], LArguments, GContext);
+            except
+              on E: EAbort do
+                LDenied := True;
+            end;
+            CheckResourcePermissions(LPermissionCount);
+            Check(LDenied = not LAllowed, 'resource permission denial reported');
+            Check(TDAIProjectResourcesService.Calls = Ord(LAllowed), 'denied resource operation has no backend side effect');
+            Check(Assigned(LResult) = LAllowed, 'only authorized operation returns success');
+            if not LAllowed then
+              Continue;
+            Check(LResult.GetValue<string>('project') = CResourceProject, 'resource dispatch returns backend response');
+            Check(TDAIProjectResourcesService.LastProject = CResourceProject, 'backend receives canonical project');
+            Check(TDAIProjectResourcesService.LastList = (LIndex = 0), 'list and write go to the right backend');
+            if LIndex = 0 then
+              Continue;
+            LChange := TDAIProjectResourcesService.LastChange;
+            Check(Ord(LChange.Action) = LIndex - 1, 'expected resource operation');
+            Check((LChange.ResourceType = 'ICON') and (LChange.ResourceId = 'APP_TEST'), 'selector is trimmed and forwarded');
+            case LIndex of
+              1: Check(LChange.FileName = 'D:\other project\source.ico', 'add source path forwarded');
+              2: Check((LChange.FileName = 'D:\other project\changed.bin') and (LChange.NewResourceType = 'RCDATA') and
+                   (LChange.NewResourceId = 'APP_CHANGED'), 'update forwards file, type and ID independently');
+              3: Check((LChange.FileName = '') and (LChange.NewResourceType = '') and (LChange.NewResourceId = ''), 'remove uses only the selector');
+            end;
+          finally
+            LResult.Free;
+          end;
+        end;
+    finally
+      LArguments.Free;
+    end;
+  end;
+end;
+
+procedure TestInvalidResourceRequests;
+var
+  LArguments: TJSONObject;
+begin
+  Reset;
+  LArguments := TJSONObject.Create.AddPair('project', 'UnloadedProject');
+  try
+    try
+      DispatchProjectOptions('project_resources_list', LArguments, GContext).Free;
+      Check(False, 'unloaded resource project rejected');
+    except
+      on E: EArgumentException do
+        Check(True, 'unloaded resource project rejected');
+    end;
+    CheckResourcePermissions(0);
+    Check(TDAIProjectResourcesService.Calls = 0, 'unloaded project does not reach backend');
+  finally
+    LArguments.Free;
+  end;
+
+  Reset;
+  LArguments := TJSONObject.Create.AddPair('resource_type', 'ICON').AddPair('resource_id', 'APP_TEST');
+  try
+    try
+      DispatchProjectOptions('project_resource_update', LArguments, GContext).Free;
+      Check(False, 'resource update without changes rejected');
+    except
+      on E: EArgumentException do
+        Check(True, 'resource update without changes rejected');
+    end;
+    CheckResourcePermissions(1);
+    Check(TDAIProjectResourcesService.Calls = 0, 'empty update does not reach backend');
+  finally
+    LArguments.Free;
+  end;
+end;
+
+procedure TestResourceSchemas;
+var
+  LCatalog: TJSONArray;
+  LIndex: Integer;
+  LProperties, LSchema, LTool: TJSONObject;
+begin
+  LCatalog := ListProjectOptionsSchemas;
+  try
+    for LIndex := Low(CResourceToolNames) to High(CResourceToolNames) do
+    begin
+      LTool := LCatalog.Items[Length(CToolNames) + LIndex] as TJSONObject;
+      Check(LTool.GetValue<string>('name') = CResourceToolNames[LIndex], 'resource schema tool name');
+      Check(LTool.GetValue<TJSONObject>('annotations').GetValue<Boolean>('readOnlyHint') = (LIndex = 0),
+        'only resource list is annotated read-only');
+      LSchema := LTool.GetValue<TJSONObject>('inputSchema');
+      Check(not LSchema.GetValue<Boolean>('additionalProperties'), 'resource schema rejects undeclared arguments');
+      LProperties := LSchema.GetValue<TJSONObject>('properties');
+      Check(LProperties.GetValue<TJSONObject>('project').GetValue<string>('type') = 'string', 'project is a string resource selector');
+      case LIndex of
+        0: CheckRequired(LSchema, []);
+        1: CheckRequired(LSchema, ['file', 'resource_type', 'resource_id']);
+        2, 3: CheckRequired(LSchema, ['resource_type', 'resource_id']);
+      end;
+    end;
+  finally
+    LCatalog.Free;
+  end;
+end;
+
 procedure RunTests;
 var
   LArguments: TJSONObject;
@@ -499,6 +663,11 @@ begin
   GContext.TransportSessionId := 'project-options-dispatch-session';
   GContext.ProjectKey := 'C:\IsolatedProjectOptionsTest\CapturedActive.dproj';
   GContext.ClientName := 'project-options-dispatch-client';
+  TestResourcePermissions;
+  TestInvalidResourceRequests;
+  TestResourceSchemas;
+  if SameText(ParamStr(1), '--resources-only') then
+    Exit;
   for LIndex := Low(CToolNames) to High(CToolNames) do
   begin
     for LReadAllowed := False to True do

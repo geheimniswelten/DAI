@@ -92,6 +92,8 @@ contains
   h5u.DAI.OTA.LoadedFiles in 'Source\h5u.DAI.OTA.LoadedFiles.pas',
   h5u.DAI.OTA.Creators in 'Source\h5u.DAI.OTA.Creators.pas',
   h5u.DAI.OTA.ProjectOptions in 'Source\h5u.DAI.OTA.ProjectOptions.pas',
+  h5u.DAI.OTA.ProjectResources in 'Source\h5u.DAI.OTA.ProjectResources.pas',
+  h5u.DAI.OTA.ProjectResources.Live in 'Source\h5u.DAI.OTA.ProjectResources.Live.pas',
   h5u.DAI.OTA.ProjectSummary in 'Source\h5u.DAI.OTA.ProjectSummary.pas',
   h5u.DAI.OTA.PackageSummary in 'Source\h5u.DAI.OTA.PackageSummary.pas',
   h5u.DAI.OTA.Packages in 'Source\h5u.DAI.OTA.Packages.pas',

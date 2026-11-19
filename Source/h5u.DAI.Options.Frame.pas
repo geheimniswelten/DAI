@@ -108,6 +108,7 @@ type
     function PermissionLevelFromCombo(const AComboBox: TComboBox): TDAIPermissionLevel;
     procedure SetPermissionComboLevel(const AComboBox: TComboBox; const ALevel: TDAIPermissionLevel);
     function PermissionContext(const AScope: TDAIPermissionScope): TDAIRequestContext;
+    procedure DetachWheelHook;
     procedure ScrollWheel(AWheelDelta: Integer);
     procedure WMMouseWheel(var Message: TWMMouseWheel); message WM_MOUSEWHEEL;
   protected
@@ -115,12 +116,15 @@ type
     procedure DestroyWnd; override;
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
     procedure LoadFromSettings;
     procedure StoreToSettings;
     function ValidateContents: Boolean;
     function ValidateContentsForSave: Boolean;
     procedure RefreshRegistrationStatus;
   end;
+
+procedure ShutdownDAIOptionsWheelRouting;
 
 implementation
 
@@ -489,9 +493,25 @@ begin
   end;
 end;
 
-threadvar
+var
   GOptionsWheelHook: HHOOK;
   GOptionsWheelWindows: Integer;
+  GOptionsWheelShuttingDown: Boolean;
+
+procedure RemoveOptionsWheelHook;
+begin
+  if GOptionsWheelHook = 0 then
+    Exit;
+  if UnhookWindowsHookEx(GOptionsWheelHook) or (GetLastError = ERROR_INVALID_HOOK_HANDLE) then
+    GOptionsWheelHook := 0;
+end;
+
+procedure ShutdownDAIOptionsWheelRouting;
+begin
+  // The IDE may still own the options frame when the package starts unloading.
+  GOptionsWheelShuttingDown := True;
+  RemoveOptionsWheelHook;
+end;
 
 procedure RouteOptionsWheel(var AMessage: TMsg);
 var
@@ -532,7 +552,7 @@ end;
 
 function OptionsWheelHook(ACode: Integer; AWParam: WPARAM; ALParam: LPARAM): LRESULT; stdcall;
 begin
-  if (ACode = HC_ACTION) and (AWParam = PM_REMOVE) and (ALParam <> 0) then
+  if not GOptionsWheelShuttingDown and (ACode = HC_ACTION) and (AWParam = PM_REMOVE) and (ALParam <> 0) then
     try
       RouteOptionsWheel(PMsg(ALParam)^);
     except
@@ -544,28 +564,36 @@ end;
 procedure TDAIOptionsFrame.CreateWnd;
 begin
   inherited;
-  if csDesigning in ComponentState then
+  if GOptionsWheelShuttingDown or FWheelHookRegistered or (csDesigning in ComponentState) or (GetCurrentThreadId <> MainThreadID) then
     Exit;
   if GOptionsWheelHook = 0 then
-    GOptionsWheelHook := SetWindowsHookEx(WH_GETMESSAGE, @OptionsWheelHook, 0, GetCurrentThreadId);
+    GOptionsWheelHook := SetWindowsHookEx(WH_GETMESSAGE, @OptionsWheelHook, 0, MainThreadID);
   FWheelHookRegistered := GOptionsWheelHook <> 0;
   if FWheelHookRegistered then
     Inc(GOptionsWheelWindows);
 end;
 
+procedure TDAIOptionsFrame.DetachWheelHook;
+begin
+  if not FWheelHookRegistered then
+    Exit;
+  FWheelHookRegistered := False;
+  Dec(GOptionsWheelWindows);
+  if GOptionsWheelWindows = 0 then
+    RemoveOptionsWheelHook;
+end;
+
 procedure TDAIOptionsFrame.DestroyWnd;
 begin
-  if FWheelHookRegistered then
-  begin
-    FWheelHookRegistered := False;
-    Dec(GOptionsWheelWindows);
-    if GOptionsWheelWindows = 0 then
-    begin
-      UnhookWindowsHookEx(GOptionsWheelHook);
-      GOptionsWheelHook := 0;
-    end;
-  end;
+  DetachWheelHook;
   FWheelRemainder := 0;
+  inherited;
+end;
+
+destructor TDAIOptionsFrame.Destroy;
+begin
+  // TWinControl.Destroy calls DestroyWindowHandle directly.
+  DetachWheelHook;
   inherited;
 end;
 
@@ -2208,5 +2236,10 @@ begin
   end;
   RefreshRegistrationStatus;
 end;
+
+initialization
+
+finalization
+  ShutdownDAIOptionsWheelRouting;
 
 end.

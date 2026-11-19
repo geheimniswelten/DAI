@@ -20,6 +20,7 @@ type
     class function ProjectByNameOrPath(const AName: string): IOTAProject; static;
     class function ProjectFileName(const AProject: IOTAProject): string; static;
     class function FindModuleByFileName(const AFileName: string): IOTAModule; static;
+    class function FindSourceEditor(const AFileName: string): IOTASourceEditor; static;
     class function SameFile(const ALeft, ARight: string): Boolean; static;
     class function IsPathWithin(const AFileName, ARoot: string): Boolean; static;
     class function IsFileOpenInEditor(const AFileName: string): Boolean; static;
@@ -84,6 +85,19 @@ begin
       if Assigned(LEditor) and SameFile(LEditor.FileName, AFileName) then Exit(LModule);
     end;
   end;
+end;
+class function TDAIOTA.FindSourceEditor(const AFileName: string): IOTASourceEditor;
+var
+  LIndex: Integer;
+  LModule: IOTAModule;
+  LSource: IOTASourceEditor;
+begin
+  Result := nil;
+  for LModule in TestModules do
+    for LIndex := 0 to LModule.ModuleFileCount - 1 do
+      if Supports(LModule.ModuleFileEditors[LIndex], IOTASourceEditor, LSource) then
+        if SameFile(LSource.FileName, AFileName) then
+          Exit(LSource);
 end;
 class function TDAIOTA.IsPathWithin(const AFileName, ARoot: string): Boolean;
 begin Result := SameText(ExcludeTrailingPathDelimiter(TPath.GetFullPath(ARoot)),

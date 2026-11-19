@@ -101,6 +101,7 @@ procedure UnregisterDAIOptionsPage;
 var
   LServices: INTAEnvironmentOptionsServices;
 begin
+  ShutdownDAIOptionsWheelRouting;
   if not Assigned(GOptionsPage) then
     Exit;
   if Supports(BorlandIDEServices, INTAEnvironmentOptionsServices, LServices) then

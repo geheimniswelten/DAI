@@ -19,8 +19,25 @@ type
     Modified: Boolean;
     function GetFileName: string;
     function GetModified: Boolean;
+    procedure Show; virtual;
   end;
-  TTestSourceEditor = class(TTestEditor, IOTASourceEditor)
+  TTestSourceEditor = class(TTestEditor, IOTASourceEditor, IOTAEditBuffer)
+    ShowCount: Integer;
+    procedure Show; override;
+    function GetLinesInBuffer: LongInt;
+  end;
+  TTestEditView = class(TInterfacedObject, IOTAEditView)
+  private
+    FBuffer: IOTAEditBuffer;
+    FCursorPos: TOTAEditPos;
+  public
+    ScrollCount: Integer;
+    constructor Create(const ABuffer: IOTAEditBuffer);
+    function GetBuffer: IOTAEditBuffer;
+    function GetCursorPos: TOTAEditPos;
+    procedure SetCursorPos(const AValue: TOTAEditPos);
+    procedure MoveViewToCursor;
+    function SameView(const AView: IOTAEditView): Boolean;
   end;
   TTestModule = class(TInterfacedObject, IOTAModule)
   private
@@ -48,7 +65,7 @@ type
     function GetActiveProject: IOTAProject;
     procedure SetActiveProject(const AProject: IOTAProject);
   end;
-  TTestHost = class(TInterfacedObject, IOTAModuleServices, IOTAActionServices)
+  TTestHost = class(TInterfacedObject, IOTAModuleServices, IOTAActionServices, IOTAEditorServices)
   public
     Events: TList<string>;
     CloseCount, OpenCount, OpenFileCount, CreateCount: Integer;
@@ -56,6 +73,9 @@ type
     EmptyGroupAfterClose, ChangeGroupOnAppend: Boolean;
     LastNewGroup, LastUnnamed: Boolean;
     LastFile: string;
+    AllowFileOpen, KeepTopViewOnShow: Boolean;
+    TopView: IOTAEditView;
+    TestView: TTestEditView;
     LastOwner: IOTAModule;
     LastCreated: TTestProject;
     LastCreatedInterface: IOTAProject;
@@ -69,6 +89,7 @@ type
     function GetModuleCount: Integer;
     function GetModule(AIndex: Integer): IOTAModule;
     function OpenFile(const AFileName: string): Boolean;
+    function GetTopView: IOTAEditView;
     function OpenProject(const AFileName: string; ANewProjectGroup: Boolean): Boolean;
   end;
 
@@ -107,6 +128,51 @@ function TTestEditor.GetFileName: string;
 begin Result := FileName; end;
 function TTestEditor.GetModified: Boolean;
 begin Result := Modified; end;
+procedure TTestEditor.Show;
+begin
+  raise Exception.Create('Unexpected native display of a non-source editor');
+end;
+procedure TTestSourceEditor.Show;
+begin
+  Check(TDAIOTA.DispatchDepth > 0, 'Source display stays on IDE thread');
+  Inc(ShowCount);
+  if Host.KeepTopViewOnShow then
+    Exit;
+  if Assigned(Host.TopView) and (Host.TopView.Buffer = (Self as IOTAEditBuffer)) then
+    Exit;
+  Host.TestView := TTestEditView.Create(Self as IOTAEditBuffer);
+  Host.TopView := Host.TestView;
+end;
+function TTestSourceEditor.GetLinesInBuffer: LongInt;
+begin
+  Check(TDAIOTA.DispatchDepth > 0, 'Source line lookup stays on IDE thread');
+  Result := 3;
+end;
+constructor TTestEditView.Create(const ABuffer: IOTAEditBuffer);
+begin
+  inherited Create;
+  FBuffer := ABuffer;
+  FCursorPos.Line := 1;
+  FCursorPos.Col := 1;
+end;
+function TTestEditView.GetBuffer: IOTAEditBuffer;
+begin Result := FBuffer; end;
+function TTestEditView.GetCursorPos: TOTAEditPos;
+begin Result := FCursorPos; end;
+procedure TTestEditView.SetCursorPos(const AValue: TOTAEditPos);
+begin
+  Check(TDAIOTA.DispatchDepth > 0, 'Caret movement stays on IDE thread');
+  FCursorPos := AValue;
+end;
+procedure TTestEditView.MoveViewToCursor;
+begin
+  Check(TDAIOTA.DispatchDepth > 0, 'Caret scrolling stays on IDE thread');
+  Inc(ScrollCount);
+end;
+function TTestEditView.SameView(const AView: IOTAEditView): Boolean;
+begin
+  Result := AView = (Self as IOTAEditView);
+end;
 function TTestModule.GetFileName: string;
 begin Result := FFileName; end;
 function TTestModule.GetModuleFileCount: Integer;
@@ -184,6 +250,10 @@ begin
   LeaveOpenAfterClose := False;
   EmptyGroupAfterClose := False;
   ChangeGroupOnAppend := False;
+  AllowFileOpen := False;
+  KeepTopViewOnShow := False;
+  TopView := nil;
+  TestView := nil;
   Events.Clear;
 end;
 function TTestHost.GetMainProjectGroup: IOTAProjectGroup;
@@ -216,9 +286,25 @@ begin
   end;
 end;
 function TTestHost.OpenFile(const AFileName: string): Boolean;
+var
+  LEditor: TTestSourceEditor;
+  LModule: TTestModule;
 begin
+  Check(TDAIOTA.DispatchDepth > 0, 'OpenFile stays on IDE thread');
   Inc(OpenFileCount);
-  raise Exception.Create('Project opening must never use OpenFile');
+  if not AllowFileOpen then
+    raise Exception.Create('Project opening must never use OpenFile');
+  LModule := TTestModule.Create(AFileName);
+  LEditor := TTestSourceEditor.Create;
+  LEditor.FileName := AFileName;
+  LModule.Editors := [LEditor as IOTAEditor];
+  TDAIOTA.TestModules := TDAIOTA.TestModules + [LModule as IOTAModule];
+  Result := True;
+end;
+function TTestHost.GetTopView: IOTAEditView;
+begin
+  Check(TDAIOTA.DispatchDepth > 0, 'Top view lookup stays on IDE thread');
+  Result := TopView;
 end;
 function TTestHost.OpenProject(const AFileName: string; ANewProjectGroup: Boolean): Boolean;
 var LExtension: string;
@@ -705,6 +791,78 @@ begin
   Check((Host.OpenCount = 0) and (Host.OpenFileCount = 0) and (LProject.SaveCount = 0), 'native display failure never falls back to project open or save');
 end;
 
+procedure NavigateSourcePositions;
+var
+  LEditor, LOtherEditor: TTestSourceEditor;
+  LModule: TTestModule;
+  LFileName: string;
+  LResult: TJSONObject;
+  LOriginalText: string;
+  LFailed: Boolean;
+begin
+  ExistingWorkspace;
+  Host.AllowFileOpen := True;
+  LFileName := TPath.Combine(FixtureRoot, 'Target.pas');
+  LOriginalText := TFile.ReadAllText(LFileName);
+  LResult := TDAIProjectService.OpenFile(LFileName, 2, 5);
+  try
+    Check(JsonBoolean(LResult, 'opened'), 'source navigation opens a closed unit');
+    Check((Host.OpenFileCount = 1) and (Host.OpenCount = 0), 'closed unit uses the native file action');
+    Check((LResult.GetValue<Integer>('line') = 2) and (LResult.GetValue<Integer>('column') = 5), 'returns actual positioned coordinates');
+    Check(TDAIOTA.SameFile(Host.TopView.Buffer.FileName, LFileName), 'newly opened unit owns the top editor view');
+    Check((Host.TopView.CursorPos.Line = 2) and (Host.TopView.CursorPos.Col = 5) and (Host.TestView.ScrollCount = 1),
+      'newly opened unit moves the caret and scrolls to it');
+  finally
+    LResult.Free;
+  end;
+
+  ExistingWorkspace;
+  LModule := TTestModule.Create(LFileName);
+  LEditor := TTestSourceEditor.Create;
+  LEditor.FileName := LFileName;
+  LEditor.Modified := True;
+  LModule.Editors := [LEditor as IOTAEditor];
+  TDAIOTA.TestModules := TDAIOTA.TestModules + [LModule as IOTAModule];
+  LResult := TDAIProjectService.ActivateFile(LFileName, 3);
+  try
+    Check(JsonBoolean(LResult, 'activated'), 'positioned activation reports the loaded unit');
+    Check((LResult.GetValue<Integer>('line') = 3) and (LResult.GetValue<Integer>('column') = 1), 'omitted column selects the line start');
+    Check((LEditor.ShowCount = 1) and (Host.OpenFileCount = 0), 'already loaded unit uses its existing editor');
+    Check((Host.TopView.CursorPos.Line = 3) and (Host.TopView.CursorPos.Col = 1), 'existing buffer moves to the requested line start');
+    Check(LEditor.Modified and (LModule.SaveCount = 0), 'activation preserves the dirty buffer');
+  finally
+    LResult.Free;
+  end;
+
+  LFailed := False;
+  try
+    LResult := TDAIProjectService.ActivateFile(LFileName, 4);
+    LResult.Free;
+  except
+    on E: EArgumentOutOfRangeException do
+      LFailed := True;
+  end;
+  Check(LFailed and (LEditor.ShowCount = 1) and (Host.TopView.CursorPos.Line = 3), 'invalid line preserves the current editor and caret');
+
+  LOtherEditor := TTestSourceEditor.Create;
+  LOtherEditor.FileName := TPath.Combine(FixtureRoot, 'Existing.dpr');
+  Host.TestView := TTestEditView.Create(LOtherEditor as IOTAEditBuffer);
+  Host.TopView := Host.TestView;
+  Host.KeepTopViewOnShow := True;
+  LFailed := False;
+  try
+    LResult := TDAIProjectService.ActivateFile(LFileName, 2, 4);
+    LResult.Free;
+  except
+    on E: EInvalidOperation do
+      LFailed := True;
+  end;
+  Check(LFailed, 'navigation rejects an unrelated active view');
+  Check((Host.TopView.CursorPos.Line = 1) and (Host.TopView.CursorPos.Col = 1) and (Host.TestView.ScrollCount = 0),
+    'navigation does not move the cursor in another unit');
+  Check(TFile.ReadAllText(LFileName) = LOriginalText, 'positioned navigation leaves the source file unchanged');
+end;
+
 procedure CreateFixtures;
 var
   LGuid: TGUID;
@@ -732,6 +890,7 @@ begin
       ImplicitGroupProjects;
       OpenLoadedProjectSources;
       Check(Host.OpenFileCount = 0, 'project suite never uses OpenFile');
+      NavigateSourcePositions;
       Writeln('OK: ', CheckCount, ' isolated native project-group checks (', SizeOf(Pointer) * 8, '-bit)');
     finally
       Host.Reset;

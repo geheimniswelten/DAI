@@ -51,6 +51,7 @@ uses
   h5u.DAI.OTA.Projects,
   h5u.DAI.OTA.ProjectOpen,
   h5u.DAI.OTA.ProjectOptions,
+  h5u.DAI.OTA.ProjectResources,
   h5u.DAI.OTA.Search,
   h5u.DAI.OTA.Stack,
   h5u.DAI.OTA.Threads,
@@ -703,10 +704,12 @@ var
   LEvaluationRequest: TDAIEvaluationRequest;
   LExpressionUIRequest: TDAIExpressionUIRequest;
   LFileName: string;
+  LLine, LColumn: Integer;
   LSearchRoot: string;
   LInitiallyAuthorizedProjectKey: string;
   LSearchWorkspace: Boolean;
   LProjectObject: IOTAProject;
+  LResourceChange: TDAIProjectResourceChange;
   LProject: string;
   LExtensionId, LExtensionTool: string;
   LExtensionArguments: TJSONValue;
@@ -1018,6 +1021,50 @@ begin
     Exit(TDAIProjectOptionsService.ActivateProject(LProject));
   end;
 
+  if SameText(AName, 'project_resources_list') or SameText(AName, 'project_resource_add') or
+    SameText(AName, 'project_resource_update') or SameText(AName, 'project_resource_remove') then
+  begin
+    LProjectObject := TDAIOTA.ProjectByNameOrPath(StrictArgumentString(AArguments, 'project'));
+    LProject := TDAIOTA.ProjectFileName(LProjectObject);
+    LProjectObject := nil;
+    if LProject = '' then
+      raise EArgumentException.Create('Das gewählte Projekt ist in dieser IDE nicht geladen.');
+    LContext.ProjectKey := LProject;
+    RequirePermission(pcProjectRead, 'Projektressourcen lesen', LProject, LContext);
+    if SameText(AName, 'project_resources_list') then
+      Exit(TDAIProjectResourcesService.ListResources(LProject));
+
+    LResourceChange := Default(TDAIProjectResourceChange);
+    LResourceChange.ResourceType := Trim(RequiredArgumentString(AArguments, 'resource_type'));
+    LResourceChange.ResourceId := Trim(RequiredArgumentString(AArguments, 'resource_id'));
+    if SameText(AName, 'project_resource_add') then
+    begin
+      LResourceChange.Action := praAdd;
+      LResourceChange.FileName := RequiredArgumentString(AArguments, 'file');
+      LAction := 'Projektressource hinzufügen';
+    end
+    else if SameText(AName, 'project_resource_update') then
+    begin
+      LResourceChange.Action := praUpdate;
+      if Assigned(AArguments.GetValue('new_file')) then
+        LResourceChange.FileName := RequiredArgumentString(AArguments, 'new_file');
+      if Assigned(AArguments.GetValue('new_resource_type')) then
+        LResourceChange.NewResourceType := Trim(RequiredArgumentString(AArguments, 'new_resource_type'));
+      if Assigned(AArguments.GetValue('new_resource_id')) then
+        LResourceChange.NewResourceId := Trim(RequiredArgumentString(AArguments, 'new_resource_id'));
+      if (LResourceChange.FileName = '') and (LResourceChange.NewResourceType = '') and (LResourceChange.NewResourceId = '') then
+        raise EArgumentException.Create('Zum Ändern mindestens new_file, new_resource_type oder new_resource_id angeben.');
+      LAction := 'Projektressource ändern';
+    end
+    else
+    begin
+      LResourceChange.Action := praRemove;
+      LAction := 'Projektressource aus dem Projekt entfernen';
+    end;
+    RequirePermission(pcProjectWrite, LAction, LProject, LContext);
+    Exit(TDAIProjectResourcesService.ChangeResource(LProject, LResourceChange));
+  end;
+
   if SameText(AName, 'project_options_configurations') or SameText(AName, 'project_options_read') or
      SameText(AName, 'project_option_set') or SameText(AName, 'project_option_remove') then
   begin
@@ -1148,18 +1195,26 @@ begin
     );
   end;
 
-  if SameText(AName, 'file_open') then
+  if SameText(AName, 'file_open') or SameText(AName, 'file_activate') then
   begin
-    LFileName := ArgumentString(AArguments, 'file');
-    RequireFileReadPermission('Datei in der IDE öffnen', LFileName, LContext);
-    Exit(TDAIProjectService.OpenFile(LFileName));
-  end;
-
-  if SameText(AName, 'file_activate') then
-  begin
-    LFileName := ArgumentString(AArguments, 'file');
+    LFileName := RequiredArgumentString(AArguments, 'file');
+    LLine := 0;
+    LColumn := 0;
+    if Assigned(AArguments.GetValue('line')) then
+      LLine := StrictArgumentInteger(AArguments, 'line', 1, 1, MaxInt);
+    if Assigned(AArguments.GetValue('column')) then
+    begin
+      if LLine = 0 then
+        raise EArgumentException.Create('column erfordert line.');
+      LColumn := StrictArgumentInteger(AArguments, 'column', 1, 1, High(SmallInt));
+    end;
+    if SameText(AName, 'file_open') then
+    begin
+      RequireFileReadPermission('Datei in der IDE öffnen', LFileName, LContext);
+      Exit(TDAIProjectService.OpenFile(LFileName, LLine, LColumn));
+    end;
     RequireFileReadPermission('Datei in der IDE aktivieren', LFileName, LContext);
-    Exit(TDAIProjectService.ActivateFile(LFileName));
+    Exit(TDAIProjectService.ActivateFile(LFileName, LLine, LColumn));
   end;
 
   if SameText(AName, 'file_close') then
@@ -1226,6 +1281,31 @@ begin
     if SameText(AName, 'form_component_delete') then
       Exit(TDAIDesignerService.DeleteComponent(LFileName, AArguments));
     Exit(TDAIDesignerService.CreateComponent(LFileName, AArguments));
+  end;
+
+  if SameText(AName, 'debugger_processes_list') then
+  begin
+    LContext.ProjectKey := '';
+    RequirePermission(pcExecute, 'Verfügbare Debuggerprozesse auflisten', ArgumentString(AArguments, 'remote_host'), LContext);
+    Exit(TDAIDebuggerService.Processes(StrictArgumentString(AArguments, 'remote_host'),
+      StrictArgumentInteger(AArguments, 'maximum_processes', 200, 1, 1000)));
+  end;
+
+  if SameText(AName, 'debugger_process_load') then
+  begin
+    LContext.ProjectKey := '';
+    RequirePermission(pcExecute, 'Externen Prozess im Debugger laden', RequiredArgumentString(AArguments, 'executable'), LContext);
+    Exit(TDAIDebuggerService.LoadProcess(RequiredArgumentString(AArguments, 'executable'),
+      StrictArgumentString(AArguments, 'arguments'), StrictArgumentString(AArguments, 'remote_host')));
+  end;
+
+  if SameText(AName, 'debugger_process_attach') then
+  begin
+    LContext.ProjectKey := '';
+    RequirePermission(pcExecute, 'Debugger mit laufendem Prozess verbinden', ArgumentString(AArguments, 'remote_host'), LContext);
+    Exit(TDAIDebuggerService.AttachProcess(StrictArgumentInteger(AArguments, 'process_id', 0, 1, MaxInt),
+      StrictArgumentBoolean(AArguments, 'pause_after_attach', True), StrictArgumentBoolean(AArguments, 'detach_on_reset', True),
+      StrictArgumentString(AArguments, 'remote_host')));
   end;
 
   if SameText(AName, 'debugger_status') then
@@ -1796,6 +1876,22 @@ begin
     '"project":{"type":"string"}' +
     '},"additionalProperties":false}',
     True);
+  AddTool(Result, 'project_resources_list',
+    'Listet deklarierte Ressourcen aus Projekt > Ressourcen und Bilder mit Quelldatei, Typ, Bezeichner und Herkunft.',
+    '{"type":"object","properties":{"project":{"type":"string"}},"additionalProperties":false}', True);
+  AddTool(Result, 'project_resource_add',
+    'Fügt dem geladenen Delphi-Projekt eine Ressource mit Quelldatei, Typ und Bezeichner hinzu. Speichern separat mit project_save.',
+    '{"type":"object","properties":{"project":{"type":"string"},"file":{"type":"string"},"resource_type":{"type":"string"},' +
+    '"resource_id":{"type":"string"}},"required":["file","resource_type","resource_id"],"additionalProperties":false}', False);
+  AddTool(Result, 'project_resource_update',
+    'Ändert eine vorhandene Projektressource, ausgewählt über resource_type und resource_id. Speichern separat mit project_save.',
+    '{"type":"object","properties":{"project":{"type":"string"},"resource_type":{"type":"string"},"resource_id":{"type":"string"},' +
+    '"new_file":{"type":"string"},"new_resource_type":{"type":"string"},"new_resource_id":{"type":"string"}},' +
+    '"required":["resource_type","resource_id"],"additionalProperties":false}', False);
+  AddTool(Result, 'project_resource_remove',
+    'Entfernt den Ressourceneintrag aus dem geladenen Delphi-Projekt. Speichern separat mit project_save.',
+    '{"type":"object","properties":{"project":{"type":"string"},"resource_type":{"type":"string"},"resource_id":{"type":"string"}},' +
+    '"required":["resource_type","resource_id"],"additionalProperties":false}', False);
   AddTool(Result, 'project_options_read',
     'Liest effektive/lokale Werte und Herkunft; ohne names explizite Eltern-/Plattformoptionen, mehrdeutige Quellen werden benannt.',
     '{"type":"object","properties":{' +
@@ -2481,11 +2577,18 @@ begin
     False
   );
   AddTool(Result, 'file_open',
-    'Öffnet eine Datei in der IDE; bereits geladene DPR/DPK werden als Projektquelltext angezeigt.',
-    '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}',
+    'Öffnet eine Datei in der IDE oder zeigt ihren vorhandenen Editor. Mit line zur Quellstelle springen. Geladene DPR/DPK werden als Projektquelltext angezeigt.',
+    '{"type":"object","properties":{"file":{"type":"string"},' +
+    '"line":{"type":"integer","minimum":1,"maximum":2147483647,"description":"Zeile im aktuellen Quelltext (ab 1)."},' +
+    '"column":{"type":"integer","minimum":1,"maximum":32767,"description":"Visuelle Editorspalte (ab 1, Standard 1); erfordert line."}},' +
+    '"required":["file"],"additionalProperties":false}',
     False);
-  AddTool(Result, 'file_activate', 'Aktiviert eine bereits geöffnete Datei.',
-    '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}', False);
+  AddTool(Result, 'file_activate', 'Aktiviert eine geöffnete Datei oder öffnet sie bei Bedarf. Mit line zur Quellstelle springen.',
+    '{"type":"object","properties":{"file":{"type":"string"},' +
+    '"line":{"type":"integer","minimum":1,"maximum":2147483647,"description":"Zeile im aktuellen Quelltext (ab 1)."},' +
+    '"column":{"type":"integer","minimum":1,"maximum":32767,"description":"Visuelle Editorspalte (ab 1, Standard 1); erfordert line."}},' +
+    '"required":["file"],"additionalProperties":false}',
+    False);
   AddTool(Result, 'file_close', 'Schließt eine Datei über die IDE und lässt deren Speicherdialog zu.',
     '{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}', False);
   AddTool(
@@ -2662,6 +2765,17 @@ begin
     '{"type":"object","properties":{"query":{"type":"string","default":""},"category":{"type":"string","default":""},' +
     '"include_unavailable":{"type":"boolean","default":false},"maximum_results":{"type":"integer","minimum":1,"maximum":4096,"default":500}},' +
     '"additionalProperties":false}', True);
+  AddTool(Result, 'debugger_processes_list', 'Listet Prozesse über den aktuell gewählten IDE-Debugger auf; remote_host wählt den Remote-Rechner.',
+    '{"type":"object","properties":{"remote_host":{"type":"string","maxLength":1024,"default":""},' +
+    '"maximum_processes":{"type":"integer","minimum":1,"maximum":1000,"default":200}},"additionalProperties":false}', True);
+  AddTool(Result, 'debugger_process_load', 'Lädt eine ausführbare Datei mit dem aktuellen IDE-Debugger; Prozessstart anschließend mit debugger_status prüfen.',
+    '{"type":"object","properties":{"executable":{"type":"string","minLength":1,"maxLength":32767},' +
+    '"arguments":{"type":"string","maxLength":32767,"default":""},"remote_host":{"type":"string","maxLength":1024,"default":""}},' +
+    '"required":["executable"],"additionalProperties":false}', False);
+  AddTool(Result, 'debugger_process_attach', 'Verbindet den aktuellen IDE-Debugger mit einer gelisteten Prozess-ID; remote_host muss zur Prozessliste passen.',
+    '{"type":"object","properties":{"process_id":{"type":"integer","minimum":1,"maximum":2147483647},' +
+    '"pause_after_attach":{"type":"boolean","default":true},"detach_on_reset":{"type":"boolean","default":true},' +
+    '"remote_host":{"type":"string","maxLength":1024,"default":""}},"required":["process_id"],"additionalProperties":false}', False);
   AddTool(Result, 'debugger_status', 'Liest den Debuggerstatus einschließlich aktueller Prozesse und Threads.',
     '{"type":"object","additionalProperties":false}', True);
   AddTool(Result, 'debugger_cursor_expression', 'Liest den markierten Ausdruck oder einen einfachen Delphi-Zugriff am Cursor im aktiven Quelleditor.',
@@ -2695,8 +2809,8 @@ begin
   AddTool(Result, 'breakpoint_remove', 'Entfernt Quellhaltepunkte an der angegebenen Datei und Zeile.',
     '{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer","minimum":1}},' +
     '"required":["file","line"],"additionalProperties":false}', False);
-  AddTool(Result, 'debugger_control', 'Pausiert den aktiven Prozess oder setzt einen angehaltenen Thread fort beziehungsweise führt Einzelschritte aus.',
-    '{"type":"object","properties":{"action":{"type":"string","enum":["pause","continue","step_into","step_over","step_out"]}},' +
+  AddTool(Result, 'debugger_control', 'Pausiert, setzt fort, führt Einzelschritte aus oder trennt mit detach den aktuellen Debuggerprozess.',
+    '{"type":"object","properties":{"action":{"type":"string","enum":["pause","continue","step_into","step_over","step_out","detach"]}},' +
     '"required":["action"],"additionalProperties":false}', False);
   AddTool(Result, 'clients_registration_status', 'Prüft erkannte KI-Clients, Konfigurationspfade und DAI-Registrierungen ohne Tokenausgabe.',
     '{"type":"object","properties":{"client":{"type":"string"}},"additionalProperties":false}', True);

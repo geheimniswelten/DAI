@@ -27,7 +27,7 @@ type
 const
   // Keep this catalog explicit: an unrecognized client-supplied name must never become a persistent usage key.
   // Test.ToolUsage verifies exact coverage of the production ListTools catalog.
-  CToolUsageDefinitions: array[0..90] of TDAIToolUsageDefinition = (
+  CToolUsageDefinitions: array[0..97] of TDAIToolUsageDefinition = (
     (Name: 'breakpoint_remove'; Activity: taActive),
     (Name: 'breakpoint_set'; Activity: taActive),
     (Name: 'breakpoints_list'; Activity: taActive),
@@ -47,6 +47,9 @@ const
     (Name: 'debugger_evaluation_status'; Activity: taActive),
     (Name: 'debugger_expression_ui'; Activity: taActive),
     (Name: 'debugger_modify'; Activity: taActive),
+    (Name: 'debugger_process_attach'; Activity: taActive),
+    (Name: 'debugger_process_load'; Activity: taActive),
+    (Name: 'debugger_processes_list'; Activity: taActive),
     (Name: 'debugger_stacktrace'; Activity: taActive),
     (Name: 'debugger_status'; Activity: taQuiet),
     (Name: 'debugger_threads_list'; Activity: taActive),
@@ -103,6 +106,10 @@ const
     (Name: 'project_options_configurations'; Activity: taQuiet),
     (Name: 'project_options_read'; Activity: taActive),
     (Name: 'project_remove'; Activity: taActive),
+    (Name: 'project_resource_add'; Activity: taActive),
+    (Name: 'project_resource_remove'; Activity: taActive),
+    (Name: 'project_resource_update'; Activity: taActive),
+    (Name: 'project_resources_list'; Activity: taQuiet),
     (Name: 'project_run'; Activity: taActive),
     (Name: 'project_save'; Activity: taActive),
     (Name: 'project_stop'; Activity: taActive),

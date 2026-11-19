@@ -7,6 +7,7 @@ uses
   System.JSON,
   System.StrUtils,
   System.SysUtils,
+  System.Types,
   System.UITypes,
   Vcl.Buttons,
   Vcl.Controls,
@@ -2287,6 +2288,117 @@ begin
   end;
 end;
 
+type
+  TWheelHitTestTree = class(TTreeView)
+  protected
+    procedure WndProc(var Message: TMessage); override;
+  public
+    HitTests: Integer;
+  end;
+
+procedure TWheelHitTestTree.WndProc(var Message: TMessage);
+begin
+  if Message.Msg = WM_NCHITTEST then
+    Inc(HitTests);
+  inherited;
+end;
+
+procedure CheckQueuedWheelTeardown;
+const
+  CWheelDown = WPARAM($FF880000);
+var
+  LHost: TForm;
+  LTree: TWheelHitTestTree;
+  LFrame: TDAIOptionsFrame;
+  LAppHandle: HWND;
+  LFramePoint, LTreePoint, LOrigin: TPoint;
+  LClip, LTreeClip: HRGN;
+  LHitTests: Integer;
+
+  procedure ExpectWheelTarget(const APoint: TPoint; const ATarget: HWND);
+  var
+    LMsg: TMsg;
+  begin
+    Check(PostMessage(LTree.Handle, WM_MOUSEWHEEL, CWheelDown, LPARAM(MakeLong(Word(APoint.X), Word(APoint.Y)))),
+      'Wheel teardown probe queues a native message');
+    Check(PeekMessage(LMsg, 0, WM_MOUSEWHEEL, WM_MOUSEWHEEL, PM_REMOVE), 'Wheel teardown probe retrieves the native message');
+    Check(LMsg.hwnd = ATarget, 'The queued wheel message reaches the expected window');
+  end;
+
+  procedure CreateFrame;
+  begin
+    LFrame := TDAIOptionsFrame.Create(LHost);
+    LFrame.Parent := LHost;
+    LFrame.HandleNeeded;
+  end;
+
+begin
+  TestStage := 'QueuedWheelTeardown';
+  LAppHandle := Application.Handle;
+  LHost := TForm.CreateNew(nil);
+  try
+    LHost.BorderStyle := bsNone;
+    LHost.Position := poDesigned;
+    LHost.SetBounds(12, 12, 650, 320);
+    LHost.AutoScroll := False;
+    Application.Handle := LHost.Handle;
+    LTree := TWheelHitTestTree.Create(LHost);
+    LTree.Parent := LHost;
+    LTree.Width := 100;
+    LTree.Align := alLeft;
+    CreateFrame;
+    LFramePoint := LFrame.ClientToScreen(Point(5, 5));
+    LTreePoint := LTree.ClientToScreen(Point(10, 10));
+    LOrigin := LHost.ClientToScreen(Point(0, 0));
+    // Two tiny visible points allow WindowFromPoint to run a real hit test without activating the fixture.
+    LClip := CreateRectRgn(LFramePoint.X - LOrigin.X, LFramePoint.Y - LOrigin.Y,
+      LFramePoint.X - LOrigin.X + 2, LFramePoint.Y - LOrigin.Y + 2);
+    LTreeClip := CreateRectRgn(LTreePoint.X - LOrigin.X, LTreePoint.Y - LOrigin.Y,
+      LTreePoint.X - LOrigin.X + 2, LTreePoint.Y - LOrigin.Y + 2);
+    CombineRgn(LClip, LClip, LTreeClip, RGN_OR);
+    DeleteObject(LTreeClip);
+    if SetWindowRgn(LHost.Handle, LClip, False) = 0 then
+    begin
+      DeleteObject(LClip);
+      Check(False, 'Wheel teardown probe clips the fixture window');
+    end;
+    SetWindowLongPtr(LHost.Handle, GWL_EXSTYLE, GetWindowLongPtr(LHost.Handle, GWL_EXSTYLE) or WS_EX_NOACTIVATE or WS_EX_TOOLWINDOW);
+    SetWindowPos(LHost.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE or SWP_NOMOVE or SWP_NOACTIVATE);
+    LHost.Visible := True;
+    Check(WindowFromPoint(LFramePoint) = LFrame.Handle, 'Wheel teardown probe can hit the frame');
+    Check(WindowFromPoint(LTreePoint) = LTree.Handle, 'Wheel teardown probe can hit the tree');
+    ExpectWheelTarget(LFramePoint, LFrame.Handle);
+    LHitTests := LTree.HitTests;
+    ExpectWheelTarget(LTreePoint, LTree.Handle);
+    Check(LTree.HitTests > LHitTests, 'An active hook hit-tests the mouse even outside the frame');
+
+    FreeAndNil(LFrame);
+    LHitTests := LTree.HitTests;
+    ExpectWheelTarget(LTreePoint, LTree.Handle);
+    Check(LTree.HitTests = LHitTests, 'Freeing the last frame removes the Windows hook');
+
+    CreateFrame;
+    ExpectWheelTarget(LFramePoint, LFrame.Handle);
+    ShutdownDAIOptionsWheelRouting;
+    LHitTests := LTree.HitTests;
+    ExpectWheelTarget(LFramePoint, LTree.Handle);
+    ExpectWheelTarget(LTreePoint, LTree.Handle);
+    Check(LTree.HitTests = LHitTests, 'Shutdown removes the hook while an options frame still exists');
+
+    FreeAndNil(LFrame);
+    CreateFrame;
+    Check(WindowFromPoint(LFramePoint) = LFrame.Handle, 'The recreated frame is visible to native hit-testing');
+    LHitTests := LTree.HitTests;
+    ExpectWheelTarget(LFramePoint, LTree.Handle);
+    ExpectWheelTarget(LTreePoint, LTree.Handle);
+    Check(LTree.HitTests = LHitTests, 'An options frame cannot reinstall the hook during shutdown');
+  finally
+    LHost.Visible := False;
+    Application.Handle := LAppHandle;
+    LHost.Free;
+  end;
+end;
+
 begin
   try
     DAISetLanguageForTests(dlGerman);
@@ -2302,6 +2414,7 @@ begin
     CheckManualRegistrationOptions;
     CheckOptionsScrolling;
     CheckOptionsLanguages;
+    CheckQueuedWheelTeardown;
     Writeln('PASS: ', CheckCount, ' native options-frame UI checks');
   except
     on E: Exception do

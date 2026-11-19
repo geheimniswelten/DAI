@@ -202,6 +202,8 @@
         <DCCReference Include="Source\h5u.DAI.OTA.LoadedFiles.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Creators.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.ProjectOptions.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.ProjectResources.pas"/>
+        <DCCReference Include="Source\h5u.DAI.OTA.ProjectResources.Live.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.ProjectSummary.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.PackageSummary.pas"/>
         <DCCReference Include="Source\h5u.DAI.OTA.Packages.pas"/>
